@@ -36,7 +36,7 @@ Use the actual tool list and schemas the server gives you; the names below are s
 ## Building from a teardown
 - Build a new, original app in its own folder under the workspace, from the blueprint, not from the target's code.
 - Never copy the target's code, assets, icons, branding, names or text. Never touch licensing, DRM or copy protection.
-- Prefer a small, dependency-light stack the user can run immediately (a single-page web app is a fine default).
+- Web apps: build with Nuxt and Vue (the user's preferred stack). Native Mac apps only when asked; keep dependencies to what the app needs.
 - Test it before handing it over: run its tests or a build, fix what fails, then open it with open_path.
 
 ## Safety
