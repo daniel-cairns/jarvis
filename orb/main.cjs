@@ -5,6 +5,7 @@
 const { app, BrowserWindow, Menu, Tray, ipcMain, nativeImage, screen, shell } = require("electron");
 const path = require("node:path");
 const readline = require("node:readline");
+const { stackLayout } = require("./stack.cjs");
 
 const ANSWERS = new Set(["yes", "always", "no"]);
 
@@ -156,6 +157,7 @@ app.whenReady().then(() => {
         { label: "Show last detail", enabled: slabs.detail.last !== null, click: () => openSlab("detail", slabs.detail.last) },
         { label: "Show last map", enabled: slabs.graph.last !== null, click: () => openSlab("graph", slabs.graph.last) },
         { label: "Open brain", click: () => send({ type: "brain-request" }) },
+        { label: "Stack windows", click: () => stackWindows() },
         { label: "Show terminal", click: () => openSlab("terminal", slabs.terminal.last ?? { type: "terminal", entries: [] }) },
         { label: "Show git changes", click: () => openSlab("git", slabs.git.last ?? { type: "git", repos: [] }) },
         {
@@ -241,8 +243,22 @@ app.whenReady().then(() => {
     });
   };
 
+  /** Lays every open panel out tidily beside the orb (see stack.cjs), keeping the sizes you gave them where they fit. */
+  const stackWindows = () => {
+    const order = ["detail", "brain", "graph", "git", "terminal"];
+    const open = order
+      .map((kind) => ({ kind, win: slabs[kind].win }))
+      .filter((p) => p.win && !p.win.isDestroyed() && p.win.isVisible());
+    if (!open.length) return;
+    const orb = win.getBounds();
+    const { workArea } = screen.getDisplayMatching(orb);
+    const placed = stackLayout(workArea, orb, open.map((p) => ({ kind: p.kind, ...p.win.getBounds() })));
+    for (const p of open) if (placed[p.kind]) p.win.setBounds(placed[p.kind], true);
+  };
+
   /** Astra working her own interface (ui_control and quick spoken commands). */
   const runUi = (action) => {
+    if (action === "stack_windows") return stackWindows();
     if (action === "minimise") void hideOrb();
     else if (action === "show") void show();
     // Closed on request, the work panels stay shut (like closing them by hand) until the next request or "show".

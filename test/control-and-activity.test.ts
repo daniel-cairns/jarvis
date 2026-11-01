@@ -17,6 +17,8 @@ describe("quickUiCommand", () => {
     expect(quickUiCommand("Type only mode.")).toEqual({ action: "type_only" });
     expect(quickUiCommand("switch to voice mode")).toEqual({ action: "voice_mode" });
     expect(quickUiCommand("Sit rep.")).toEqual({ action: "sitrep" });
+    expect(quickUiCommand("Stack your windows.")).toEqual({ action: "stack_windows" });
+    expect(quickUiCommand("tidy up the panels please")).toEqual({ action: "stack_windows" });
     expect(quickUiCommand("give me a sitrep please")).toEqual({ action: "sitrep" });
     expect(quickUiCommand("What's everyone doing?")).toEqual({ action: "sitrep" });
     expect(quickUiCommand("God mode on")).toEqual({ action: "god_mode_on" });

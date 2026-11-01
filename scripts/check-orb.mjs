@@ -61,6 +61,8 @@ send({
 await wait(1500);
 send({ type: "git-diff-result", root: "/w/app", path: "src/a.ts", diff: "@@ -1 +1 @@\n-old\n+new" });
 await wait(3000);
+send({ type: "ui", action: "stack_windows" });
+await wait(800);
 send({ type: "ui", action: "close_panels" });
 await wait(500);
 child.stdin.end();

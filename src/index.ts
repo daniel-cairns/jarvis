@@ -36,7 +36,7 @@ import {
 import { clock, parseTranscriptStart, splitStop, transcriptMarkdown, wordCount, type TranscriptLine } from "./voice/transcript.js";
 import { matchWake, matchWakeAnywhere, speechHint, stripOwnSpeech } from "./voice/wake.js";
 
-const HELP = `Say "Astra" to wake her. Commands: /new (fresh conversation), /brain, /sitrep, /god on|off, /restart, /type (type only: mic off, silent), /voice, /transcript [title] (record until "stop recording"), /mute, /unmute, /wake on|off, /help, /quit. Ctrl-C or Esc on the orb stops her.`;
+const HELP = `Say "Astra" to wake her. Commands: /new (fresh conversation), /brain, /stack (tidy her windows), /sitrep, /god on|off, /restart, /type (type only: mic off, silent), /voice, /transcript [title] (record until "stop recording"), /mute, /unmute, /wake on|off, /help, /quit. Ctrl-C or Esc on the orb stops her.`;
 // Prefixed to each request while god mode is on.
 const GOD_MODE =
   "(God mode is on: you command the user's Claude Code sessions. Hand project work to them rather than doing it yourself: " +
@@ -557,6 +557,7 @@ async function main(): Promise<void> {
       expand_panel: "Expanded the thinking window.",
       show_last_detail: "Re-opened the last detail panel (if there was one).",
       show_last_map: "Re-opened the last map (if there was one).",
+      stack_windows: "Stacked my windows beside me.",
     };
     return done[action];
   };
@@ -1010,6 +1011,7 @@ async function main(): Promise<void> {
     if (request === "/help") { console.log(HELP); continue; }
     if (request === "/brain") { console.log(`  ${await openBrain()}`); continue; }
     if (request === "/restart") { console.log(`  ${requestRestart()}`); continue; }
+    if (request === "/stack") { console.log(`  ${await runUi("stack_windows")}`); continue; }
     if (request === "/sitrep") { console.log(`  ${await runUi("sitrep")}`); continue; }
     if (request === "/god on" || request === "/god off") { console.log(`  ${setGodMode(request === "/god on")}`); continue; }
     if (request === "/type" || request === "/voice") { console.log(`  ${setTypeOnly(request === "/type")}`); continue; }
