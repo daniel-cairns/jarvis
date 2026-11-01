@@ -14,6 +14,13 @@ describe("quickUiCommand", () => {
     expect(quickUiCommand("come back")).toEqual({ action: "show" });
     expect(quickUiCommand("Restart yourself.")).toEqual({ action: "restart" });
     expect(quickUiCommand("restart the gymclaw session")).toBeNull();
+    expect(quickUiCommand("Type only mode.")).toEqual({ action: "type_only" });
+    expect(quickUiCommand("switch to voice mode")).toEqual({ action: "voice_mode" });
+    expect(quickUiCommand("Sit rep.")).toEqual({ action: "sitrep" });
+    expect(quickUiCommand("give me a sitrep please")).toEqual({ action: "sitrep" });
+    expect(quickUiCommand("What's everyone doing?")).toEqual({ action: "sitrep" });
+    expect(quickUiCommand("God mode on")).toEqual({ action: "god_mode_on" });
+    expect(quickUiCommand("turn off god mode")).toEqual({ action: "god_mode_off" });
     expect(quickUiCommand("Fold up.")).toEqual({ action: "minimise" });
     expect(quickUiCommand("close yourself")).toEqual({ action: "minimise" });
     expect(quickUiCommand("transform closed")).toEqual({ action: "minimise" });
@@ -89,8 +96,9 @@ describe("settings", () => {
   it("remembers the volume, clamped, and falls back to defaults", () => {
     const home = fs.mkdtempSync(path.join(os.tmpdir(), "astra-settings-"));
     expect(loadSettings(home).volume).toBe(0.8);
-    saveSettings(home, { volume: clampVolume(1.7) });
-    expect(loadSettings(home).volume).toBe(1);
+    expect(loadSettings(home).typeOnly).toBe(false);
+    saveSettings(home, { volume: clampVolume(1.7), typeOnly: true, godMode: true });
+    expect(loadSettings(home)).toEqual({ volume: 1, typeOnly: true, godMode: true });
     fs.writeFileSync(path.join(home, "settings.json"), "not json");
     expect(loadSettings(home).volume).toBe(0.8);
     fs.rmSync(home, { recursive: true, force: true });

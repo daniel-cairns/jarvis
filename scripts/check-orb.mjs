@@ -20,6 +20,13 @@ for (const state of ["idle", "listening", "thinking", "speaking"]) {
   if (state === "speaking") send({ type: "utterance", text: "Checking.", envelope: [0.2, 0.8, 0.5, 0.1], frameMs: 50 });
   await wait(400);
 }
+send({ type: "recording", on: true });
+send({ type: "state-label", text: "Recording 00:05" });
+send({ type: "mode", typeOnly: true, god: true });
+send({ type: "state", state: "thinking" });
+await wait(Number(process.env.ORB_CHECK_HOLD_MS ?? 600));
+send({ type: "recording", on: false });
+send({ type: "mode", typeOnly: false, god: false });
 send({ type: "activity-reset" });
 send({ type: "activity", text: "Thinking…" });
 send({ type: "activity", text: "Reading a note: notes teardown" });

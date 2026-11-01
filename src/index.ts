@@ -16,6 +16,7 @@ import { WorkLog, type ToolEvent } from "./ui/worklog.js";
 import { SessionRunner } from "./tools/runner.js";
 import type { SessionTools } from "./tools/server.js";
 import { appLinks, findSession, listSessions, resolveProject, type SessionSummary } from "./tools/sessions.js";
+import { newlyWaiting, sitrep } from "./tools/sitrep.js";
 import { z } from "zod";
 import { stopServing } from "./tools/serve.js";
 import { quickUiCommand, type UiAction, type UiCommand } from "./ui/control.js";
@@ -35,7 +36,13 @@ import {
 import { clock, parseTranscriptStart, splitStop, transcriptMarkdown, wordCount, type TranscriptLine } from "./voice/transcript.js";
 import { matchWake, matchWakeAnywhere, speechHint, stripOwnSpeech } from "./voice/wake.js";
 
-const HELP = `Say "Astra" to wake her. Commands: /new (fresh conversation), /brain, /restart, /transcript [title] (record until "stop recording"), /mute, /unmute, /wake on|off, /help, /quit. Ctrl-C or Esc on the orb stops her.`;
+const HELP = `Say "Astra" to wake her. Commands: /new (fresh conversation), /brain, /sitrep, /god on|off, /restart, /type (type only: mic off, silent), /voice, /transcript [title] (record until "stop recording"), /mute, /unmute, /wake on|off, /help, /quit. Ctrl-C or Esc on the orb stops her.`;
+// Prefixed to each request while god mode is on.
+const GOD_MODE =
+  "(God mode is on: you command the user's Claude Code sessions. Hand project work to them rather than doing it yourself: " +
+  "check sessions_list, send a clear, self-contained instruction to the right idle session with session_send, or start one " +
+  "in the right project with session_start (background). Tell the user who you gave what. For \"sit rep\" use ui_control " +
+  "sitrep. Only do quick things yourself.)\n\n";
 const STOP_WORDS = /^(stop|cancel|never ?mind|be quiet|quiet|shush|shut up)\b/i;
 
 /** A soft acknowledgement when the wake word is heard. */
@@ -215,6 +222,8 @@ async function main(): Promise<void> {
       onBrain: (msg) => void onBrain(msg),
       onGitDiff: (msg) => void onGitDiff(msg),
       onVolume: (msg) => void setVolume(msg.level ?? settings.volume + (msg.delta ?? 0)),
+      onRecord: () => onRecord(),
+      onTypeOnly: (on) => console.log(`\n  ${setTypeOnly(on)}`),
       onStop: () => {
         if (interrupt()) {
           console.log("\n(stopped)");
@@ -226,19 +235,38 @@ async function main(): Promise<void> {
 
   orb?.send({ type: "volume-level", level: settings.volume, quiet: true });
 
-  let voiceMode = !textMode;
-  if (voiceMode) {
+  // micReady: the microphone works and wasn't switched off with --text. voiceMode: listening now (off in type-only).
+  let micReady = !textMode;
+  if (micReady) {
     const problems = await listener.checkSetup();
     if (problems.length) {
       console.log("Voice input isn't ready, so I'll use typed mode:\n  " + problems.join("\n  "));
-      voiceMode = false;
+      micReady = false;
     }
   }
+  let voiceMode = micReady && !settings.typeOnly;
+  const sendMode = () => orb?.send({ type: "mode", typeOnly: settings.typeOnly, god: settings.godMode });
+  sendMode();
+
+  /** Type-only mode: microphone off (no wake word or listening) and silent; replies only on screen. Remembered. */
+  const setTypeOnly = (on: boolean): string => {
+    settings.typeOnly = on;
+    saveSettings(cfg.home, settings);
+    voiceMode = micReady && !on;
+    if (on) {
+      speaker.stop();
+      currentListen?.abort();
+      void wakeListener.cancel();
+    }
+    sendMode();
+    if (on) return "Type-only mode: microphone off and I'll stay quiet. Type /voice or click the mouth glyph to switch back.";
+    return micReady ? "Voice mode: listening and talking again." : "Speech is back on, but the microphone isn't available.";
+  };
 
   // Queued: lines never overlap (see Speaker). Resolves when this line has been spoken.
   const say = async (text: string) => {
     console.log(`\nAstra: ${text}\n`);
-    if (muted || !speechEnabled) orb?.send({ type: "caption", role: "jarvis", text });
+    if (muted || settings.typeOnly || !speechEnabled) orb?.send({ type: "caption", role: "jarvis", text });
     else await speaker.speak(text);
   };
 
@@ -495,6 +523,15 @@ async function main(): Promise<void> {
     }
     if (action === "show_brain") return openBrain();
     if (action === "restart") return requestRestart();
+    if (action === "type_only" || action === "voice_mode") return setTypeOnly(action === "type_only");
+    if (action === "god_mode_on" || action === "god_mode_off") return setGodMode(action === "god_mode_on");
+    if (action === "sitrep") {
+      // Asked mid-request (via ui_control), she tells it in her reply; asked directly, she says it now.
+      const spoken = await showSitrep();
+      if (busy) return `Sit rep is on screen. Tell the user: ${spoken}`;
+      await say(spoken);
+      return "Sit rep given.";
+    }
     if (action === "start_transcript") {
       if (!busy) {
         await runTranscript();
@@ -505,7 +542,7 @@ async function main(): Promise<void> {
     }
     if (!orb?.alive) return "No orb is open.";
     orb.send({ type: "ui", action });
-    const done: Record<Exclude<UiAction, "stop" | "show_brain" | "start_transcript" | "restart" | "volume_up" | "volume_down" | "set_volume" | "move" | "show_terminal" | "show_git">, string> = {
+    const done: Record<Exclude<UiAction, "stop" | "show_brain" | "start_transcript" | "restart" | "type_only" | "voice_mode" | "sitrep" | "god_mode_on" | "god_mode_off" | "volume_up" | "volume_down" | "set_volume" | "move" | "show_terminal" | "show_git">, string> = {
       minimise: "Minimised to the menu bar.",
       show: "The orb is back.",
       close_panels: "Closed the panels.",
@@ -523,11 +560,12 @@ async function main(): Promise<void> {
    * while recording; the transcript shows live in the detail panel and is saved to the brain under transcripts.
    */
   const runTranscript = async (title = "Transcript"): Promise<void> => {
-    if (!voiceMode) return void console.log("  Transcript mode needs the microphone (voice mode).");
+    if (!micReady) return void console.log("  Transcript mode needs the microphone.");
     await say('Recording. Say "Astra, stop recording" when you\'re done.');
     await speaker.whenIdle();
     const stop = new AbortController();
     transcribing = stop;
+    orb?.send({ type: "recording", on: true });
     const startedAt = Date.now();
     const found: TranscriptLine[] = [];
     const show = (endedAt?: number) =>
@@ -588,6 +626,7 @@ async function main(): Promise<void> {
     await Promise.all(recorders.map((r) => (r.recording ? r.cancel() : undefined)));
     clearInterval(timer);
     transcribing = null;
+    orb?.send({ type: "recording", on: false });
     listening = false;
     syncOrb();
 
@@ -630,6 +669,21 @@ async function main(): Promise<void> {
       pendingRestart = false;
       void say("Restarting now.").then(requestRestart);
     }
+  };
+
+  /**
+   * The record glyph: stops the transcript running, or starts one. Busy, it starts when the request ends; mid-listen,
+   * the listening is cut short and the main loop starts it (a line injected then would only end the recording).
+   */
+  const onRecord = () => {
+    if (transcribing) return transcribing.abort();
+    if (busy || asking) {
+      pendingTranscript = {};
+      orb?.send({ type: "caption", role: "status", text: "Recording starts when I've finished this" });
+    } else if (listening) {
+      pendingTranscript = {};
+      currentListen?.abort();
+    } else lines.inject("/transcript");
   };
 
   /** Opens a dialog: registers it for interruption, and always closes it out, however it was answered. */
@@ -764,6 +818,51 @@ async function main(): Promise<void> {
     return s;
   };
 
+  /** The sit rep: every recent session and background run, on screen; returns the short spoken version. */
+  const showSitrep = async (): Promise<string> => {
+    const runs = sessionRunner.list().map((j) => ({ handle: j.id, label: j.label, status: j.status, latest: j.lastText }));
+    const report = sitrep(await listSessions({ limit: 30, exclude: [cfg.workspaceDir] }), runs);
+    if (orb?.alive) orb.send({ type: "detail", title: "Sit rep", html: renderDetail(report.markdown) });
+    else console.log(`\n${report.markdown}\n`);
+    return report.spoken;
+  };
+
+  // God mode: she commands your sessions (see GOD_MODE) and every 30 s checks which have finished a turn.
+  const seen = new Map<string, SessionSummary["status"]>();
+  let godTimer: NodeJS.Timeout | null = null;
+  const watchSessions = async () => {
+    const now = await listSessions({ limit: 30, exclude: [cfg.workspaceDir] }).catch(() => [] as SessionSummary[]);
+    const first = seen.size === 0;
+    const finished = first ? [] : newlyWaiting(seen, now);
+    seen.clear();
+    for (const s of now) seen.set(s.id, s.status);
+    // Her own background runs are reported when they end anyway.
+    const mine = new Set(sessionRunner.list().map((j) => j.sessionId));
+    const titles = finished.filter((s) => !mine.has(s.id)).map((s) => s.title);
+    if (!titles.length) return;
+    const text = titles.length === 1 ? `${titles[0]} has finished and is waiting on you.` : `${titles.slice(0, -1).join(", ")} and ${titles.at(-1)} have finished and are waiting on you.`;
+    if (transcribing) console.log(`\n  (${text})`);
+    else void say(text);
+  };
+  /** God mode on or off: commanding your sessions, with finish announcements. Remembered between runs. */
+  const setGodMode = (on: boolean): string => {
+    settings.godMode = on;
+    saveSettings(cfg.home, settings);
+    if (godTimer) clearInterval(godTimer);
+    godTimer = null;
+    seen.clear();
+    if (on) {
+      void watchSessions();
+      godTimer = setInterval(() => void watchSessions(), 30_000);
+      godTimer.unref();
+    }
+    sendMode();
+    return on
+      ? "God mode on. I'll hand project work to your sessions, tell you when one finishes, and say \"sit rep\" any time for where everything's at."
+      : "God mode off. I'll do the work myself again.";
+  };
+  if (settings.godMode) setGodMode(true);
+
   const sessions: SessionTools = {
     list: async (project, includeAstra) => ({
       sessions: (await listSessions({ limit: 12, project, exclude: includeAstra ? [] : [cfg.workspaceDir] })).map((s) => ({
@@ -890,6 +989,12 @@ async function main(): Promise<void> {
     const input = await getInput(voiceMode ? "\n[Enter to talk] > " : "\n> ", undefined, followUp);
     followUp = false;
     if (input === null) break;
+    if (pendingTranscript && !busy) {
+      const { title } = pendingTranscript;
+      pendingTranscript = null;
+      await runTranscript(title);
+      continue;
+    }
     const request = input.trim();
     if (!request) continue;
 
@@ -897,6 +1002,9 @@ async function main(): Promise<void> {
     if (request === "/help") { console.log(HELP); continue; }
     if (request === "/brain") { console.log(`  ${await openBrain()}`); continue; }
     if (request === "/restart") { console.log(`  ${requestRestart()}`); continue; }
+    if (request === "/sitrep") { console.log(`  ${await runUi("sitrep")}`); continue; }
+    if (request === "/god on" || request === "/god off") { console.log(`  ${setGodMode(request === "/god on")}`); continue; }
+    if (request === "/type" || request === "/voice") { console.log(`  ${setTypeOnly(request === "/type")}`); continue; }
     const transcript = /^\/transcript\b/.test(request) ? { title: request.slice(11).trim() || undefined } : parseTranscriptStart(request);
     if (transcript) {
       await runTranscript(transcript.title);
@@ -925,7 +1033,9 @@ async function main(): Promise<void> {
     try {
       const spoken = lastInputWasVoice;
       // Just after a transcript, tell her where it is, so "summarise that" or "action items" find it.
-      const context = lastTranscript ? `(I just recorded a transcript; it's in your brain at ${lastTranscript}.)\n\n` : "";
+      const context =
+        (settings.godMode ? GOD_MODE : "") +
+        (lastTranscript ? `(I just recorded a transcript; it's in your brain at ${lastTranscript}.)\n\n` : "");
       lastTranscript = null;
       const result = await jarvis.handle(context + request);
       console.log(`  (${result.ok ? "done" : result.summary} · $${result.costUsd.toFixed(3)})`);

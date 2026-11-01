@@ -11,7 +11,8 @@ const ANSWERS = new Set(["yes", "always", "no"]);
 /** Only well-formed messages from the page reach Astra. */
 function fromPage(m) {
   if (!m || typeof m !== "object") return null;
-  if (m.type === "talk" || m.type === "stop") return { type: m.type };
+  if (m.type === "talk" || m.type === "stop" || m.type === "record") return { type: m.type };
+  if (m.type === "type-only" && typeof m.on === "boolean") return { type: "type-only", on: m.on };
   if (m.type === "answer" && typeof m.id === "string" && ANSWERS.has(m.answer)) {
     return { type: "answer", id: m.id, answer: m.answer };
   }

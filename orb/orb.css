@@ -170,7 +170,7 @@ main {
  * Stop and minimise sit on the small wings just below the eye (drawn on the canvas), as gold line-art glyphs:
  * on the wing arc at GLYPH_ANGLE (orb.js): stop centred at (140, 219), minimise at (180, 219).
  */
-#stop, #minimise {
+#stop, #minimise, #record, #type-only {
   position: absolute;
   top: 206px;
   width: 26px;
@@ -185,8 +185,11 @@ main {
 }
 #stop { left: 127px; }
 #minimise { left: 167px; }
+/* Record and type-only sit further out on the same wing arc (OUTER_ANGLE in orb.js): centred at (116, 209), (204, 209). */
+#record { left: 103px; top: 196px; }
+#type-only { left: 191px; top: 196px; }
 #stop:disabled { cursor: default; }
-#stop svg, #minimise svg {
+#stop svg, #minimise svg, #record svg, #type-only svg {
   width: 16px;
   height: 16px;
   fill: none;
@@ -199,7 +202,16 @@ main {
 #stop:disabled svg { opacity: 0.5; filter: none; }
 #stop .core { fill: rgba(255, 106, 90, 0.35); stroke: none; }
 #stop:not(:disabled) .core { fill: #ff6a5a; filter: drop-shadow(0 0 3px rgba(255, 90, 80, 0.9)); }
-#stop:focus-visible, #minimise:focus-visible { outline: 2px solid var(--reactor); outline-offset: 2px; }
+#record .well { fill: rgba(236, 188, 82, 0.35); stroke: none; }
+#record[aria-pressed="true"] .well { fill: #ff6a5a; filter: drop-shadow(0 0 3px rgba(255, 90, 80, 0.9)); }
+#type-only .seal { opacity: 0; transition: opacity 0.3s; }
+#type-only[aria-pressed="true"] .seal { opacity: 1; stroke: var(--reactor); }
+/* Type-only: she's deaf and silent, so the orb dims a little. */
+body.type-only #orb { filter: saturate(0.55) brightness(0.85); }
+/* God mode: a steady gold aura around her. */
+body.god-mode #orb { filter: drop-shadow(0 0 9px rgba(236, 188, 82, 0.55)); }
+body.type-only.god-mode #orb { filter: saturate(0.55) brightness(0.85) drop-shadow(0 0 9px rgba(236, 188, 82, 0.55)); }
+#stop:focus-visible, #minimise:focus-visible, #record:focus-visible, #type-only:focus-visible { outline: 2px solid var(--reactor); outline-offset: 2px; }
 
 .hint {
   margin: 10px 0 0;

@@ -18,6 +18,11 @@ export const UI_ACTIONS = [
   "show_git",
   "start_transcript",
   "restart",
+  "type_only",
+  "voice_mode",
+  "sitrep",
+  "god_mode_on",
+  "god_mode_off",
 ] as const;
 export type UiAction = (typeof UI_ACTIONS)[number];
 /** Where "move" can put the orb: a spot on screen, or a nudge in one direction. */
@@ -75,6 +80,11 @@ export function quickUiCommand(request: string): UiCommand | null {
   if (/^(show|open)( me)? (your |the )?(terminal|commands?|command log)$/.test(s)) return { action: "show_terminal" };
   if (/^(show|open)( me)? (your |the )?(git( changes)?|changes|diffs?|code changes)$/.test(s)) return { action: "show_git" };
   if (/^(restart|reboot|reload)( yourself)?( please)?$/.test(s)) return { action: "restart" };
+  if (/^(go |switch to |turn on )?(type|typing|text) (only )?mode( on)?( please)?$|^type only( please)?$/.test(s)) return { action: "type_only" };
+  if (/^(give me |get me |what s the |what is the )?(a |the |your )?(sit ?rep|situation report|status report)( please)?$|^what (s|is) everyone (doing|up to)$/.test(s)) return { action: "sitrep" };
+  if (/^(go into |enter |switch to |turn on |activate )?god mode( on)?( please)?$/.test(s)) return { action: "god_mode_on" };
+  if (/^(leave |exit |turn off |deactivate |end )god mode|^god mode off$/.test(s)) return { action: "god_mode_off" };
+  if (/^(go |switch to |turn on |back to )?(voice|talking|speaking) mode( on)?( please)?$/.test(s)) return { action: "voice_mode" };
   const position = parseMove(s.replace(/\b(please|a bit|a little|slightly|the screen|of the screen)\b/g, " ").replace(/\s+/g, " ").trim());
   if (position) return { action: "move", position };
   return null;

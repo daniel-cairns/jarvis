@@ -26,6 +26,8 @@ export type ToOrb =
   | { type: "answered"; id: string }
   | { type: "detail"; title: string; html: string; follow?: boolean }
   | { type: "state-label"; text: string }
+  | { type: "recording"; on: boolean }
+  | { type: "mode"; typeOnly: boolean; god: boolean }
   | { type: "graph"; title: string; graph: TeardownGraph }
   | { type: "question"; id: string; question: string; options: Choice[]; multiSelect: boolean; allowOther: boolean }
   | { type: "activity"; text: string; glyph?: ActivityGlyph }
@@ -43,6 +45,8 @@ export type FromOrb =
   | { type: "ready" }
   | { type: "talk" }
   | { type: "stop" }
+  | { type: "record" }
+  | { type: "type-only"; on: boolean }
   | { type: "quit" }
   | { type: "answer"; id: string; answer: Answer }
   | { type: "question-answer"; id: string; answer: QuestionAnswer }
@@ -54,6 +58,10 @@ export type FromOrb =
 export type OrbHandlers = {
   onTalk(): void;
   onStop(): void;
+  /** The record glyph: start a transcript, or stop the one running. */
+  onRecord?(): void;
+  /** The mouth glyph: type-only mode (mic off, silent) on or off. */
+  onTypeOnly?(on: boolean): void;
   onQuit(): void;
   /** The brain browser asked for its note list, one note, or a note's map. */
   onBrain?(msg: Extract<FromOrb, { type: "brain-request" | "brain-open" | "brain-map" }>): void;
@@ -75,9 +83,10 @@ export function parseFromOrb(line: string): FromOrb | null {
   }
   if (!m || typeof m !== "object") return null;
   const msg = m as Record<string, unknown>;
-  if (msg.type === "ready" || msg.type === "talk" || msg.type === "stop" || msg.type === "quit" || msg.type === "brain-request") {
+  if (msg.type === "ready" || msg.type === "talk" || msg.type === "stop" || msg.type === "record" || msg.type === "quit" || msg.type === "brain-request") {
     return { type: msg.type };
   }
+  if (msg.type === "type-only" && typeof msg.on === "boolean") return { type: "type-only", on: msg.on };
   if ((msg.type === "brain-open" || msg.type === "brain-map") && typeof msg.path === "string" && msg.path.length <= 300) {
     return { type: msg.type, path: msg.path };
   }
@@ -179,6 +188,8 @@ export class Orb {
   private receive(msg: FromOrb | null): void {
     if (msg?.type === "talk") this.handlers.onTalk();
     else if (msg?.type === "stop") this.handlers.onStop();
+    else if (msg?.type === "record") this.handlers.onRecord?.();
+    else if (msg?.type === "type-only") this.handlers.onTypeOnly?.(msg.on);
     else if (msg?.type === "quit") this.handlers.onQuit();
     else if (msg?.type === "brain-request" || msg?.type === "brain-open" || msg?.type === "brain-map") this.handlers.onBrain?.(msg);
     else if (msg?.type === "volume") this.handlers.onVolume?.(msg);

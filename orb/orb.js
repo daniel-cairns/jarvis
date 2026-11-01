@@ -7,6 +7,8 @@
   let activeGlyphAt = 0;
   const talk = document.getElementById("talk");
   const stopButton = document.getElementById("stop");
+  const recordButton = document.getElementById("record");
+  const typeOnlyButton = document.getElementById("type-only");
   const stateLabel = document.getElementById("state");
   const card = document.getElementById("card");
   const caption = document.getElementById("caption");
@@ -364,6 +366,19 @@
     else if (m.type === "activity-reset") resetActivity();
     // Transcript mode: "Recording 03:12" in place of "Listening…" until the state changes.
     else if (m.type === "state-label") stateLabel.textContent = m.text;
+    else if (m.type === "mode") {
+      const on = !!m.typeOnly;
+      document.body.classList.toggle("type-only", on);
+      typeOnlyButton.setAttribute("aria-pressed", String(on));
+      typeOnlyButton.setAttribute("aria-label", on ? "Back to voice: microphone and speech on" : "Type only: microphone off and silent");
+      document.body.classList.toggle("god-mode", !!m.god);
+      LABELS.idle = on ? "Type only" : m.god ? "God mode" : "Idle";
+      if (state === "idle") stateLabel.textContent = LABELS.idle;
+    } else if (m.type === "recording") {
+      recording = !!m.on;
+      recordButton.setAttribute("aria-pressed", String(recording));
+      recordButton.setAttribute("aria-label", recording ? "Stop the transcript" : "Start a transcript");
+    }
     else if (m.type === "layout") document.body.classList.toggle("top", !!m.top);
     else if (m.type === "collapse") setCollapsed(!!m.collapsed);
     else if (m.type === "transform") transformTo(m.to);
@@ -434,9 +449,12 @@
     if (value) answer(value);
   });
   stopButton.addEventListener("click", () => bridge.send({ type: "stop" }));
+  recordButton.addEventListener("click", () => bridge.send({ type: "record" }));
+  typeOnlyButton.addEventListener("click", () => bridge.send({ type: "type-only", on: typeOnlyButton.getAttribute("aria-pressed") !== "true" }));
   // The glyphs on the lower wings glow under the pointer (the glow is drawn on the canvas, under the buttons).
   let hovered = null;
-  for (const [el, id] of [[stopButton, "stop"], [document.getElementById("minimise"), "minimise"]]) {
+  let recording = false;
+  for (const [el, id] of [[stopButton, "stop"], [document.getElementById("minimise"), "minimise"], [recordButton, "record"], [typeOnlyButton, "type-only"]]) {
     el.addEventListener("pointerenter", () => (hovered = id));
     el.addEventListener("pointerleave", () => (hovered = null));
     el.addEventListener("focus", () => (hovered = id));
@@ -538,6 +556,8 @@
    * DOM buttons are positioned over GLYPH_ANGLE, and this draws the glow behind each glyph.
    */
   const GLYPH_ANGLE = 0.24;
+  // Record and type-only, further out along the wings.
+  const OUTER_ANGLE = 0.55;
   function lowerWings(cx, cy, ringR, t, busy, hover, glow = 0) {
     const base = ringR + 9; // just outside the ring's outer line
     const tiers = [
@@ -575,12 +595,12 @@
       }
     }
     const glyphR = base + 11;
-    for (const [id, side] of [["stop", -1], ["minimise", 1]]) {
-      const busyStop = id === "stop" && busy;
+    for (const [id, side, angle] of [["stop", -1, GLYPH_ANGLE], ["minimise", 1, GLYPH_ANGLE], ["record", -1, OUTER_ANGLE], ["type-only", 1, OUTER_ANGLE]]) {
+      const busyStop = (id === "stop" && busy) || (id === "record" && recording);
       const lit = (hover === id ? 1 : 0) + (busyStop ? 0.55 + 0.3 * Math.sin(t * 4) : 0);
       if (lit <= 0) continue;
-      const x = cx + side * Math.sin(GLYPH_ANGLE) * glyphR;
-      const y = cy + Math.cos(GLYPH_ANGLE) * glyphR;
+      const x = cx + side * Math.sin(angle) * glyphR;
+      const y = cy + Math.cos(angle) * glyphR;
       const glow = ctx.createRadialGradient(x, y, 0, x, y, 15);
       glow.addColorStop(0, rgba(busyStop ? [255, 110, 90] : GOLD, 0.5 * Math.min(1, lit)));
       glow.addColorStop(1, rgba(busyStop ? [255, 110, 90] : GOLD, 0));
@@ -665,6 +685,41 @@
 
   let shownOpacity = null;
 
+  // Gold sand: while she thinks, tiny gold grains trickle off the ring and wings like an hourglass.
+  const sand = [];
+  const SAND_MAX = reducedMotion ? 20 : 140;
+  function drawSand(cx, cy, ringR, thinking, fade) {
+    const rate = thinking ? (reducedMotion ? 0.3 : 3) : 0;
+    for (let n = rate; n > 0 && sand.length < SAND_MAX; n--) {
+      if (n < 1 && Math.random() > n) break;
+      // From the lower half of the ring and along the wings, heavier near the middle.
+      const a = Math.PI / 2 + (Math.random() - 0.5) * Math.PI * (0.6 + Math.random() * 0.8);
+      const spread = 0.6 + Math.random() * 0.5;
+      sand.push({
+        x: cx + Math.cos(a) * ringR * spread * 1.6,
+        y: cy + Math.abs(Math.sin(a)) * ringR * spread * 0.9,
+        vx: (Math.random() - 0.5) * 0.15,
+        vy: 0.25 + Math.random() * 0.5,
+        size: Math.random() < 0.7 ? 1.4 : 2,
+        twinkle: Math.random() * Math.PI * 2,
+      });
+    }
+    for (let i = sand.length - 1; i >= 0; i--) {
+      const g = sand[i];
+      g.vy += 0.025;
+      g.x += g.vx;
+      g.y += g.vy;
+      const life = 1 - (g.y - cy) / (H - cy);
+      if (life <= 0) {
+        sand.splice(i, 1);
+        continue;
+      }
+      const shimmer = 0.65 + 0.35 * Math.sin(g.twinkle + g.y * 0.25);
+      ctx.fillStyle = rgba(GOLD, Math.min(1, life * 1.4) * shimmer * fade);
+      ctx.fillRect(Math.round(g.x), Math.round(g.y), g.size, g.size);
+    }
+  }
+
   function draw(now) {
     const t = now / 1000;
     const form = currentForm(now);
@@ -677,7 +732,7 @@
     const controlsOpacity = Math.round(st.wings * 20) / 20;
     if (controlsOpacity !== shownOpacity) {
       shownOpacity = controlsOpacity;
-      for (const el of [stopButton, document.getElementById("minimise"), stateLabel]) el.style.opacity = String(controlsOpacity);
+      for (const el of [stopButton, document.getElementById("minimise"), recordButton, typeOnlyButton, stateLabel]) el.style.opacity = String(controlsOpacity);
     }
     const cx = W / 2;
     const cy = H / 2 + 6;
@@ -872,6 +927,8 @@
     ctx.translate(-cx, -cy);
     lowerWings(cx, cy, gr + 7, t, state !== "idle", hovered, listenGlow);
     ctx.restore();
+
+    drawSand(cx, cy, gr, state === "thinking" && formTo === 1, st.wings);
 
     // Volume arc, briefly, after a change: gold, clockwise from the top, around the outside of the ring.
     if (volumeLevel !== null && now - volumeShownAt < 1500) {
