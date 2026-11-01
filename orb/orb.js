@@ -272,7 +272,7 @@
       ctx.save();
       ctx.translate(cx + side * 8, 207);
       ctx.scale(side * 0.6, 0.6);
-      ctx.rotate(0.14);
+      ctx.rotate(-0.12); // tips tilted up slightly
       wing(0.6, level * 0.5);
       ctx.restore();
     }
@@ -280,11 +280,11 @@
       const busyStop = id === "stop" && busy;
       const lit = (hover === id ? 1 : 0) + (busyStop ? 0.55 + 0.3 * Math.sin(t * 4) : 0);
       if (lit <= 0) continue;
-      const glow = ctx.createRadialGradient(x, 213, 0, x, 213, 16);
+      const glow = ctx.createRadialGradient(x, 209, 0, x, 209, 16);
       glow.addColorStop(0, rgba(busyStop ? [255, 110, 90] : GOLD, 0.45 * Math.min(1, lit)));
       glow.addColorStop(1, rgba(busyStop ? [255, 110, 90] : GOLD, 0));
       ctx.fillStyle = glow;
-      ctx.fillRect(x - 16, 197, 32, 32);
+      ctx.fillRect(x - 16, 193, 32, 32);
     }
   }
 
