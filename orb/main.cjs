@@ -243,7 +243,13 @@ app.whenReady().then(() => {
   const runUi = (action) => {
     if (action === "minimise") void hideOrb();
     else if (action === "show") void show();
-    else if (action === "close_panels") for (const slab of Object.values(slabs)) slab.win?.isDestroyed() === false && slab.win.close();
+    // Closed on request, the work panels stay shut (like closing them by hand) until the next request or "show".
+    else if (action === "close_panels") {
+      for (const [kind, slab] of Object.entries(slabs)) {
+        if (kind === "terminal" || kind === "git") dismissed.add(kind);
+        if (slab.win?.isDestroyed() === false) slab.win.close();
+      }
+    }
     else if (action === "show_last_detail" && slabs.detail.last) openSlab("detail", slabs.detail.last);
     else if (action === "show_last_map" && slabs.graph.last) openSlab("graph", slabs.graph.last);
     else if (action === "collapse_panel" || action === "expand_panel") {
