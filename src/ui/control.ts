@@ -12,6 +12,8 @@ export const UI_ACTIONS = [
   "volume_down",
   "set_volume",
   "move",
+  "collapse_panel",
+  "expand_panel",
 ] as const;
 export type UiAction = (typeof UI_ACTIONS)[number];
 /** Where "move" can put the orb: a spot on screen, or a nudge in one direction. */
@@ -60,6 +62,8 @@ export function quickUiCommand(request: string): UiCommand | null {
   if (/^(show|open)( me)? the (last )?map( again)?$/.test(s)) return { action: "show_last_map" };
   if (/^(louder|speak up|volume up|turn (it|yourself) up|turn up( the volume)?)( please)?$/.test(s)) return { action: "volume_up" };
   if (/^(quieter|softer|volume down|turn (it|yourself) down|turn down( the volume)?)( please)?$/.test(s)) return { action: "volume_down" };
+  if (/^(collapse|minimi[sz]e|shrink|fold)( your| the)? (panel|thinking window|transmission( panel)?|card)$/.test(s)) return { action: "collapse_panel" };
+  if (/^(expand|open|unfold|show)( your| the)? (panel|thinking window|transmission( panel)?|card)$/.test(s)) return { action: "expand_panel" };
   const position = parseMove(s.replace(/\b(please|a bit|a little|slightly|the screen|of the screen)\b/g, " ").replace(/\s+/g, " ").trim());
   if (position) return { action: "move", position };
   return null;

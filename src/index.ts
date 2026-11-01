@@ -25,7 +25,7 @@ import {
   speakQuestion,
   type QuestionAnswer,
 } from "./voice/answers.js";
-import { matchWake, matchWakeAnywhere, speechHint } from "./voice/wake.js";
+import { matchWake, matchWakeAnywhere, speechHint, stripOwnSpeech } from "./voice/wake.js";
 
 const HELP = `Say "Astra" to wake her. Commands: /new (fresh conversation), /brain, /mute, /unmute, /wake on|off, /help, /quit. Ctrl-C or Esc on the orb stops her.`;
 const STOP_WORDS = /^(stop|cancel|never ?mind|be quiet|quiet|shush|shut up)\b/i;
@@ -116,6 +116,8 @@ async function main(): Promise<void> {
   let orb: Orb | null = null;
   let ownSpeech = "";
   let lastSpokeAt = 0;
+  // Her recent sentences with when she said them, to cut her own voice out of what the mic heard.
+  const spoken: { text: string; at: number }[] = [];
   let listening = false;
   let speaking = false;
   let busy = false;
@@ -129,6 +131,8 @@ async function main(): Promise<void> {
     onUtterance: (u) => {
       ownSpeech = u.text;
       lastSpokeAt = Date.now();
+      spoken.push({ text: u.text, at: lastSpokeAt });
+      if (spoken.length > 20) spoken.shift();
       orb?.send({ type: "utterance", ...u });
     },
     onSpeaking: (on) => {
@@ -283,7 +287,9 @@ async function main(): Promise<void> {
       const heard = await wakeListener.stopAndTranscribe();
       // If she spoke at any point during the recording, her voice is in it, so the name may come anywhere.
       const herVoice = talking || speaking || lastSpokeAt >= startedAt;
-      const request = herVoice ? matchWakeAnywhere(heard, ownSpeech) : matchWake(heard);
+      const raw = herVoice ? matchWakeAnywhere(heard, ownSpeech) : matchWake(heard);
+      const request =
+        raw !== null && herVoice ? stripOwnSpeech(raw, spoken.filter((s) => s.at >= startedAt - 15_000).map((s) => s.text)) : raw;
       if (process.env.JARVIS_DEBUG_WAKE) console.log(`  (wake ${herVoice ? "over her voice" : "idle"} heard: "${heard}" → ${request === null ? "ignored" : `"${request}"`})`);
       if (request !== null) onWake(request);
     }
@@ -468,6 +474,8 @@ async function main(): Promise<void> {
       minimise: "Minimised to the menu bar.",
       show: "The orb is back.",
       close_panels: "Closed the panels.",
+      collapse_panel: "Collapsed the thinking window.",
+      expand_panel: "Expanded the thinking window.",
       show_last_detail: "Re-opened the last detail panel (if there was one).",
       show_last_map: "Re-opened the last map (if there was one).",
     };

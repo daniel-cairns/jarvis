@@ -3,7 +3,7 @@ import fs from "node:fs";
 import { describe, expect, it } from "vitest";
 import { renderDetail } from "../src/ui/detail.js";
 import { parseFromOrb } from "../src/ui/orb.js";
-import { recorderArgs } from "../src/voice/listener.js";
+import { minSpeechBytes, recorderArgs } from "../src/voice/listener.js";
 import { decodeWav16, encodeWav16, loudnessEnvelope } from "../src/voice/audio.js";
 import { Speaker, type Utterance } from "../src/voice/speaker.js";
 import type { Tts } from "../src/voice/tts.js";
@@ -182,5 +182,13 @@ describe("renderDetail", () => {
     expect(html).toContain("&lt;script&gt;");
     expect(html).toContain('<a href="https://example.com" title="t">ok</a>');
     expect(html).toContain("[image: logo]");
+  });
+});
+
+describe("minSpeechBytes", () => {
+  it("keeps a quick spoken 'no' (about 0.4 s once trimmed) but still drops push-to-talk taps", () => {
+    const noTrimmed = 13_162; // measured: "No." after sox's silence trimming
+    expect(noTrimmed).toBeGreaterThan(minSpeechBytes(true));
+    expect(minSpeechBytes(false)).toBe(16_000);
   });
 });

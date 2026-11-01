@@ -206,6 +206,9 @@ app.whenReady().then(() => {
     else if (action === "close_panels") for (const slab of Object.values(slabs)) slab.win?.isDestroyed() === false && slab.win.close();
     else if (action === "show_last_detail" && slabs.detail.last) openSlab("detail", slabs.detail.last);
     else if (action === "show_last_map" && slabs.graph.last) openSlab("graph", slabs.graph.last);
+    else if (action === "collapse_panel" || action === "expand_panel") {
+      win.webContents.send("jarvis", { type: "collapse", collapsed: action === "collapse_panel" });
+    }
   };
 
   /** Slides the window to (x, y) over ~450 ms, eased, instead of jumping. */
@@ -227,10 +230,7 @@ app.whenReady().then(() => {
       }, 16);
     });
 
-  /**
-   * Astra moving herself: a spot on screen (where the orb, not the window, should end up) or a nudge. For a spot in
-   * the other half of the screen the layout flips first, so the orb lands exactly there.
-   */
+  /** Astra moving herself: a spot on screen (where the orb, not the window, ends up) or a nudge. */
   const ORB_CENTRE = 136; // the orb's centre inside its canvas (orb.js: H / 2 + 6)
   const NUDGE = 140;
   const moveTo = async (position) => {
@@ -240,76 +240,81 @@ app.whenReady().then(() => {
     if (position.startsWith("nudge_")) {
       const dx = position === "nudge_left" ? -NUDGE : position === "nudge_right" ? NUDGE : 0;
       const dy = position === "nudge_up" ? -NUDGE : position === "nudge_down" ? NUDGE : 0;
-      const x = Math.max(wa.x, Math.min(b.x + dx, wa.x + wa.width - b.width));
-      await glideTo(x, b.y + dy);
-      return void updateLayout();
+      await glideTo(Math.max(wa.x, Math.min(b.x + dx, wa.x + wa.width - b.width)), b.y + dy);
+      return void arrange();
     }
-    const [vertical, horizontal] = position.includes("_") ? position.split("_") : ["top", "bottom"].includes(position) ? [position, "centre"] : ["middle", position];
-    const wantTop = vertical === "top";
-    if (vertical !== "middle" && wantTop !== layoutTop) {
-      flipping = true;
-      layoutTop = wantTop;
-      win.webContents.send("jarvis", { type: "layout", top: wantTop });
-      await new Promise((r) => setTimeout(r, 40));
-      orbOffset = await orbTop();
-      flipping = false;
-    }
+    const [vertical, horizontal] = position.includes("_")
+      ? position.split("_")
+      : ["top", "bottom"].includes(position) ? [position, "centre"] : ["middle", position];
     const margin = 8;
     const x =
       horizontal === "left" ? wa.x + margin : horizontal === "right" ? wa.x + wa.width - b.width - margin : Math.round(wa.x + (wa.width - b.width) / 2);
-    const orbY =
+    const orbCentreY =
       vertical === "top" ? wa.y + ORB_CENTRE - 20 : vertical === "bottom" ? wa.y + wa.height - 150 : Math.round(wa.y + wa.height / 2);
-    await glideTo(x, Math.round(orbY - orbOffset - ORB_CENTRE));
-    void updateLayout();
+    // At the top the cards must go below for the orb to reach the menu bar: arrange that before gliding there.
+    if (vertical === "top" && !layoutTop) {
+      layoutTop = true;
+      win.webContents.send("jarvis", { type: "layout", top: true });
+      await settle();
+      orbOffset = await orbTop();
+    }
+    await glideTo(x, Math.round(orbCentreY - ORB_CENTRE - orbOffset));
+    void arrange();
   };
 
-  // The orb sits at the top of its window in the upper half of the screen and at the bottom in the lower half, so
-  // it can be dragged right up under the menu bar (macOS won't move a window's top edge above it).
-  // When it flips, the window shifts by however far the orb moved inside it, so the orb stays under the cursor.
-  let layoutTop = false;
-  let orbOffset = null;
-  let flipping = false;
+  /*
+   * Window arrangement. The orb stays where it is on screen; the window around it is sized to what's showing, and
+   * her cards go below the orb whenever they fit above the bottom of the screen, otherwise above it. (With the cards
+   * below, the orb is at the window's top, so it can also be dragged right up under the menu bar.)
+   */
+  const ORB_SECTION = 290; // the orb, its state label and padding: the window's height with no cards showing
+  let layoutTop = true; // true: cards below the orb
+  let orbOffset = null; // the orb's top inside the window
+  let wantedHeight = ORB_SECTION;
+  let arranging = false;
+  let arrangeAgain = false;
   const orbTop = () => win.webContents.executeJavaScript("document.querySelector('.orb-wrap').offsetTop");
-  const updateLayout = async () => {
-    if (flipping || orbOffset === null) return;
-    const b = win.getBounds();
-    const { workArea } = screen.getDisplayMatching(b);
-    const orbCentre = b.y + orbOffset + 130;
-    const mid = workArea.y + workArea.height / 2;
-    const top = layoutTop ? orbCentre < mid + 30 : orbCentre < mid - 30; // hysteresis: no flapping at the middle
-    if (top === layoutTop) return;
-    flipping = true;
-    layoutTop = top;
-    win.webContents.send("jarvis", { type: "layout", top });
-    await new Promise((r) => setTimeout(r, 30));
-    const next = await orbTop();
-    const delta = orbOffset - next;
-    orbOffset = next;
-    const [x, y] = win.getPosition();
-    win.setPosition(x, y + delta);
-    if (drag?.target === win) drag.winY += delta;
-    flipping = false;
+  const settle = () => new Promise((r) => setTimeout(r, 30));
+
+  const arrange = async () => {
+    if (orbOffset === null) return;
+    if (arranging) return void (arrangeAgain = true);
+    arranging = true;
+    try {
+      do {
+        arrangeAgain = false;
+        const b = win.getBounds();
+        const { workArea: wa } = screen.getDisplayMatching(b);
+        const orbScreenY = b.y + orbOffset;
+        const height = Math.round(Math.min(Math.max(wantedHeight, ORB_SECTION), wa.height - 16));
+        const below = orbScreenY + height <= wa.y + wa.height - 4;
+        if (below === layoutTop && height === b.height) continue;
+        if (below !== layoutTop) {
+          layoutTop = below;
+          win.webContents.send("jarvis", { type: "layout", top: below });
+        }
+        win.setBounds({ x: b.x, y: b.y, width: b.width, height });
+        await settle();
+        orbOffset = await orbTop();
+        const y = Math.max(wa.y, Math.min(orbScreenY - orbOffset, wa.y + wa.height - height));
+        win.setPosition(b.x, y);
+        if (drag?.target === win) drag.winY += y - b.y;
+      } while (arrangeAgain);
+    } finally {
+      arranging = false;
+    }
   };
   win.webContents.on("did-finish-load", async () => {
+    win.webContents.send("jarvis", { type: "layout", top: layoutTop });
+    await settle();
     orbOffset = await orbTop();
-    void updateLayout();
+    void arrange();
   });
-  win.on("moved", updateLayout);
+  win.on("moved", () => void arrange());
 
-  /**
-   * Resizes the orb window to its content. In the lower half the bottom edge stays put (the orb sits at the bottom
-   * and cards grow upwards); in the upper half the top edge stays put. Either way the orb doesn't move.
-   */
-  const fitHeight = async (wanted) => {
-    const b = win.getBounds();
-    const { workArea } = screen.getDisplayMatching(b);
-    const height = Math.round(Math.min(Math.max(wanted, 290), workArea.height - 16));
-    if (height === b.height) return;
-    let y = layoutTop ? b.y : b.y + b.height - height;
-    y = Math.max(workArea.y, Math.min(y, workArea.y + workArea.height - height));
-    win.setBounds({ x: b.x, y, width: b.width, height });
-    if (drag?.target === win) drag.winY += y - b.y;
-    orbOffset = await orbTop();
+  const fitHeight = (wanted) => {
+    wantedHeight = wanted;
+    void arrange();
   };
 
   // Dragging is done here rather than with CSS drag regions, which don't take hold reliably on a transparent window.
@@ -318,7 +323,7 @@ app.whenReady().then(() => {
     if (!drag || drag.target.isDestroyed()) return;
     const p = screen.getCursorScreenPoint();
     drag.target.setPosition(drag.winX + p.x - drag.cursorX, drag.winY + p.y - drag.cursorY);
-    if (drag.target === win) void updateLayout();
+    if (drag.target === win) void arrange();
   };
 
   ipcMain.on("orb", (event, m) => {

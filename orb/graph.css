@@ -29,7 +29,8 @@
   color: var(--muted);
   pointer-events: none;
 }
-.legend .dot { display: inline-block; width: 8px; height: 8px; margin-right: 6px; border-radius: 50%; box-shadow: 0 0 6px currentColor; }
+.legend li { display: flex; align-items: center; }
+.legend .icon { width: 16px; height: 16px; margin-right: 5px; }
 
 .stage-wrap .hint {
   position: absolute;

@@ -1,5 +1,20 @@
 import { describe, expect, it } from "vitest";
-import { matchWake, matchWakeAnywhere, speechHint } from "../src/voice/wake.js";
+import { matchWake, matchWakeAnywhere, speechHint, stripOwnSpeech } from "../src/voice/wake.js";
+
+describe("stripOwnSpeech", () => {
+  it("cuts her own reply off a request heard over her voice", () => {
+    expect(
+      stripOwnSpeech("run the shell command date for me. It's now 1.13 in the morning on Monday", [
+        "It's now 1:13 in the morning on Monday, the second of November.",
+      ]),
+    ).toBe("run the shell command date for me.");
+  });
+
+  it("leaves a request alone when none of her sentences appear in it", () => {
+    expect(stripOwnSpeech("open Quire", ["The teardown is saved."])).toBe("open Quire");
+    expect(stripOwnSpeech("stop", [])).toBe("stop");
+  });
+});
 
 describe("matchWakeAnywhere", () => {
   it("finds the name mid-recording while she talks", () => {

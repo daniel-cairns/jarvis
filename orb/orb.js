@@ -352,6 +352,7 @@
     } else if (m.type === "activity") addActivity(m.text, m.glyph);
     else if (m.type === "activity-reset") resetActivity();
     else if (m.type === "layout") document.body.classList.toggle("top", !!m.top);
+    else if (m.type === "collapse") setCollapsed(!!m.collapsed);
     else if (m.type === "volume-level" && !m.quiet) showVolume(m.level);
   });
 
@@ -706,10 +707,28 @@
       ctx.lineWidth = 6 * (1 - dial.burst) + 1;
       ctx.stroke();
     }
-    // Chevrons round the outside; the top one is the master that engages on each lock.
+    // Chevrons round the outside; the top one is the master that engages on each lock. With the thinking window
+    // collapsed they also show her state: breathing turquoise while listening, a chase while thinking, lighting
+    // outwards from the top with her voice while speaking.
+    const showState = card.classList.contains("collapsed") && !reducedMotion;
+    const stateLit = (c) => {
+      if (!showState) return 0;
+      if (state === "listening") return 0.45 + 0.35 * Math.sin(t * 3);
+      if (state === "thinking") {
+        const head = (t * 7) % CHEVRONS;
+        const behind = (head - c + CHEVRONS) % CHEVRONS;
+        return behind < 3 ? 1 - behind / 3 : 0;
+      }
+      if (state === "speaking") {
+        const fromTop = Math.min(c, CHEVRONS - c);
+        return fromTop <= level * 5 ? 0.5 + level * 0.5 : 0;
+      }
+      return 0;
+    };
     for (let c = 0; c < CHEVRONS; c++) {
       const a = -Math.PI / 2 + (c * Math.PI * 2) / CHEVRONS;
-      const lit = c === 0 ? Math.max(dial.engage, dial.lit >= LOCKS ? dial.glow : 0) : c <= dial.lit ? dial.glow : 0;
+      const dialLit = c === 0 ? Math.max(dial.engage, dial.lit >= LOCKS ? dial.glow : 0) : c <= dial.lit ? dial.glow : 0;
+      const lit = Math.max(dialLit, stateLit(c));
       ctx.save();
       ctx.translate(cx + Math.cos(a) * (gr + 13), cy + Math.sin(a) * (gr + 13));
       ctx.rotate(a + Math.PI / 2); // local +y points in at the ring

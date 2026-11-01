@@ -15,6 +15,8 @@ describe("quickUiCommand", () => {
     expect(quickUiCommand("close the map")).toEqual({ action: "close_panels" });
     expect(quickUiCommand("open my brain")).toEqual({ action: "show_brain" });
     expect(quickUiCommand("show me the map again")).toEqual({ action: "show_last_map" });
+    expect(quickUiCommand("collapse your panel")).toEqual({ action: "collapse_panel" });
+    expect(quickUiCommand("Expand the thinking window.")).toEqual({ action: "expand_panel" });
   });
 
   it("understands volume commands", () => {

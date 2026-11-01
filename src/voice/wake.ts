@@ -29,6 +29,38 @@ export function matchWakeAnywhere(transcript: string, ownSpeech: string): string
   return transcript.slice(last.index! + last[0].length).trim();
 }
 
+const words = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, " ").split(/\s+/).filter(Boolean);
+
+/**
+ * Cuts her own words out of a request heard while she was talking: whisper hears both voices, so "Astra, run date"
+ * can come back as "run date. It's now 1:13 in the morning…". The request is cut where any sentence she spoke during
+ * the recording begins (matched on its first three words).
+ */
+export function stripOwnSpeech(request: string, ownSentences: string[]): string {
+  const req = words(request);
+  let cut = req.length;
+  for (const sentence of ownSentences) {
+    const head = words(sentence).slice(0, 3);
+    if (head.length < 2) continue;
+    for (let i = 0; i + head.length <= req.length; i++) {
+      if (head.every((w, j) => req[i + j] === w)) {
+        cut = Math.min(cut, i);
+        break;
+      }
+    }
+  }
+  if (cut === req.length) return request.trim();
+  // Map the cut (in words) back onto the original text, keeping its punctuation.
+  const tokens = request.trim().split(/\s+/);
+  let seen = 0;
+  const kept: string[] = [];
+  for (const token of tokens) {
+    if (words(token).length && seen++ >= cut) break;
+    kept.push(token);
+  }
+  return kept.join(" ").replace(/[\s,;:-]+$/, "").trim();
+}
+
 /**
  * A sentence that primes whisper with names it would otherwise mishear ("Quire" → "choir").
  * It must read as a sentence: a bare comma-separated list made whisper return nothing in testing.

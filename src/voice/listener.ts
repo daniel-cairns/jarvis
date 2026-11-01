@@ -41,7 +41,10 @@ export type ListenOptions = {
 };
 
 const WAV_HEADER_BYTES = 44;
-/** Amplitude below which the mic counts as quiet. Room noise here measured ~0.0003 RMS; speech peaks were ~0.26. */
+/**
+ * Level below which the mic counts as quiet. 1%: at 0.6% everyday room noise kept resetting the end-of-speech timer
+ * (recordings ran ~6 s past the last word). Quiet voices at a low mic input level need JARVIS_MIC_GAIN_DB instead.
+ */
 const QUIET_THRESHOLD = "1%";
 
 /** 16 kHz mono 16-bit is the format whisper.cpp expects; `silence` trims leading quiet and stops after a pause. */
@@ -58,8 +61,14 @@ export function recorderArgs(wav: string, opts: ListenOptions = {}): string[] {
   return args;
 }
 
-/** Below this, a recording is a stray double-tap; whisper hallucinates words like "you" from it. */
-const MIN_SPEECH_BYTES = 16_000 * 2 * 0.5;
+/**
+ * The shortest recording worth transcribing. Untrimmed push-to-talk: half a second, below which it's a stray
+ * double-tap (whisper hallucinates "you" from those). Silence-trimmed recordings are already just speech, and a quick
+ * "no" is about 0.4 s of it, so they only need 0.15 s; the half-second guard used to drop short spoken answers.
+ */
+export function minSpeechBytes(autoStop: boolean): number {
+  return Math.round(16_000 * 2 * (autoStop ? 0.15 : 0.5));
+}
 
 /**
  * Asks a recorder to stop with SIGINT so it can finalise the WAV, escalating to SIGTERM then SIGKILL.
@@ -83,6 +92,7 @@ export class Listener {
   private recorder: ChildProcess | null = null;
   private wavPath: string | null = null;
   private done: Promise<void> = Promise.resolve();
+  private minBytes = minSpeechBytes(false);
 
   constructor(private readonly cfg: ListenerConfig) {}
 
@@ -115,6 +125,7 @@ export class Listener {
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), "jarvis-audio-"));
     const wav = path.join(dir, "input.wav");
     this.wavPath = wav;
+    this.minBytes = minSpeechBytes(!!opts.autoStop);
     const rec = spawn(this.cfg.recorderBin, recorderArgs(wav, opts), { stdio: "ignore" });
     this.recorder = rec;
     this.done = new Promise((resolve) => rec.once("exit", () => resolve()));
@@ -169,7 +180,7 @@ export class Listener {
 
     try {
       const size = await fs.stat(wav).then((s) => s.size, () => 0);
-      if (size < MIN_SPEECH_BYTES) return "";
+      if (size < this.minBytes) return "";
       const { stdout } = await execFileAsync(
         this.cfg.whisperBin,
         ["-m", this.cfg.whisperModel, "-f", wav, "-l", "en", "-nt", "-np", ...(this.cfg.hint ? ["--prompt", this.cfg.hint] : [])],
