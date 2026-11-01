@@ -112,9 +112,14 @@ describe("parseFromOrb", () => {
 describe("recorderArgs", () => {
   it("records 16 kHz mono 16-bit, and only adds silence detection for auto-stop", () => {
     expect(recorderArgs("/tmp/a.wav")).toEqual(["-q", "-r", "16000", "-c", "1", "-b", "16", "/tmp/a.wav"]);
+    // "2.00", never "2": sox reads a bare integer as samples and stopped every recording at the first word gap.
     expect(recorderArgs("/tmp/a.wav", { autoStop: true, pauseSec: 2 }).slice(8)).toEqual(
-      ["silence", "1", "0.1", "1%", "1", "2", "1%"],
+      ["silence", "1", "0.10", "1%", "1", "2.00", "1%"],
     );
+  });
+
+  it("boosts a quiet mic before speech detection, with a limiter", () => {
+    expect(recorderArgs("/tmp/a.wav", { autoStop: true, gainDb: 20 }).slice(8, 12)).toEqual(["gain", "-l", "20", "silence"]);
   });
 });
 

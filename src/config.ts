@@ -17,6 +17,8 @@ export type JarvisConfig = {
   wakeWord: boolean;
   /** Seconds of quiet that mean "finished talking". */
   pauseSec: number;
+  /** Optional microphone boost in dB before speech detection, for quiet mics. Off by default. */
+  micGainDb: number;
   recorderBin: string;
   whisperBin: string;
   whisperModel: string;
@@ -69,6 +71,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): JarvisConfig {
     sayVoice,
     wakeWord: (env.JARVIS_WAKE ?? "on").toLowerCase() !== "off",
     pauseSec: positiveNumber(env.JARVIS_PAUSE_SEC, 2, "JARVIS_PAUSE_SEC"),
+    micGainDb: env.JARVIS_MIC_GAIN_DB === undefined || env.JARVIS_MIC_GAIN_DB === "0" ? 0 : positiveNumber(env.JARVIS_MIC_GAIN_DB, 0, "JARVIS_MIC_GAIN_DB"),
     ttsCacheDir: expandHome(env.JARVIS_TTS_CACHE_DIR ?? path.join(home, "models", "tts")),
     speechRate: positiveNumber(env.JARVIS_SPEECH_RATE, 190, "JARVIS_SPEECH_RATE"),
     recorderBin: env.JARVIS_RECORDER_BIN ?? "rec",

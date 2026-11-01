@@ -36,6 +36,8 @@ export type ListenOptions = {
   noSpeechMs?: number;
   /** Stop recording after this long regardless. */
   maxMs?: number;
+  /** Boost applied (with a limiter) before speech detection, for quiet mics. 0 = none. */
+  gainDb?: number;
 };
 
 const WAV_HEADER_BYTES = 44;
@@ -45,8 +47,13 @@ const QUIET_THRESHOLD = "1%";
 /** 16 kHz mono 16-bit is the format whisper.cpp expects; `silence` trims leading quiet and stops after a pause. */
 export function recorderArgs(wav: string, opts: ListenOptions = {}): string[] {
   const args = ["-q", "-r", "16000", "-c", "1", "-b", "16", wav];
+  // Gain comes first in the effect chain so speech detection hears the boosted signal; -l limits it to avoid clipping.
+  if (opts.gainDb) args.push("gain", "-l", String(opts.gainDb));
   if (opts.autoStop) {
-    args.push("silence", "1", "0.1", QUIET_THRESHOLD, "1", String(opts.pauseSec ?? 1.5), QUIET_THRESHOLD);
+    // Always write the pause with decimals: sox reads a bare "2" as 2 *samples*, which cut every recording off at the
+    // first gap between words.
+    const pause = (opts.pauseSec ?? 1.5).toFixed(2);
+    args.push("silence", "1", "0.10", QUIET_THRESHOLD, "1", pause, QUIET_THRESHOLD);
   }
   return args;
 }

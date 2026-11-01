@@ -188,7 +188,7 @@ async function main(): Promise<void> {
         while (speaking && !signal.aborted) await sleep(150);
         if (signal.aborted) break;
         refreshHint();
-        await wakeListener.start({ autoStop: true, pauseSec: cfg.pauseSec, noSpeechMs: Infinity, maxMs: 20_000 });
+        await wakeListener.start({ autoStop: true, pauseSec: cfg.pauseSec, gainDb: cfg.micGainDb, noSpeechMs: Infinity, maxMs: 20_000 });
         if (signal.aborted) {
           await wakeListener.cancel();
           break;
@@ -245,7 +245,7 @@ async function main(): Promise<void> {
     }
     refreshHint();
     speaker.stop();
-    await listener.start({ autoStop: true, pauseSec: cfg.pauseSec, noSpeechMs: listenNow ? 8_000 : 15_000 });
+    await listener.start({ autoStop: true, pauseSec: cfg.pauseSec, gainDb: cfg.micGainDb, noSpeechMs: listenNow ? 8_000 : 15_000 });
     listening = true;
     syncOrb();
     const early = new AbortController();
