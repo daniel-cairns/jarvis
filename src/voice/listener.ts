@@ -21,6 +21,28 @@ export function cleanTranscript(raw: string): string {
     .trim();
 }
 
+export type ListenOptions = {
+  /** End the recording when the speaker pauses, instead of waiting for a second press. */
+  autoStop?: boolean;
+  /** Seconds of quiet that count as "finished talking". */
+  pauseSec?: number;
+  /** Give up if no speech starts within this long. */
+  noSpeechMs?: number;
+};
+
+const WAV_HEADER_BYTES = 44;
+/** Amplitude below which the mic counts as quiet. Room noise here measured ~0.0003 RMS; speech peaks were ~0.26. */
+const QUIET_THRESHOLD = "1%";
+
+/** 16 kHz mono 16-bit is the format whisper.cpp expects; `silence` trims leading quiet and stops after a pause. */
+export function recorderArgs(wav: string, opts: ListenOptions = {}): string[] {
+  const args = ["-q", "-r", "16000", "-c", "1", "-b", "16", wav];
+  if (opts.autoStop) {
+    args.push("silence", "1", "0.1", QUIET_THRESHOLD, "1", String(opts.pauseSec ?? 1.5), QUIET_THRESHOLD);
+  }
+  return args;
+}
+
 /** Below this, a recording is a stray double-tap; whisper hallucinates words like "you" from it. */
 const MIN_SPEECH_BYTES = 16_000 * 2 * 0.5;
 
@@ -45,6 +67,7 @@ export function stopGracefully(child: ChildProcess, graceMs = 2_000): Promise<vo
 export class Listener {
   private recorder: ChildProcess | null = null;
   private wavPath: string | null = null;
+  private done: Promise<void> = Promise.resolve();
 
   constructor(private readonly cfg: ListenerConfig) {}
 
@@ -68,14 +91,37 @@ export class Listener {
     return problems;
   }
 
-  async start(): Promise<void> {
+  /**
+   * Starts recording. With autoStop, sox ends the recording itself once you pause; if you never start talking,
+   * it's stopped after noSpeechMs. `whenDone()` resolves when the recorder exits by itself.
+   */
+  async start(opts: ListenOptions = {}): Promise<void> {
     if (this.recorder) throw new Error("Already recording");
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), "jarvis-audio-"));
-    this.wavPath = path.join(dir, "input.wav");
-    // 16 kHz mono 16-bit is the format whisper.cpp expects.
-    this.recorder = spawn(this.cfg.recorderBin, ["-q", "-r", "16000", "-c", "1", "-b", "16", this.wavPath], {
-      stdio: "ignore",
-    });
+    const wav = path.join(dir, "input.wav");
+    this.wavPath = wav;
+    const rec = spawn(this.cfg.recorderBin, recorderArgs(wav, opts), { stdio: "ignore" });
+    this.recorder = rec;
+    this.done = new Promise((resolve) => rec.once("exit", () => resolve()));
+    if (opts.autoStop) this.watchForNoSpeech(rec, wav, opts.noSpeechMs ?? 8_000);
+  }
+
+  whenDone(): Promise<void> {
+    return this.done;
+  }
+
+  /** sox writes nothing until speech starts (the `silence` effect trims it), so a header-only file means no speech yet. */
+  private watchForNoSpeech(rec: ChildProcess, wav: string, noSpeechMs: number): void {
+    const startedAt = Date.now();
+    const timer = setInterval(async () => {
+      if (rec.exitCode !== null || rec.signalCode !== null) return clearInterval(timer);
+      const size = await fs.stat(wav).then((s) => s.size, () => 0);
+      if (size > WAV_HEADER_BYTES) return clearInterval(timer);
+      if (Date.now() - startedAt >= noSpeechMs) {
+        clearInterval(timer);
+        void stopGracefully(rec);
+      }
+    }, 250);
   }
 
   async stopAndTranscribe(): Promise<string> {

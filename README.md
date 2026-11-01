@@ -10,9 +10,13 @@ test it, and open it.
 Speech in and out runs on your machine (whisper.cpp in, the [Kokoro](https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX)
 neural voice out, with macOS `say` as the fallback). The only thing that leaves your Mac is the conversation with Claude.
 
-Jarvis lives in a floating orb: a transparent, always-on-top window that ripples while it listens, spins while it works
-and pulses with every syllable it speaks. Click it to talk; when Jarvis needs permission, the orb shows the details with
-No / Always / Yes buttons. Drag it anywhere by its glow.
+Jarvis lives in a floating orb, an arc reactor crossed with a winged sun: it opens its eye and ripples while it listens,
+spins its rings while it works, and spreads its wings and pulses with every syllable it speaks. Drag it anywhere.
+Hover and press **–** to minimise it; click the sun icon in the menu bar to bring it back. It comes back by itself when
+it needs your permission, showing the details with No / Always / Yes buttons.
+
+**Talking is a conversation:** click the core of the orb (or press Enter) and speak. Jarvis notices when you pause,
+answers, then listens for your reply. Say nothing for a few seconds and it goes back to sleep.
 
 ## What it can do
 

@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { describe, expect, it } from "vitest";
 import { parseFromOrb } from "../src/ui/orb.js";
+import { recorderArgs } from "../src/voice/listener.js";
 import { decodeWav16, encodeWav16, loudnessEnvelope } from "../src/voice/audio.js";
 import { Speaker, type Utterance } from "../src/voice/speaker.js";
 import type { Tts } from "../src/voice/tts.js";
@@ -103,5 +104,14 @@ describe("parseFromOrb", () => {
     expect(parseFromOrb('{"type":"answer","id":"3","answer":"sure"}')).toBeNull();
     expect(parseFromOrb('{"type":"exec","cmd":"rm"}')).toBeNull();
     expect(parseFromOrb("[1234:ERROR:gpu_init.cc] Chromium noise")).toBeNull();
+  });
+});
+
+describe("recorderArgs", () => {
+  it("records 16 kHz mono 16-bit, and only adds silence detection for auto-stop", () => {
+    expect(recorderArgs("/tmp/a.wav")).toEqual(["-q", "-r", "16000", "-c", "1", "-b", "16", "/tmp/a.wav"]);
+    expect(recorderArgs("/tmp/a.wav", { autoStop: true, pauseSec: 2 }).slice(8)).toEqual(
+      ["silence", "1", "0.1", "1%", "1", "2", "1%"],
+    );
   });
 });

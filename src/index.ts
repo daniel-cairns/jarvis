@@ -109,20 +109,41 @@ async function main(): Promise<void> {
   };
 
   /** Empty Enter in voice mode means "listen"; anything typed is used as-is. */
-  const getInput = async (prompt: string, signal?: AbortSignal): Promise<string | null> => {
-    const typed = await lines.next(prompt, signal);
-    if (typed === null || typed.trim() || !voiceMode) return typed;
+  let lastInputWasVoice = false;
+
+  /**
+   * Empty Enter (or an orb click) in voice mode means "listen"; anything typed is used as-is.
+   * Listening ends when you pause, or early on another Enter/click. With listenNow it skips the Enter: that's how
+   * Jarvis waits for your reply in a conversation, giving up quietly after a few seconds of silence.
+   */
+  const getInput = async (prompt: string, signal?: AbortSignal, listenNow = false): Promise<string | null> => {
+    lastInputWasVoice = false;
+    if (!listenNow || !voiceMode) {
+      const typed = await lines.next(prompt, signal);
+      if (typed === null || typed.trim() || !voiceMode) return typed;
+    }
     speaker.stop();
-    await listener.start();
+    await listener.start({ autoStop: true, noSpeechMs: listenNow ? 8_000 : 15_000 });
     listening = true;
     syncOrb();
-    const stopped = await lines.next("🎙  Listening... press Enter (or click the orb) when you're done. ", signal);
+    const early = new AbortController();
+    const how = await Promise.race([
+      listener.whenDone().then(() => "paused" as const),
+      lines
+        .next("🎙  Listening... (I'll stop when you pause; Enter or click the orb to stop now) ",
+          signal ? AbortSignal.any([signal, early.signal]) : early.signal)
+        .then((line) => (line === null ? ("cancelled" as const) : ("pressed" as const))),
+    ]);
+    early.abort();
     listening = false;
     syncOrb();
     const heard = await listener.stopAndTranscribe();
-    if (stopped === null) return null;
-    console.log(heard ? `You: ${heard}` : "(I didn't catch anything)");
-    orb?.send({ type: "caption", role: heard ? "you" : "status", text: heard || "I didn't catch anything" });
+    if (how === "cancelled" || signal?.aborted) return null;
+    lastInputWasVoice = true;
+    if (heard || !listenNow) {
+      console.log(heard ? `You: ${heard}` : "(I didn't catch anything)");
+      orb?.send({ type: "caption", role: heard ? "you" : "status", text: heard || "I didn't catch anything" });
+    }
     return heard;
   };
 
@@ -162,8 +183,11 @@ async function main(): Promise<void> {
   console.log(`Jarvis is ready. ${voiceMode ? "Press Enter to talk, or type a request." : "Type a request."}`);
   console.log(HELP);
 
+  // After a spoken exchange Jarvis listens for your reply straight away, like a conversation.
+  let followUp = false;
   for (;;) {
-    const input = await getInput(voiceMode ? "\n[Enter to talk] > " : "\n> ");
+    const input = await getInput(voiceMode ? "\n[Enter to talk] > " : "\n> ", undefined, followUp);
+    followUp = false;
     if (input === null) break;
     const request = input.trim();
     if (!request) continue;
@@ -177,8 +201,10 @@ async function main(): Promise<void> {
     busy = true;
     syncOrb();
     try {
+      const spoken = lastInputWasVoice;
       const result = await jarvis.handle(request);
       console.log(`  (${result.ok ? "done" : result.summary} · $${result.costUsd.toFixed(3)})`);
+      followUp = spoken && result.ok && !muted;
     } catch (err) {
       await say(`That failed: ${(err as Error).message}`);
     } finally {
