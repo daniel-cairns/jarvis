@@ -188,7 +188,7 @@ async function main(): Promise<void> {
         while (speaking && !signal.aborted) await sleep(150);
         if (signal.aborted) break;
         refreshHint();
-        await wakeListener.start({ autoStop: true, pauseSec: 0.8, noSpeechMs: Infinity, maxMs: 20_000 });
+        await wakeListener.start({ autoStop: true, pauseSec: 1.4, noSpeechMs: Infinity, maxMs: 20_000 });
         if (signal.aborted) {
           await wakeListener.cancel();
           break;
