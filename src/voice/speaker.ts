@@ -23,12 +23,15 @@ export type Player = (wavPath: string) => ChildProcess;
 const afplay: Player = (wavPath) => spawn("afplay", [wavPath], { stdio: "ignore" });
 
 /**
- * Speaks one sentence at a time: the next sentence renders while the current one plays, and stop() cuts in
- * between or mid-sentence.
+ * Speaks one sentence at a time from a queue: nothing overlaps and nothing cuts in except stop(). Within a reply the
+ * next sentence renders while the current one plays.
  */
 export class Speaker {
   private player: ChildProcess | null = null;
   private generation = 0;
+  private tail: Promise<void> = Promise.resolve();
+  private pending = 0;
+  private speakingNow = false;
   private tts: Tts;
 
   constructor(
@@ -51,32 +54,61 @@ export class Speaker {
     }
   }
 
-  async speak(markdown: string): Promise<void> {
-    if (!this.enabled) return;
+  /**
+   * Queues text to be spoken after anything already queued, so lines never overlap or cut each other off.
+   * Resolves when this text has been spoken (or dropped by stop()).
+   */
+  speak(markdown: string): Promise<void> {
+    if (!this.enabled) return Promise.resolve();
     const chunks = chunkForSpeech(toSpeakable(markdown));
-    if (!chunks.length) return;
-    this.player?.kill("SIGTERM");
-    const gen = ++this.generation;
-    this.events.onSpeaking?.(true);
-    try {
-      let next = this.render(chunks[0]!);
-      for (let i = 0; i < chunks.length; i++) {
-        const pcm = await next;
-        if (gen !== this.generation) return;
-        if (i + 1 < chunks.length) next = this.render(chunks[i + 1]!);
-        if (pcm) await this.playOne(chunks[i]!, pcm);
-        if (gen !== this.generation) return;
+    if (!chunks.length) return Promise.resolve();
+    const gen = this.generation;
+    this.pending++;
+    const run = this.tail.then(() => this.speakChunks(chunks, gen)).finally(() => {
+      this.pending--;
+      if (this.pending === 0 && this.speakingNow) {
+        this.speakingNow = false;
+        this.events.onSpeaking?.(false);
       }
-    } finally {
-      if (gen === this.generation) this.events.onSpeaking?.(false);
-    }
+    });
+    this.tail = run.catch(() => {});
+    return run;
   }
 
+  /** Resolves once everything queued has been spoken. */
+  whenIdle(): Promise<void> {
+    return this.tail;
+  }
+
+  get busy(): boolean {
+    return this.pending > 0;
+  }
+
+  /** Stops the current line and drops everything queued. */
   stop(): void {
     this.generation++;
     this.player?.kill("SIGTERM");
     this.player = null;
-    this.events.onSpeaking?.(false);
+    if (this.speakingNow) {
+      this.speakingNow = false;
+      this.events.onSpeaking?.(false);
+    }
+  }
+
+  private async speakChunks(chunks: string[], gen: number): Promise<void> {
+    if (gen !== this.generation) return;
+    let next = this.render(chunks[0]!);
+    for (let i = 0; i < chunks.length; i++) {
+      const pcm = await next;
+      if (gen !== this.generation) return;
+      if (i + 1 < chunks.length) next = this.render(chunks[i + 1]!);
+      if (!this.speakingNow) {
+        this.speakingNow = true;
+        this.events.onSpeaking?.(true);
+      }
+      if (pcm) await this.playOne(chunks[i]!, pcm, gen);
+      if (gen !== this.generation) return;
+    }
   }
 
   /** Never rejects: a failed sentence is skipped rather than ending the reply. */
@@ -100,11 +132,13 @@ export class Speaker {
     return true;
   }
 
-  private async playOne(text: string, pcm: Pcm): Promise<void> {
+  private async playOne(text: string, pcm: Pcm, gen: number): Promise<void> {
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), "jarvis-voice-"));
     const wav = path.join(dir, "line.wav");
     try {
       await fs.writeFile(wav, encodeWav16(pcm));
+      // Checked again after the file write: a stop() during it must not let this line start playing anyway.
+      if (gen !== this.generation) return;
       await new Promise<void>((resolve) => {
         const child = this.play(wav);
         this.player = child;

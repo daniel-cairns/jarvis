@@ -91,6 +91,35 @@ describe("Speaker", () => {
     expect(fallback.rendered).toEqual(["Hello."]);
   });
 
+  it("queues lines so they never overlap, in order", async () => {
+    let active = 0;
+    let maxActive = 0;
+    const order: string[] = [];
+    const speaker = new Speaker(fakeTts("primary"), null, true, {
+      onUtterance: (u) => order.push(u.text),
+    }, () => {
+      active++;
+      maxActive = Math.max(maxActive, active);
+      const child = spawn(process.execPath, ["-e", "setTimeout(() => {}, 60)"], { stdio: "ignore" });
+      child.on("exit", () => active--);
+      return child;
+    });
+    await Promise.all([speaker.speak("First line."), speaker.speak("Second line."), speaker.speak("Third.")]);
+    expect(order).toEqual(["First line.", "Second line.", "Third."]);
+    expect(maxActive).toBe(1);
+  });
+
+  it("stop() drops everything queued", async () => {
+    const tts = fakeTts("primary");
+    const speaker = new Speaker(tts, null, true, {}, silentPlayer([]));
+    const first = speaker.speak("One.");
+    const second = speaker.speak("Two.");
+    speaker.stop();
+    await Promise.all([first, second]);
+    expect(tts.rendered.length).toBeLessThanOrEqual(1);
+    expect(speaker.busy).toBe(false);
+  });
+
   it("stays silent when disabled", async () => {
     const tts = fakeTts("primary");
     await new Speaker(tts, null, false, {}, silentPlayer([])).speak("Hello.");
