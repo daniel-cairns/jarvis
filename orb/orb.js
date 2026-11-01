@@ -265,10 +265,10 @@
 
   /**
    * The altar under the eye, drawn like the rest of the glyph: fine gold outlines over a faint fill, lapis edge lines
-   * like the wing tiers, and reactor light inside. A gorge cornice, two papyrus columns and a stepped plinth; the left
-   * column is stop (lit red-gold while Astra is busy), the right is minimise. The DOM buttons sit over the shafts.
+   * like the wing tiers, and reactor light inside. A lotus goblet cradles the orb, with small wings spreading from it,
+   * on a stem of two papyrus columns and a stepped plinth; the left column is stop (lit red-gold while Astra is busy), the right is minimise. The DOM buttons sit over the shafts.
    */
-  function altar(cx, t, busy, hover) {
+  function altar(cx, cy, t, busy, hover) {
     const line = (alpha, width = 1.1) => {
       ctx.strokeStyle = rgba(GOLD, alpha);
       ctx.lineWidth = width;
@@ -338,21 +338,62 @@
       ctx.restore();
     }
 
-    // Gorge cornice across both columns, with a lapis band on top like the wing tiers.
-    shape([[cx - 32, 206], [cx + 32, 206], [cx + 36, 199], [cx - 36, 199]]);
-    ctx.fillStyle = rgba(GOLD, 0.12);
-    ctx.fill();
-    line(0.9);
-    ctx.stroke();
+    // Altar wings: smaller feathered wings spreading low from the cup's lips, drooping slightly, like protective wings.
+    for (const side of [1, -1]) {
+      ctx.save();
+      ctx.translate(cx + side * 56, 178);
+      ctx.scale(side * 0.5, 0.5);
+      ctx.rotate(0.3);
+      wing(0.55, level * 0.5);
+      ctx.restore();
+    }
+
+    // The goblet: its rim follows the orb's curve, so the ring and eye sit in it like a sphere in a chalice.
+    const rimR = 62;
+    const a0 = Math.PI * 0.17;
+    const a1 = Math.PI * 0.83;
+    const lip = (a) => [cx + Math.cos(a) * rimR, cy + Math.sin(a) * rimR];
+    const [rx, ry] = lip(a0);
+    const [lx, ly] = lip(a1);
     ctx.beginPath();
-    ctx.moveTo(cx - 36, 198);
-    ctx.lineTo(cx + 36, 198);
+    ctx.arc(cx, cy, rimR, a0, a1); // rim, right to left through the bottom
+    ctx.lineTo(lx - 5, ly - 2); // left lip flares out
+    ctx.quadraticCurveTo(cx - 58, 200, cx - 12, 206); // left flank down to the stem
+    ctx.lineTo(cx + 12, 206);
+    ctx.quadraticCurveTo(cx + 58, 200, rx + 5, ry - 2); // right flank up to the lip
+    ctx.closePath();
+    const cup = ctx.createLinearGradient(0, ry, 0, 206);
+    cup.addColorStop(0, rgba(GOLD, 0.05));
+    cup.addColorStop(1, rgba(GOLD, 0.24));
+    ctx.fillStyle = cup;
+    ctx.fill();
+    line(0.95, 1.2);
+    ctx.stroke();
+    // Lapis band just inside the rim, like the wing tiers.
+    ctx.beginPath();
+    ctx.arc(cx, cy, rimR + 2, a0 + 0.04, a1 - 0.04);
     ctx.strokeStyle = rgba(LAPIS, 0.85);
     ctx.lineWidth = 1.6;
     ctx.stroke();
-    // A small sun disc at the centre of the cornice.
+    // Lotus petals fanning from the stem up to the rim.
+    line(0.55, 0.9);
+    for (const i of [-2, -1, 0, 1, 2]) {
+      const a = Math.PI / 2 - i * 0.3;
+      const [tx, ty] = [cx + Math.cos(a) * (rimR + 4), cy + Math.sin(a) * (rimR + 4)];
+      const bx = cx + i * 4;
+      ctx.beginPath();
+      ctx.moveTo(bx, 205);
+      ctx.quadraticCurveTo((bx + tx) / 2 - 5, (205 + ty) / 2 + 2, tx, ty);
+      ctx.quadraticCurveTo((bx + tx) / 2 + 5, (205 + ty) / 2 + 2, bx, 205);
+      ctx.stroke();
+    }
+    // The knot where the cup meets its column stem, with a small sun disc.
+    ctx.fillStyle = rgba(GOLD, 0.16);
+    ctx.fillRect(cx - 30, 205.5, 60, 3);
+    line(0.9);
+    ctx.strokeRect(cx - 30, 205.5, 60, 3);
     ctx.beginPath();
-    ctx.arc(cx, 202.5, 1.8, 0, Math.PI * 2);
+    ctx.arc(cx, 207, 1.8, 0, Math.PI * 2);
     ctx.fillStyle = rgba(GOLD, 0.95);
     ctx.fill();
   }
@@ -509,7 +550,7 @@
       ctx.stroke();
     }
 
-    altar(cx, t, state !== "idle", hovered);
+    altar(cx, cy, t, state !== "idle", hovered);
 
     // Core: white-hot sun disc
     const core = ctx.createRadialGradient(cx, cy, r * 0.05, cx, cy, r);
