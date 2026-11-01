@@ -168,7 +168,7 @@ main {
 
 /*
  * Stop and minimise sit on the small wings just below the eye (drawn on the canvas), as gold line-art glyphs:
- * stop centred at (124, 213), minimise at (196, 213).
+ * stop centred at (134, 213), minimise at (186, 213), mid-wing.
  */
 #stop, #minimise {
   position: absolute;
@@ -183,8 +183,8 @@ main {
   place-items: center;
   cursor: pointer;
 }
-#stop { left: 111px; }
-#minimise { left: 183px; }
+#stop { left: 121px; }
+#minimise { left: 173px; }
 #stop:disabled { cursor: default; }
 #stop svg, #minimise svg {
   width: 16px;

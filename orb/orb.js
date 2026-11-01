@@ -276,7 +276,7 @@
       wing(0.6, level * 0.5);
       ctx.restore();
     }
-    for (const [id, x] of [["stop", cx - 36], ["minimise", cx + 36]]) {
+    for (const [id, x] of [["stop", cx - 26], ["minimise", cx + 26]]) {
       const busyStop = id === "stop" && busy;
       const lit = (hover === id ? 1 : 0) + (busyStop ? 0.55 + 0.3 * Math.sin(t * 4) : 0);
       if (lit <= 0) continue;
