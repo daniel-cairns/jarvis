@@ -264,69 +264,97 @@
   }
 
   /**
-   * The altar under the eye: a gorge cornice, two papyrus columns and a stepped plinth. The left column is stop
-   * (lit red-gold while Astra is busy), the right is minimise; the DOM buttons sit over the column shafts.
+   * The altar under the eye, drawn like the rest of the glyph: fine gold outlines over a faint fill, lapis edge lines
+   * like the wing tiers, and reactor light inside. A gorge cornice, two papyrus columns and a stepped plinth; the left
+   * column is stop (lit red-gold while Astra is busy), the right is minimise. The DOM buttons sit over the shafts.
    */
   function altar(cx, t, busy, hover) {
-    const GOLD_DARK = [150, 104, 34];
-    const columnFill = (x0, w, glow) => {
-      const g = ctx.createLinearGradient(x0, 0, x0 + w, 0);
-      g.addColorStop(0, rgba(GOLD_DARK, 0.95));
-      g.addColorStop(0.45, rgba(GOLD.map((v) => lerp(v, 255, 0.25 + glow * 0.3)), 1));
-      g.addColorStop(1, rgba(GOLD_DARK, 0.95));
-      return g;
+    const line = (alpha, width = 1.1) => {
+      ctx.strokeStyle = rgba(GOLD, alpha);
+      ctx.lineWidth = width;
     };
-    // Plinth: two steps.
-    ctx.fillStyle = rgba(GOLD_DARK, 0.95);
-    ctx.fillRect(cx - 40, 242, 80, 5);
-    ctx.fillStyle = columnFill(cx - 34, 68, 0);
-    ctx.fillRect(cx - 34, 236, 68, 6);
+    const shape = (points) => {
+      ctx.beginPath();
+      points.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+      ctx.closePath();
+    };
+
+    // Plinth: two outlined steps with a lapis base line.
+    for (const [x0, y0, w, h] of [[cx - 34, 236, 68, 6], [cx - 40, 242, 80, 5]]) {
+      ctx.fillStyle = rgba(GOLD, 0.1);
+      ctx.fillRect(x0, y0, w, h);
+      line(0.8);
+      ctx.strokeRect(x0 + 0.5, y0 + 0.5, w - 1, h - 1);
+    }
+    ctx.beginPath();
+    ctx.moveTo(cx - 40, 248);
+    ctx.lineTo(cx + 40, 248);
+    ctx.strokeStyle = rgba(LAPIS, 0.75);
+    ctx.lineWidth = 1.4;
+    ctx.stroke();
 
     for (const [side, id] of [[-1, "stop"], [1, "minimise"]]) {
       const x0 = cx + side * 14 - 10;
-      const active = id === "stop" ? busy : true;
-      const glow = (hover === id ? 0.8 : 0) + (id === "stop" && busy ? 0.35 + 0.25 * Math.sin(t * 4) : 0);
+      const live = id === "stop" ? busy : true;
+      const lit = (hover === id ? 1 : 0) + (id === "stop" && busy ? 0.5 + 0.3 * Math.sin(t * 4) : 0);
+      const glowColour = id === "stop" && busy ? [255, 110, 90] : colour;
       ctx.save();
-      ctx.globalAlpha = active ? 1 : 0.45;
-      if (glow > 0) {
-        ctx.shadowColor = id === "stop" && busy ? "rgba(255, 110, 90, 0.9)" : "rgba(248, 220, 149, 0.9)";
-        ctx.shadowBlur = 10 + glow * 8;
-      }
-      // Shaft with fluting.
-      ctx.fillStyle = columnFill(x0, 20, glow);
+      ctx.globalAlpha = live ? 1 : 0.4;
+      // Reactor light inside the shaft, brighter when lit.
+      const inner = ctx.createLinearGradient(x0, 0, x0 + 20, 0);
+      inner.addColorStop(0, rgba(glowColour, 0.04));
+      inner.addColorStop(0.5, rgba(glowColour, 0.12 + lit * 0.25));
+      inner.addColorStop(1, rgba(glowColour, 0.04));
+      ctx.fillStyle = inner;
       ctx.fillRect(x0, 211, 20, 25);
+      if (lit > 0) {
+        ctx.shadowColor = rgba(glowColour, 0.9);
+        ctx.shadowBlur = 6 + lit * 6;
+      }
+      // Shaft outline, fluting, capital.
+      line(0.9 + lit * 0.1, 1.1);
+      ctx.strokeRect(x0 + 0.5, 211.5, 19, 24);
       ctx.shadowBlur = 0;
-      ctx.strokeStyle = rgba(GOLD_DARK, 0.55);
-      ctx.lineWidth = 0.8;
-      for (const fx of [4, 16]) {
+      line(0.35);
+      for (const fx of [3.5, 16.5]) {
         ctx.beginPath();
-        ctx.moveTo(x0 + fx, 212);
-        ctx.lineTo(x0 + fx, 235);
+        ctx.moveTo(x0 + fx, 213);
+        ctx.lineTo(x0 + fx, 234);
         ctx.stroke();
       }
-      // Papyrus capital: flares out to the abacus.
-      ctx.beginPath();
-      ctx.moveTo(x0, 211);
-      ctx.lineTo(x0 - 3, 206);
-      ctx.lineTo(x0 + 23, 206);
-      ctx.lineTo(x0 + 20, 211);
-      ctx.closePath();
-      ctx.fillStyle = columnFill(x0 - 3, 26, glow);
+      shape([[x0, 211], [x0 - 3, 206], [x0 + 23, 206], [x0 + 20, 211]]);
+      ctx.fillStyle = rgba(GOLD, 0.12);
       ctx.fill();
+      line(0.9);
+      ctx.stroke();
+      // Papyrus ribs on the capital.
+      line(0.45, 0.8);
+      for (const rx of [5, 10, 15]) {
+        ctx.beginPath();
+        ctx.moveTo(x0 + rx, 210.5);
+        ctx.lineTo(x0 + (rx - 10) * 1.3 + 10, 206.5);
+        ctx.stroke();
+      }
       ctx.restore();
     }
 
-    // Gorge cornice: the flared Egyptian lintel across both columns.
-    ctx.beginPath();
-    ctx.moveTo(cx - 32, 206);
-    ctx.lineTo(cx + 32, 206);
-    ctx.lineTo(cx + 36, 199);
-    ctx.lineTo(cx - 36, 199);
-    ctx.closePath();
-    ctx.fillStyle = columnFill(cx - 36, 72, 0);
+    // Gorge cornice across both columns, with a lapis band on top like the wing tiers.
+    shape([[cx - 32, 206], [cx + 32, 206], [cx + 36, 199], [cx - 36, 199]]);
+    ctx.fillStyle = rgba(GOLD, 0.12);
     ctx.fill();
-    ctx.fillStyle = rgba(LAPIS, 0.9);
-    ctx.fillRect(cx - 36, 197, 72, 2);
+    line(0.9);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(cx - 36, 198);
+    ctx.lineTo(cx + 36, 198);
+    ctx.strokeStyle = rgba(LAPIS, 0.85);
+    ctx.lineWidth = 1.6;
+    ctx.stroke();
+    // A small sun disc at the centre of the cornice.
+    ctx.beginPath();
+    ctx.arc(cx, 202.5, 1.8, 0, Math.PI * 2);
+    ctx.fillStyle = rgba(GOLD, 0.95);
+    ctx.fill();
   }
 
   /** The Eye of Horus in the core; `open` 0..1 squashes it shut. */

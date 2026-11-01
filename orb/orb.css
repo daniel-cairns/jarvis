@@ -213,13 +213,15 @@ main {
   width: 13px;
   height: 13px;
   fill: none;
-  stroke: #1a2f72;
-  stroke-width: 2.6;
+  stroke: var(--accent);
+  stroke-width: 2;
   stroke-linecap: round;
   stroke-linejoin: round;
+  filter: drop-shadow(0 0 2px rgba(236, 188, 82, 0.7));
 }
-#stop .core { fill: #c0392b; stroke: none; }
-#stop:not(:disabled) .core { fill: #ff5a4a; filter: drop-shadow(0 0 3px rgba(255, 90, 80, 0.9)); }
+#stop:disabled svg { opacity: 0.5; filter: none; }
+#stop .core { fill: rgba(255, 106, 90, 0.35); stroke: none; }
+#stop:not(:disabled) .core { fill: #ff6a5a; filter: drop-shadow(0 0 3px rgba(255, 90, 80, 0.9)); }
 #stop:focus-visible, #minimise:focus-visible { outline: 2px solid var(--reactor); outline-offset: 2px; }
 
 .hint {
