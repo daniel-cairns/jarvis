@@ -28,7 +28,12 @@
     <main class="stage-wrap">
       <div id="graph" class="stage" role="img" aria-label="3D map of the teardown; the same map is listed as text below for screen readers"></div>
       <ul id="legend" class="legend" aria-label="Legend"></ul>
-      <p class="hint" aria-hidden="true">Drag to orbit · scroll to zoom · click a node</p>
+      <p class="hint" aria-hidden="true">Drag to orbit · scroll or + / − to zoom · click a node</p>
+      <div class="zoom" role="group" aria-label="Zoom">
+        <button id="zoom-in" type="button" aria-label="Zoom in (+)" title="Zoom in (+)">+</button>
+        <button id="zoom-out" type="button" aria-label="Zoom out (−)" title="Zoom out (−)">−</button>
+        <button id="zoom-fit" type="button" aria-label="Fit the whole map (0)" title="Fit (0)">⤢</button>
+      </div>
       <aside id="info" class="info" hidden aria-live="polite">
         <button id="info-close" type="button" aria-label="Close node details">×</button>
         <p id="info-group" class="label"></p>

@@ -154,11 +154,31 @@ bridge.onMessage((m) => {
   setTimeout(() => graph.zoomToFit(reducedMotion ? 0 : 800, 40), 1500);
 });
 
+/** Moves the camera towards (factor < 1) or away from (> 1) what it's looking at. */
+function zoomBy(factor) {
+  if (!graph) return;
+  const cam = graph.camera().position;
+  const target = graph.controls().target;
+  graph.controls().autoRotate = false;
+  graph.cameraPosition(
+    { x: target.x + (cam.x - target.x) * factor, y: target.y + (cam.y - target.y) * factor, z: target.z + (cam.z - target.z) * factor },
+    target,
+    reducedMotion ? 0 : 300,
+  );
+}
+const fit = () => graph?.zoomToFit(reducedMotion ? 0 : 600, 40);
+document.getElementById("zoom-in").addEventListener("click", () => zoomBy(0.7));
+document.getElementById("zoom-out").addEventListener("click", () => zoomBy(1.4));
+document.getElementById("zoom-fit").addEventListener("click", fit);
+
 const close = () => bridge.send({ type: "panel-close" });
 document.getElementById("close").addEventListener("click", close);
 document.getElementById("info-close").addEventListener("click", () => (info.hidden = true));
 window.addEventListener("keydown", (e) => {
   if (e.key === "Escape") (info.hidden ? close : () => (info.hidden = true))();
+  else if (e.key === "+" || e.key === "=") zoomBy(0.7);
+  else if (e.key === "-" || e.key === "_") zoomBy(1.4);
+  else if (e.key === "0") fit();
 });
 
 const bar = document.getElementById("bar");
