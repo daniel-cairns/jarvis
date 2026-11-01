@@ -139,5 +139,8 @@ describe("voice defaults", () => {
     expect(loadConfig({}).voice).toBe("bf_emma");
     expect(loadConfig({ JARVIS_TTS: "say" }).voice).toBe("Daniel");
     expect(() => loadConfig({ JARVIS_TTS: "espeak" })).toThrow("JARVIS_TTS");
+    expect(loadConfig({}).pauseSec).toBe(2);
+    expect(loadConfig({ JARVIS_PAUSE_SEC: "2.5" }).pauseSec).toBe(2.5);
+    expect(() => loadConfig({ JARVIS_PAUSE_SEC: "0" })).toThrow("JARVIS_PAUSE_SEC");
   });
 });
