@@ -27,7 +27,7 @@ import {
 } from "./voice/answers.js";
 import { matchWake, matchWakeAnywhere, speechHint } from "./voice/wake.js";
 
-const HELP = `Say "Astra" to wake her. Commands: /new (fresh conversation), /mute, /unmute, /wake on|off, /help, /quit. Ctrl-C or Esc on the orb stops her.`;
+const HELP = `Say "Astra" to wake her. Commands: /new (fresh conversation), /brain, /mute, /unmute, /wake on|off, /help, /quit. Ctrl-C or Esc on the orb stops her.`;
 const STOP_WORDS = /^(stop|cancel|never ?mind|be quiet|quiet|shush|shut up)\b/i;
 
 /** A soft acknowledgement when the wake word is heard. */
@@ -572,6 +572,7 @@ async function main(): Promise<void> {
 
     if (request === "/quit" || request === "/exit") break;
     if (request === "/help") { console.log(HELP); continue; }
+    if (request === "/brain") { console.log(`  ${await openBrain()}`); continue; }
     if (request === "/new") { jarvis.reset(); console.log("Fresh conversation. Your brain notes are kept."); continue; }
     if (request === "/mute") { muted = true; speaker.stop(); continue; }
     if (request === "/unmute") { muted = false; continue; }
