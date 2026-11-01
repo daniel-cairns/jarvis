@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en-NZ">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'none'">
+  <title>Astra · Brain</title>
+  <link rel="stylesheet" href="panel.css">
+  <link rel="stylesheet" href="frame.css">
+  <link rel="stylesheet" href="brain.css">
+</head>
+<body>
+  <div class="slab">
+    <div class="nub" aria-hidden="true"><svg viewBox="0 0 170 22" preserveAspectRatio="none"><polygon class="plate" points="0,22 170,22 170,10 156,0 0,0"/><polyline class="edge" points="0,0.8 156,0.8 169.5,10.5"/><polyline class="edge-inner" points="0,4 154,4 165,12"/></svg><p class="nub-label">Brain</p></div>
+    <div class="rail" aria-hidden="true"><i></i><i></i><i></i><span class="gap"></span><i></i><i></i><i></i></div>
+    <header id="bar" class="face" title="Drag to move">
+      <span class="leds" aria-hidden="true"><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i></span>
+      <svg class="face-icon" viewBox="0 0 34 34" aria-hidden="true"><circle cx="17" cy="17" r="8"/><circle class="dot" cx="17" cy="17" r="2.2"/><path d="M3 17h5M26 17h5M17 3v4M17 27v4M7 7l3 3M24 24l3 3M27 7l-3 3M10 24l-3 3"/></svg>
+      <div class="heading">
+        <h1 id="title">Your brain</h1>
+        <p class="meta" aria-hidden="true" id="meta">ASTRA-01 | CLASS: ARCHIVE | STATUS: ACTIVE</p>
+      </div>
+      <span class="vents" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></span>
+      <button id="close" type="button" aria-label="Close brain (Esc)" title="Close (Esc)">×</button>
+    </header>
+    <div class="rail rail--bot" aria-hidden="true"></div>
+    <div class="shelf" aria-hidden="true"></div>
+    <main class="brain">
+      <nav class="index" aria-label="Notes">
+        <label class="visually-hidden" for="search">Search notes</label>
+        <input id="search" type="search" placeholder="Search notes…" autocomplete="off">
+        <div id="groups"></div>
+      </nav>
+      <article id="note" class="note" tabindex="0" aria-live="polite">
+        <p class="empty">Pick a note on the left.</p>
+      </article>
+    </main>
+    <footer class="nub nub--foot"><svg viewBox="0 0 170 22" preserveAspectRatio="none" aria-hidden="true"><polygon class="plate" points="0,22 170,22 170,10 156,0 0,0"/><polyline class="edge" points="0,0.8 156,0.8 169.5,10.5"/><polyline class="edge-inner" points="0,4 154,4 165,12"/></svg><p class="nub-label"><span id="stamp"></span></p></footer>
+  </div>
+  <script src="brain.js"></script>
+</body>
+</html>

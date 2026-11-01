@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { listNotes, readNote, resolveInside, saveNote, searchNotes, sections, slugify } from "../src/tools/brain.js";
+import { brainIndex, listNotes, noteMap, readNote, resolveInside, saveNote, searchNotes, sections, slugify } from "../src/tools/brain.js";
 
 let brain: string;
 beforeEach(async () => {
@@ -101,5 +101,34 @@ describe("search, list and read", () => {
 describe("sections", () => {
   it("handles notes with no headings", () => {
     expect(sections("just text")).toEqual([{ heading: "(intro)", body: "just text" }]);
+  });
+});
+
+describe("brainIndex and noteMap", () => {
+  let dir: string;
+  beforeEach(async () => {
+    dir = await fs.mkdtemp(path.join(os.tmpdir(), "brain-index-"));
+    await fs.mkdir(path.join(dir, "teardowns"), { recursive: true });
+    await fs.writeFile(
+      path.join(dir, "teardowns", "notes.md"),
+      '# Notes teardown\n\nNative **Mac** app.\n\n```astra-graph\n{"nodes":[{"id":"a","label":"Notes","group":"app"}],"edges":[]}\n```\n',
+    );
+    await fs.writeFile(path.join(dir, "loose.md"), "# Loose note\n\nJust text.");
+  });
+  afterEach(async () => fs.rm(dir, { recursive: true, force: true }));
+
+  it("lists every note with folder, snippet and whether it has a map", async () => {
+    const index = await brainIndex(dir);
+    const notes = index.find((n) => n.path === "teardowns/notes.md")!;
+    expect(notes).toMatchObject({ title: "Notes teardown", folder: "teardowns", hasMap: true });
+    expect(notes.snippet).toContain("Native Mac app.");
+    expect(notes.snippet).not.toContain("astra-graph");
+    expect(index.find((n) => n.path === "loose.md")).toMatchObject({ folder: "notes", hasMap: false });
+  });
+
+  it("reads a saved map, and refuses paths outside the brain", async () => {
+    expect(await noteMap(dir, "teardowns/notes.md")).toMatchObject({ nodes: [{ id: "a" }] });
+    expect(await noteMap(dir, "loose.md")).toBeNull();
+    await expect(noteMap(dir, "../etc/passwd")).rejects.toThrow("outside the brain");
   });
 });

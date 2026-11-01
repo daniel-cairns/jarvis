@@ -182,3 +182,40 @@ export async function readNote(
   if (!match) throw new Error(`No section matching "${section}". Sections: ${headings.join(" | ")}`);
   return { path: relPath, title, text: `${match.heading}\n\n${match.body}`, sections: headings };
 }
+
+export type BrainEntry = NoteSummary & { folder: string; snippet: string; hasMap: boolean };
+
+const MAP_BLOCK = /```astra-graph\s*\n([\s\S]*?)\n```/;
+
+/** Every note for the brain browser: newest first, with its folder, a plain-text snippet and whether it has a map. */
+export async function brainIndex(brainDir: string): Promise<BrainEntry[]> {
+  const notes = await Promise.all((await walk(brainDir)).map((f) => summarise(brainDir, f)));
+  return notes
+    .sort((a, b) => b.modified.localeCompare(a.modified))
+    .map(({ path: p, title, modified, content }) => ({
+      path: p,
+      title,
+      modified,
+      folder: p.includes("/") ? p.split("/")[0]! : "notes",
+      hasMap: MAP_BLOCK.test(content),
+      snippet: content
+        .replace(/^---[\s\S]*?---\n/, "")
+        .replace(/```[\s\S]*?```/g, " ")
+        .replace(/[#*_`>|-]+/g, " ")
+        .replace(/\s+/g, " ")
+        .trim()
+        .slice(0, 220),
+    }));
+}
+
+/** The map saved in a note's astra-graph block, parsed but not yet validated; null if the note has none. */
+export async function noteMap(brainDir: string, relPath: string): Promise<unknown | null> {
+  const content = await fs.readFile(resolveInside(brainDir, relPath), "utf8");
+  const block = content.match(MAP_BLOCK)?.[1];
+  if (!block) return null;
+  try {
+    return JSON.parse(block);
+  } catch {
+    throw new Error("The note's map block isn't valid JSON");
+  }
+}
