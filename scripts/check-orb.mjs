@@ -23,6 +23,8 @@ for (const state of ["idle", "listening", "thinking", "speaking"]) {
 send({ type: "recording", on: true });
 send({ type: "state-label", text: "Recording 00:05" });
 send({ type: "mode", typeOnly: true, god: true });
+send({ type: "caption", role: "you", text: "sit rep" });
+send({ type: "caption", role: "jarvis", text: "All quiet: nothing is working or waiting on you." });
 send({ type: "state", state: "thinking" });
 await wait(Number(process.env.ORB_CHECK_HOLD_MS ?? 600));
 send({ type: "recording", on: false });

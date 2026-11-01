@@ -242,14 +242,20 @@
     setCollapsed(false);
   }
 
+  // Type-only mode: the card is the conversation, so replies pile up as a log and stay until you close it.
+  let typeOnlyMode = false;
+  const LOG_MAX = 40;
+
   function resetActivity() {
     activity.replaceChildren();
+    if (typeOnlyMode) return;
     caption.textContent = "";
     captionSpoken.textContent = "";
   }
 
   function keepCard() {
     clearTimeout(captionTimer);
+    if (typeOnlyMode) return;
     captionTimer = setTimeout(() => {
       if (state === "idle") card.hidden = true;
     }, 12000);
@@ -261,8 +267,19 @@
     captionLabel.textContent = role === "you" ? "You" : "Transmission";
     card.dataset.role = role;
     captionSpoken.textContent = text;
-    typeOut(caption, text);
     clearTimeout(captionTimer);
+    if (typeOnlyMode) {
+      cancelAnimationFrame(typing);
+      if (!caption.querySelector(".line")) caption.textContent = "";
+      const line = document.createElement("p");
+      line.className = `line ${role}`;
+      line.textContent = text;
+      caption.append(line);
+      while (caption.children.length > LOG_MAX) caption.firstElementChild.remove();
+      caption.scrollTop = caption.scrollHeight;
+      return;
+    }
+    typeOut(caption, text);
     captionTimer = setTimeout(() => {
       if (state === "idle") card.hidden = true;
     }, 12000);
@@ -370,6 +387,8 @@
     else if (m.type === "state-label") stateLabel.textContent = m.text;
     else if (m.type === "mode") {
       const on = !!m.typeOnly;
+      if (on !== typeOnlyMode) caption.textContent = "";
+      typeOnlyMode = on;
       document.body.classList.toggle("type-only", on);
       typeOnlyButton.setAttribute("aria-pressed", String(on));
       typeBox.hidden = !on;
