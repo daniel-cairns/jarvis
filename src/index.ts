@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { readdirSync } from "node:fs";
+import { readdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import readline from "node:readline";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -35,7 +35,7 @@ import {
 import { clock, parseTranscriptStart, splitStop, transcriptMarkdown, wordCount, type TranscriptLine } from "./voice/transcript.js";
 import { matchWake, matchWakeAnywhere, speechHint, stripOwnSpeech } from "./voice/wake.js";
 
-const HELP = `Say "Astra" to wake her. Commands: /new (fresh conversation), /brain, /transcript [title] (record until "stop recording"), /mute, /unmute, /wake on|off, /help, /quit. Ctrl-C or Esc on the orb stops her.`;
+const HELP = `Say "Astra" to wake her. Commands: /new (fresh conversation), /brain, /restart, /transcript [title] (record until "stop recording"), /mute, /unmute, /wake on|off, /help, /quit. Ctrl-C or Esc on the orb stops her.`;
 const STOP_WORDS = /^(stop|cancel|never ?mind|be quiet|quiet|shush|shut up)\b/i;
 
 /** A soft acknowledgement when the wake word is heard. */
@@ -184,6 +184,8 @@ async function main(): Promise<void> {
   let transcribing: AbortController | null = null;
   let pendingTranscript: { title?: string } | null = null;
   let lastTranscript: string | null = null;
+  // Asked to restart while working or running background sessions: she restarts once all of that has finished.
+  let pendingRestart = false;
 
   /** Stops speech, listening, a pending approval and the request in progress. Returns whether anything was running. */
   const interrupt = (): boolean => {
@@ -492,6 +494,7 @@ async function main(): Promise<void> {
       return "Stopped.";
     }
     if (action === "show_brain") return openBrain();
+    if (action === "restart") return requestRestart();
     if (action === "start_transcript") {
       if (!busy) {
         await runTranscript();
@@ -502,7 +505,7 @@ async function main(): Promise<void> {
     }
     if (!orb?.alive) return "No orb is open.";
     orb.send({ type: "ui", action });
-    const done: Record<Exclude<UiAction, "stop" | "show_brain" | "start_transcript" | "volume_up" | "volume_down" | "set_volume" | "move" | "show_terminal" | "show_git">, string> = {
+    const done: Record<Exclude<UiAction, "stop" | "show_brain" | "start_transcript" | "restart" | "volume_up" | "volume_down" | "set_volume" | "move" | "show_terminal" | "show_git">, string> = {
       minimise: "Minimised to the menu bar.",
       show: "The orb is back.",
       close_panels: "Closed the panels.",
@@ -602,6 +605,31 @@ async function main(): Promise<void> {
     const minutes = Math.round((endedAt - startedAt) / 60_000);
     const length = minutes ? `${minutes} minute${minutes === 1 ? "" : "s"}` : "under a minute";
     await say(`Saved: ${length}, ${wordCount(found)} words. Want a summary or the action items?`);
+  };
+
+  /**
+   * Restarts her with her latest code: leaves a flag for scripts/astra.sh (npm start), which runs her again, and quits.
+   * Waits for the request in progress and her background sessions, since quitting would stop them.
+   */
+  const requestRestart = (): string => {
+    const running = sessionRunner.list().filter((j) => j.status === "running");
+    if (!busy && !running.length) {
+      writeFileSync(path.join(cfg.home, "restart"), new Date().toISOString());
+      console.log("\n(restarting)");
+      quitting = true;
+      lines.inject("/quit");
+      return "Restarting.";
+    }
+    pendingRestart = true;
+    return running.length
+      ? `I'll restart once ${running.map((j) => j.label).join(" and ")} ${running.length === 1 ? "has" : "have"} finished.`
+      : "I'll restart as soon as this reply ends.";
+  };
+  const restartIfDue = () => {
+    if (pendingRestart && !busy && !sessionRunner.list().some((j) => j.status === "running")) {
+      pendingRestart = false;
+      void say("Restarting now.").then(requestRestart);
+    }
   };
 
   /** Opens a dialog: registers it for interruption, and always closes it out, however it was answered. */
@@ -708,6 +736,7 @@ async function main(): Promise<void> {
             : `The ${job.label} session ran into a problem`;
       console.log(`\n  [${job.id} ${job.label}] ${job.status} · $${job.costUsd.toFixed(3)}\n${job.lastText}\n`);
       void say(first ? `${what}. ${first}` : `${what}.`);
+      restartIfDue();
     },
   });
 
@@ -867,6 +896,7 @@ async function main(): Promise<void> {
     if (request === "/quit" || request === "/exit") break;
     if (request === "/help") { console.log(HELP); continue; }
     if (request === "/brain") { console.log(`  ${await openBrain()}`); continue; }
+    if (request === "/restart") { console.log(`  ${requestRestart()}`); continue; }
     const transcript = /^\/transcript\b/.test(request) ? { title: request.slice(11).trim() || undefined } : parseTranscriptStart(request);
     if (transcript) {
       await runTranscript(transcript.title);
@@ -906,6 +936,7 @@ async function main(): Promise<void> {
       busy = false;
       syncOrb();
     }
+    restartIfDue();
     if (pendingTranscript) {
       const { title } = pendingTranscript;
       pendingTranscript = null;

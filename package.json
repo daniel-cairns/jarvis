@@ -3,9 +3,8 @@
   "version": "0.1.0",
   "description": "A local voice assistant for macOS, built on the Claude Agent SDK, with REA for reverse-engineering teardowns.",
   "scripts": {
-    "start": "tsx src/index.ts",
+    "start": "sh scripts/astra.sh",
     "text": "tsx src/index.ts --text",
-    "prestart": "npm run -s build:orb",
     "pretext": "npm run -s build:orb",
     "build:orb": "esbuild orb/graph/graph-src.js --bundle --format=iife --minify --outfile=orb/build/graph.js --log-level=warning",
     "typecheck": "tsc --noEmit",

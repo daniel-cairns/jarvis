@@ -12,6 +12,8 @@ describe("quickUiCommand", () => {
     expect(quickUiCommand("minimise")).toEqual({ action: "minimise" });
     expect(quickUiCommand("Hide yourself.")).toEqual({ action: "minimise" });
     expect(quickUiCommand("come back")).toEqual({ action: "show" });
+    expect(quickUiCommand("Restart yourself.")).toEqual({ action: "restart" });
+    expect(quickUiCommand("restart the gymclaw session")).toBeNull();
     expect(quickUiCommand("Fold up.")).toEqual({ action: "minimise" });
     expect(quickUiCommand("close yourself")).toEqual({ action: "minimise" });
     expect(quickUiCommand("transform closed")).toEqual({ action: "minimise" });
