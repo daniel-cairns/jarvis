@@ -31,7 +31,7 @@
   };
   const EYE_OPEN = { idle: 0.85, listening: 1, thinking: 0.75, speaking: 0.9 };
   const GLYPHS = ["ankh", "eye", "water", "djed", "sun", "reed"];
-  const LABELS = { idle: "Idle", listening: "Listening…", thinking: "Working…", speaking: "Speaking" };
+  const LABELS = { idle: "Idle", listening: "Listening…", thinking: "Thinking…", speaking: "Speaking" };
   const TALK_LABELS = { listening: "Stop listening" };
 
   let state = "idle";
@@ -356,7 +356,7 @@
       if (!on) continue;
       ctx.beginPath();
       ctx.moveTo(x, cy + 24);
-      ctx.lineTo(x, 170);
+      ctx.lineTo(x, 175);
       ctx.strokeStyle = rgba(GOLD, 0.8);
       ctx.lineWidth = 1.2;
       ctx.stroke();

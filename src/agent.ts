@@ -131,6 +131,7 @@ export class Jarvis {
       for (const block of msg.message.content) {
         if (block.type === "text" && block.text.trim()) await this.io.say(block.text);
         if (block.type === "tool_use") this.io.status(`→ ${block.name}`);
+        if (block.type === "thinking") this.io.status("… thinking");
       }
       return undefined;
     }

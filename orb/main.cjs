@@ -151,7 +151,7 @@ app.whenReady().then(() => {
       minHeight: 220,
       frame: false,
       // Frosted glass: macOS blurs whatever is behind the window; panel.css adds tint, rim light and sheen.
-      vibrancy: "hud",
+      vibrancy: "under-window",
       visualEffectState: "active",
       backgroundColor: "#00000000",
       roundedCorners: true,

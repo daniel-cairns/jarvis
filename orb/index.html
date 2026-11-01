@@ -11,8 +11,14 @@
     <div class="orb-wrap">
       <canvas id="orb" width="320" height="260" aria-hidden="true" title="Drag to move"></canvas>
       <button id="talk" type="button" aria-label="Talk to Astra" title="Click to talk"></button>
-      <button id="stop" type="button" aria-label="Stop Astra" title="Stop (Esc)" hidden><span aria-hidden="true"></span></button>
-      <button id="minimise" type="button" aria-label="Minimise Astra (reopen from the menu bar)" title="Minimise · reopen from the menu bar"><span aria-hidden="true"></span></button>
+      <button id="stop" type="button" aria-label="Stop Astra" title="Stop (Esc)" hidden>
+        <!-- The "house" hieroglyph (O1): a square with an opening, so it still reads as stop. -->
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 19H5V5h14v14h-5"/><rect class="core" x="9" y="9" width="6" height="6" rx="0.5"/></svg>
+      </button>
+      <button id="minimise" type="button" aria-label="Minimise Astra (reopen from the menu bar)" title="Minimise · reopen from the menu bar">
+        <!-- The "water" hieroglyph (N35): a ripple line, so it still reads as minimise. -->
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12.5l2.4-2.6 2.4 2.6 2.4-2.6 2.4 2.6 2.4-2.6 2.4 2.6 2.4-2.6 2.4 2.6"/></svg>
+      </button>
     </div>
     <p id="state" class="state" aria-live="polite">Idle</p>
 

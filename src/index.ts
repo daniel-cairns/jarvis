@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { readdirSync } from "node:fs";
 import readline from "node:readline";
 import { setTimeout as sleep } from "node:timers/promises";
+import { describeActivity } from "./activity.js";
 import { Jarvis } from "./agent.js";
 import { loadConfig } from "./config.js";
 import { parseAnswer } from "./permissions.js";
@@ -284,9 +285,12 @@ async function main(): Promise<void> {
       console.log(`\n── ${title} ──\n${markdown}\n`);
       return "Printed in the terminal (no orb is open).";
     },
+    // The terminal gets the technical line; the orb gets plain English ("Searching your brain…").
     status: (text) => {
       console.log(`  ${text}`);
-      orb?.send({ type: "caption", role: "status", text: text.replace(/mcp__([^_]+)__/, "$1: ").replace(/_/g, " ") });
+      const tool = text.match(/^→ (\S+)/)?.[1];
+      const friendly = tool ? describeActivity(tool) : text === "… thinking" ? "Thinking…" : text;
+      orb?.send({ type: "caption", role: "status", text: friendly });
     },
     // The orb's card (or the pop-up without it) races the terminal/voice answer; first answer wins.
     ask: async ({ spoken, detail }) => {
@@ -344,6 +348,7 @@ async function main(): Promise<void> {
 
     busy = true;
     syncOrb();
+    orb?.send({ type: "caption", role: "status", text: "Thinking…" });
     try {
       const spoken = lastInputWasVoice;
       const result = await jarvis.handle(request);
