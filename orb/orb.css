@@ -168,11 +168,11 @@ main {
 
 /*
  * Stop and minimise sit on the small wings just below the eye (drawn on the canvas), as gold line-art glyphs:
- * stop centred at (134, 209), minimise at (186, 209), mid-wing.
+ * on the wing arc at GLYPH_ANGLE (orb.js): stop centred at (140, 219), minimise at (180, 219).
  */
 #stop, #minimise {
   position: absolute;
-  top: 196px;
+  top: 206px;
   width: 26px;
   height: 26px;
   padding: 0;
@@ -183,8 +183,8 @@ main {
   place-items: center;
   cursor: pointer;
 }
-#stop { left: 121px; }
-#minimise { left: 173px; }
+#stop { left: 127px; }
+#minimise { left: 167px; }
 #stop:disabled { cursor: default; }
 #stop svg, #minimise svg {
   width: 16px;

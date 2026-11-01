@@ -264,27 +264,59 @@
   }
 
   /**
-   * A small pair of wings just below the eye, holding the two controls: stop (house glyph) on the left wing, minimise
-   * (water glyph) on the right. The DOM buttons sit on the wings; this draws the wings and the glow behind each glyph.
+   * Lower wings that wrap the bottom of the glyph ring: three tiers of gold feathers laid along arcs concentric with the
+   * ring, so they meet it cleanly and sweep up towards their tips. Stop (left) and minimise (right) sit on them; the
+   * DOM buttons are positioned over GLYPH_ANGLE, and this draws the glow behind each glyph.
    */
-  function lowerWings(cx, t, busy, hover) {
+  const GLYPH_ANGLE = 0.24;
+  function lowerWings(cx, cy, ringR, t, busy, hover) {
+    const base = ringR + 9; // just outside the ring's outer line
+    const tiers = [
+      { h: 7, end: 1.08, alpha: 0.95 },
+      { h: 8, end: 0.9, alpha: 0.8 },
+      { h: 10, end: 0.7, alpha: 0.65 },
+    ];
+    const step = 0.055;
     for (const side of [1, -1]) {
-      ctx.save();
-      ctx.translate(cx + side * 8, 207);
-      ctx.scale(side * 0.6, 0.6);
-      ctx.rotate(-0.12); // tips tilted up slightly
-      wing(0.6, level * 0.5);
-      ctx.restore();
+      let r0 = base;
+      for (const tier of tiers) {
+        for (let a = 0.06; a < tier.end; a += step) {
+          const f = (a - 0.06) / (tier.end - 0.06);
+          const h = tier.h * (1 - f * 0.35);
+          const th0 = Math.PI / 2 - side * (a - step * 0.42);
+          const th1 = Math.PI / 2 - side * (a + step * 0.42);
+          const at = (th, r) => [cx + Math.cos(th) * r, cy + Math.sin(th) * r];
+          ctx.beginPath();
+          ctx.moveTo(...at(th0, r0));
+          ctx.lineTo(...at(th1, r0));
+          ctx.lineTo(...at(th1 + side * step * 0.15, r0 + h));
+          ctx.lineTo(...at(th0 + side * step * 0.15, r0 + h));
+          ctx.closePath();
+          ctx.fillStyle = rgba(GOLD, tier.alpha * (1 - f * 0.5) * (0.6 + level * 0.4));
+          ctx.fill();
+        }
+        // Lapis line under each tier, following the ring's curve.
+        ctx.beginPath();
+        if (side === 1) ctx.arc(cx, cy, r0 + tier.h, Math.PI / 2 - tier.end, Math.PI / 2 - 0.06);
+        else ctx.arc(cx, cy, r0 + tier.h, Math.PI / 2 + 0.06, Math.PI / 2 + tier.end);
+        ctx.strokeStyle = rgba(LAPIS, 0.7);
+        ctx.lineWidth = 1.2;
+        ctx.stroke();
+        r0 += tier.h - 1;
+      }
     }
-    for (const [id, x] of [["stop", cx - 26], ["minimise", cx + 26]]) {
+    const glyphR = base + 11;
+    for (const [id, side] of [["stop", -1], ["minimise", 1]]) {
       const busyStop = id === "stop" && busy;
       const lit = (hover === id ? 1 : 0) + (busyStop ? 0.55 + 0.3 * Math.sin(t * 4) : 0);
       if (lit <= 0) continue;
-      const glow = ctx.createRadialGradient(x, 209, 0, x, 209, 16);
-      glow.addColorStop(0, rgba(busyStop ? [255, 110, 90] : GOLD, 0.45 * Math.min(1, lit)));
+      const x = cx + side * Math.sin(GLYPH_ANGLE) * glyphR;
+      const y = cy + Math.cos(GLYPH_ANGLE) * glyphR;
+      const glow = ctx.createRadialGradient(x, y, 0, x, y, 15);
+      glow.addColorStop(0, rgba(busyStop ? [255, 110, 90] : GOLD, 0.5 * Math.min(1, lit)));
       glow.addColorStop(1, rgba(busyStop ? [255, 110, 90] : GOLD, 0));
       ctx.fillStyle = glow;
-      ctx.fillRect(x - 16, 193, 32, 32);
+      ctx.fillRect(x - 15, y - 15, 30, 30);
     }
   }
 
@@ -440,7 +472,7 @@
       ctx.stroke();
     }
 
-    lowerWings(cx, t, state !== "idle", hovered);
+    lowerWings(cx, cy, gr + 7, t, state !== "idle", hovered);
 
     // Core: white-hot sun disc
     const core = ctx.createRadialGradient(cx, cy, r * 0.05, cx, cy, r);
