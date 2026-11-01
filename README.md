@@ -15,7 +15,11 @@ spins its rings while it works, and spreads its wings and pulses with every syll
 Hover and press **–** to minimise it; click the sun icon in the menu bar to bring it back. It comes back by itself when
 it needs your permission, showing the details with No / Always / Yes buttons.
 
-**Talking is a conversation:** click the core of the orb (or press Enter) and speak. Astra notices when you pause,
+**Just say "Astra":** on its own she chimes and listens; "Astra, open Quire" goes straight through. It's all local:
+the mic waits for sound, and each phrase is transcribed on your Mac and dropped unless it starts with her name. The
+mic stays on while she runs (`/wake off` or `JARVIS_WAKE=off` to disable). Saying "Astra, stop" stops her.
+
+**Talking is a conversation:** say her name, click the core of the orb, or press Enter, and speak. Astra notices when you pause,
 answers, then listens for your reply. Say nothing for a few seconds and it goes back to sleep.
 
 ## What it can do

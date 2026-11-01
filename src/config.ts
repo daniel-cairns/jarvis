@@ -14,6 +14,7 @@ export type JarvisConfig = {
   sayVoice: string;
   speechRate: number;
   ttsCacheDir: string;
+  wakeWord: boolean;
   recorderBin: string;
   whisperBin: string;
   whisperModel: string;
@@ -64,6 +65,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): JarvisConfig {
     tts,
     voice: env.JARVIS_VOICE ?? (tts === "kokoro" ? "bf_emma" : sayVoice),
     sayVoice,
+    wakeWord: (env.JARVIS_WAKE ?? "on").toLowerCase() !== "off",
     ttsCacheDir: expandHome(env.JARVIS_TTS_CACHE_DIR ?? path.join(home, "models", "tts")),
     speechRate: positiveNumber(env.JARVIS_SPEECH_RATE, 190, "JARVIS_SPEECH_RATE"),
     recorderBin: env.JARVIS_RECORDER_BIN ?? "rec",

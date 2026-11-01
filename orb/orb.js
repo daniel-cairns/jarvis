@@ -29,7 +29,7 @@
     thinking: [240, 196, 96],
     speaking: [130, 235, 255],
   };
-  const EYE_OPEN = { idle: 0.25, listening: 1, thinking: 0.45, speaking: 0.75 };
+  const EYE_OPEN = { idle: 0.85, listening: 1, thinking: 0.75, speaking: 0.9 };
   const GLYPHS = ["ankh", "eye", "water", "djed", "sun", "reed"];
   const LABELS = { idle: "Idle", listening: "Listening…", thinking: "Working…", speaking: "Speaking" };
   const TALK_LABELS = { listening: "Stop listening" };
@@ -262,8 +262,8 @@
     ctx.scale(1, Math.max(0.06, open));
     ctx.beginPath();
     ctx.moveTo(-s, 0);
-    ctx.quadraticCurveTo(0, -s * 0.75, s, 0);
-    ctx.quadraticCurveTo(0, s * 0.6, -s, 0);
+    ctx.quadraticCurveTo(0, -s * 0.95, s, 0);
+    ctx.quadraticCurveTo(0, s * 0.75, -s, 0);
     ctx.fillStyle = "rgba(255, 255, 255, 0.55)";
     ctx.fill();
     ctx.strokeStyle = rgba(LAPIS, 0.95);
@@ -349,6 +349,22 @@
       ctx.scale(side, 1);
       wing(wingOpen, level);
       ctx.restore();
+    }
+
+    // Gold stems from each wing to its medallion (minimise always; stop while busy).
+    for (const [x, on] of [[63, state !== "idle"], [257, true]]) {
+      if (!on) continue;
+      ctx.beginPath();
+      ctx.moveTo(x, cy + 24);
+      ctx.lineTo(x, 170);
+      ctx.strokeStyle = rgba(GOLD, 0.8);
+      ctx.lineWidth = 1.2;
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(x, cy + 21); ctx.lineTo(x + 3, cy + 24); ctx.lineTo(x, cy + 27); ctx.lineTo(x - 3, cy + 24);
+      ctx.closePath();
+      ctx.fillStyle = rgba(GOLD, 0.95);
+      ctx.fill();
     }
 
     // Listening ripples

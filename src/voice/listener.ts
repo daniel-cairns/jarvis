@@ -10,7 +10,13 @@ import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
 
-export type ListenerConfig = { recorderBin: string; whisperBin: string; whisperModel: string };
+export type ListenerConfig = {
+  recorderBin: string;
+  whisperBin: string;
+  whisperModel: string;
+  /** A sentence of likely names, so whisper hears "Quire" rather than "choir" (see speechHint). */
+  hint?: string;
+};
 
 /** whisper.cpp prints markers like [BLANK_AUDIO] or (music) for non-speech; those aren't a request. */
 export function cleanTranscript(raw: string): string {
@@ -28,6 +34,8 @@ export type ListenOptions = {
   pauseSec?: number;
   /** Give up if no speech starts within this long. */
   noSpeechMs?: number;
+  /** Stop recording after this long regardless. */
+  maxMs?: number;
 };
 
 const WAV_HEADER_BYTES = 44;
@@ -104,6 +112,24 @@ export class Listener {
     this.recorder = rec;
     this.done = new Promise((resolve) => rec.once("exit", () => resolve()));
     if (opts.autoStop) this.watchForNoSpeech(rec, wav, opts.noSpeechMs ?? 8_000);
+    if (opts.maxMs) {
+      const cap = setTimeout(() => void stopGracefully(rec), opts.maxMs);
+      rec.once("exit", () => clearTimeout(cap));
+    }
+  }
+
+  get recording(): boolean {
+    return this.recorder !== null;
+  }
+
+  /** Stops recording and throws the audio away without transcribing it. */
+  async cancel(): Promise<void> {
+    const rec = this.recorder;
+    const wav = this.wavPath;
+    this.recorder = null;
+    this.wavPath = null;
+    if (rec) await stopGracefully(rec);
+    if (wav) await fs.rm(path.dirname(wav), { recursive: true, force: true });
   }
 
   whenDone(): Promise<void> {
@@ -139,7 +165,7 @@ export class Listener {
       if (size < MIN_SPEECH_BYTES) return "";
       const { stdout } = await execFileAsync(
         this.cfg.whisperBin,
-        ["-m", this.cfg.whisperModel, "-f", wav, "-l", "en", "-nt", "-np"],
+        ["-m", this.cfg.whisperModel, "-f", wav, "-l", "en", "-nt", "-np", ...(this.cfg.hint ? ["--prompt", this.cfg.hint] : [])],
         { timeout: 120_000, maxBuffer: 4 * 1024 * 1024 },
       );
       return cleanTranscript(stdout);

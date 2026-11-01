@@ -1,4 +1,7 @@
+import { spawn } from "node:child_process";
+import { readdirSync } from "node:fs";
 import readline from "node:readline";
+import { setTimeout as sleep } from "node:timers/promises";
 import { Jarvis } from "./agent.js";
 import { loadConfig } from "./config.js";
 import { parseAnswer } from "./permissions.js";
@@ -9,8 +12,13 @@ import { Orb } from "./ui/orb.js";
 import { Listener } from "./voice/listener.js";
 import { Speaker } from "./voice/speaker.js";
 import { KokoroTts, SayTts } from "./voice/tts.js";
+import { matchWake, speechHint } from "./voice/wake.js";
 
-const HELP = `Commands: /new (fresh conversation), /mute, /unmute, /help, /quit. Ctrl-C cancels the current request.`;
+const HELP = `Say "Astra" to wake her. Commands: /new (fresh conversation), /mute, /unmute, /wake on|off, /help, /quit. Ctrl-C or Esc on the orb stops her.`;
+const STOP_WORDS = /^(stop|cancel|never ?mind|be quiet|quiet|shush|shut up)\b/i;
+
+/** A soft acknowledgement when the wake word is heard. */
+const chime = () => spawn("afplay", ["/System/Library/Sounds/Tink.aiff"], { stdio: "ignore" }).on("error", () => {});
 
 /** Hands out stdin lines one at a time to whoever is waiting, in order. */
 class LineReader {
@@ -94,7 +102,21 @@ async function main(): Promise<void> {
   });
   void speaker.warmUp();
   let muted = args.has("--mute");
-  const listener = new Listener(cfg);
+  // Both listeners share this config, so refreshing the hint (project names in the workspace) updates both.
+  const listenCfg = { ...cfg, hint: speechHint([]) };
+  const refreshHint = () => {
+    try {
+      const projects = readdirSync(cfg.workspaceDir, { withFileTypes: true })
+        .filter((d) => d.isDirectory() && !d.name.startsWith("."))
+        .map((d) => d.name);
+      listenCfg.hint = speechHint(projects);
+    } catch {
+      // No workspace yet: keep the default hint.
+    }
+  };
+  const listener = new Listener(listenCfg);
+  const wakeListener = new Listener(listenCfg);
+  let wakeOn = cfg.wakeWord;
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout, terminal: true });
   const lines = new LineReader(rl);
   let asking = false;
@@ -151,6 +173,49 @@ async function main(): Promise<void> {
   let lastInputWasVoice = false;
 
   /**
+   * Listens in the background for "Astra …" while idle: sox only records once someone speaks, and each phrase is
+   * transcribed and dropped unless it starts with the wake word. Resolves with what followed the name ("" for the
+   * name alone), or null if stopped.
+   */
+  const waitForWake = async (signal: AbortSignal): Promise<string | null> => {
+    const onAbort = () => void wakeListener.cancel();
+    signal.addEventListener("abort", onAbort, { once: true });
+    try {
+      while (!signal.aborted) {
+        // Don't wake on her own voice.
+        while (speaking && !signal.aborted) await sleep(150);
+        if (signal.aborted) break;
+        refreshHint();
+        await wakeListener.start({ autoStop: true, pauseSec: 0.8, noSpeechMs: Infinity, maxMs: 20_000 });
+        if (signal.aborted) {
+          await wakeListener.cancel();
+          break;
+        }
+        await wakeListener.whenDone();
+        if (signal.aborted || !wakeListener.recording) break;
+        const request = matchWake(await wakeListener.stopAndTranscribe());
+        if (request !== null && !signal.aborted) return request;
+      }
+      return null;
+    } finally {
+      signal.removeEventListener("abort", onAbort);
+    }
+  };
+
+  /** Waits for a typed line, or (in voice mode with the wake word on) for "Astra …", whichever comes first. */
+  const nextLineOrWake = async (prompt: string, signal?: AbortSignal): Promise<{ line: string | null } | { wake: string }> => {
+    if (!voiceMode || !wakeOn) return { line: await lines.next(prompt, signal) };
+    const settled = new AbortController();
+    const both = AbortSignal.any([settled.signal, ...(signal ? [signal] : [])]);
+    const first = await Promise.race([
+      lines.next(prompt, both).then((line) => ({ line })),
+      waitForWake(both).then((wake) => (wake === null ? { line: null } : { wake })),
+    ]);
+    settled.abort();
+    return first;
+  };
+
+  /**
    * Empty Enter (or an orb click) in voice mode means "listen"; anything typed is used as-is.
    * Listening ends when you pause, or early on another Enter/click. With listenNow it skips the Enter: that's how
    * Astra waits for your reply in a conversation, giving up quietly after a few seconds of silence.
@@ -158,9 +223,25 @@ async function main(): Promise<void> {
   const getInput = async (prompt: string, signal?: AbortSignal, listenNow = false): Promise<string | null> => {
     lastInputWasVoice = false;
     if (!listenNow || !voiceMode) {
-      const typed = await lines.next(prompt, signal);
-      if (typed === null || typed.trim() || !voiceMode) return typed;
+      const got = await nextLineOrWake(prompt, signal);
+      if ("wake" in got) {
+        chime();
+        if (STOP_WORDS.test(got.wake)) {
+          interrupt();
+          return "";
+        }
+        if (got.wake) {
+          lastInputWasVoice = true;
+          console.log(`\nYou: ${got.wake}`);
+          orb?.send({ type: "caption", role: "you", text: got.wake });
+          return got.wake;
+        }
+        // The name on its own: listen for the request.
+      } else if (got.line === null || got.line.trim() || !voiceMode) {
+        return got.line;
+      }
     }
+    refreshHint();
     speaker.stop();
     await listener.start({ autoStop: true, noSpeechMs: listenNow ? 8_000 : 15_000 });
     listening = true;
@@ -179,7 +260,9 @@ async function main(): Promise<void> {
     currentListen = null;
     listening = false;
     syncOrb();
-    const heard = await listener.stopAndTranscribe();
+    // "Astra, open Quire" heard while already listening: the name isn't part of the request.
+    const raw = await listener.stopAndTranscribe();
+    const heard = matchWake(raw) ?? raw;
     if (lines.isClosed || signal?.aborted) return null;
     // Stopped from the orb or Ctrl-C: throw the recording away rather than send it.
     if (how === "cancelled" || stopped.signal.aborted) return "";
@@ -235,7 +318,8 @@ async function main(): Promise<void> {
     rl.close();
   });
 
-  console.log(`Astra is ready. ${voiceMode ? "Press Enter to talk, or type a request." : "Type a request."}`);
+  const howToTalk = wakeOn ? 'Say "Astra", press Enter, or click the orb to talk.' : "Press Enter or click the orb to talk.";
+  console.log(`Astra is ready. ${voiceMode ? `${howToTalk} Or type a request.` : "Type a request."}`);
   console.log(HELP);
 
   // After a spoken exchange Astra listens for your reply straight away, like a conversation.
@@ -252,6 +336,11 @@ async function main(): Promise<void> {
     if (request === "/new") { jarvis.reset(); console.log("Fresh conversation. Your brain notes are kept."); continue; }
     if (request === "/mute") { muted = true; speaker.stop(); continue; }
     if (request === "/unmute") { muted = false; continue; }
+    if (request === "/wake off" || request === "/wake on") {
+      wakeOn = request === "/wake on";
+      console.log(wakeOn ? 'Say "Astra" to wake me.' : "Wake word off: press Enter or click the orb to talk.");
+      continue;
+    }
 
     busy = true;
     syncOrb();
