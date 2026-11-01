@@ -21,6 +21,27 @@ export function cleanTranscript(raw: string): string {
     .trim();
 }
 
+/** Below this, a recording is a stray double-tap; whisper hallucinates words like "you" from it. */
+const MIN_SPEECH_BYTES = 16_000 * 2 * 0.5;
+
+/**
+ * Asks a recorder to stop with SIGINT so it can finalise the WAV, escalating to SIGTERM then SIGKILL.
+ * A SIGINT that lands while macOS is still showing the microphone prompt is lost, which would otherwise hang forever.
+ */
+export function stopGracefully(child: ChildProcess, graceMs = 2_000): Promise<void> {
+  if (child.exitCode !== null || child.signalCode !== null) return Promise.resolve();
+  return new Promise((resolve) => {
+    const timers: NodeJS.Timeout[] = [];
+    child.once("exit", () => {
+      timers.forEach(clearTimeout);
+      resolve();
+    });
+    child.kill("SIGINT");
+    timers.push(setTimeout(() => child.kill("SIGTERM"), graceMs));
+    timers.push(setTimeout(() => child.kill("SIGKILL"), graceMs * 2));
+  });
+}
+
 export class Listener {
   private recorder: ChildProcess | null = null;
   private wavPath: string | null = null;
@@ -64,13 +85,12 @@ export class Listener {
     this.recorder = null;
     this.wavPath = null;
 
-    // SIGINT lets sox finish writing the WAV header; SIGKILL would leave a broken file.
-    await new Promise<void>((resolve) => {
-      rec.once("exit", () => resolve());
-      rec.kill("SIGINT");
-    });
+    // SIGINT lets sox finish writing the WAV header; SIGKILL is only the last resort.
+    await stopGracefully(rec);
 
     try {
+      const size = await fs.stat(wav).then((s) => s.size, () => 0);
+      if (size < MIN_SPEECH_BYTES) return "";
       const { stdout } = await execFileAsync(
         this.cfg.whisperBin,
         ["-m", this.cfg.whisperModel, "-f", wav, "-l", "en", "-nt", "-np"],

@@ -1,6 +1,7 @@
+import { spawn } from "node:child_process";
 import { describe, expect, it } from "vitest";
 import { decide, describeCall, parseAnswer } from "../src/permissions.js";
-import { cleanTranscript } from "../src/voice/listener.js";
+import { cleanTranscript, stopGracefully } from "../src/voice/listener.js";
 import { chunkForSpeech, toSpeakable } from "../src/voice/speechText.js";
 
 describe("toSpeakable", () => {
@@ -34,6 +35,25 @@ describe("cleanTranscript", () => {
   it("drops whisper's non-speech markers", () => {
     expect(cleanTranscript(" [BLANK_AUDIO] ")).toBe("");
     expect(cleanTranscript("(music) Jarvis, open Notes.\n")).toBe("Jarvis, open Notes.");
+  });
+});
+
+describe("stopGracefully", () => {
+  const nodeChild = (script: string) => spawn(process.execPath, ["-e", script], { stdio: "ignore" });
+  const ready = () => new Promise((r) => setTimeout(r, 200));
+
+  it("stops a recorder that honours SIGINT without escalating", async () => {
+    const child = nodeChild("process.on('SIGINT', () => process.exit(0)); setInterval(() => {}, 1000)");
+    await ready();
+    await stopGracefully(child, 5_000);
+    expect(child.exitCode).toBe(0);
+  });
+
+  it("escalates when SIGINT is ignored, so push-to-talk can't hang", async () => {
+    const child = nodeChild("process.on('SIGINT', () => {}); setInterval(() => {}, 1000)");
+    await ready();
+    await stopGracefully(child, 100);
+    expect(child.signalCode).toBe("SIGTERM");
   });
 });
 
