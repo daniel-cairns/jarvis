@@ -49,7 +49,7 @@ main {
 #talk:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
 
 .state {
-  margin: -18px 0 0;
+  margin: -6px 0 0;
   font: 600 10px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
   letter-spacing: 0.28em;
   text-transform: uppercase;
@@ -189,41 +189,38 @@ main {
 .buttons button:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
 
 /*
- * Stop and minimise are hieroglyphs hanging from the wings (the orb draws their gold stems): gold line-art like the
- * glyph ring, no backing disc. Wing midpoints are x ≈ 63 and 257.
+ * Stop and minimise are the two columns of the altar under the eye (drawn on the canvas). These buttons sit over the
+ * column shafts (x 136–156 and 164–184, y 206–236) and carry the engraved glyphs.
  */
 #stop, #minimise {
   position: absolute;
-  top: 168px;
-  width: 30px;
-  height: 30px;
+  top: 204px;
+  width: 22px;
+  height: 34px;
   padding: 0;
   border: 0;
-  border-radius: 8px;
+  border-radius: 3px;
   background: none;
   display: grid;
-  place-items: center;
+  place-items: end center;
+  padding-bottom: 6px;
   cursor: pointer;
-  transition: transform 0.2s, filter 0.2s;
 }
-#stop { left: 48px; }
-#minimise { left: 242px; }
-#stop[hidden] { display: none; }
+#stop { left: 135px; }
+#minimise { left: 163px; }
+#stop:disabled { cursor: default; }
 #stop svg, #minimise svg {
-  width: 24px;
-  height: 24px;
+  width: 13px;
+  height: 13px;
   fill: none;
-  stroke: var(--accent);
-  stroke-width: 2;
+  stroke: #1a2f72;
+  stroke-width: 2.6;
   stroke-linecap: round;
   stroke-linejoin: round;
-  filter: drop-shadow(0 0 3px rgba(236, 188, 82, 0.75)) drop-shadow(0 1px 2px rgba(0, 0, 0, 0.6));
 }
-#minimise svg { opacity: 0.85; }
-#stop .core { fill: #ff6a5a; stroke: none; filter: drop-shadow(0 0 5px rgba(255, 90, 80, 0.95)); }
-#stop:hover, #minimise:hover { transform: scale(1.12); }
-#stop:hover svg, #minimise:hover svg { opacity: 1; filter: drop-shadow(0 0 6px rgba(248, 220, 149, 0.95)) drop-shadow(0 1px 2px rgba(0, 0, 0, 0.6)); }
-#stop:focus-visible, #minimise:focus-visible { outline: 2px solid var(--reactor); outline-offset: 1px; }
+#stop .core { fill: #c0392b; stroke: none; }
+#stop:not(:disabled) .core { fill: #ff5a4a; filter: drop-shadow(0 0 3px rgba(255, 90, 80, 0.9)); }
+#stop:focus-visible, #minimise:focus-visible { outline: 2px solid var(--reactor); outline-offset: 2px; }
 
 .hint {
   margin: 10px 0 0;

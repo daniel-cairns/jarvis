@@ -4,6 +4,7 @@ import type { JarvisConfig } from "../config.js";
 import { listNotes, readNote, saveNote, searchNotes } from "./brain.js";
 import { launchCleanBrowser, openApp, openPath, realRunner, type Runner } from "./mac.js";
 import { serveApp } from "./serve.js";
+import { checkGraph, graphShape, type TeardownGraph } from "../ui/graph.js";
 
 export const SERVER_NAME = "jarvis";
 
@@ -24,8 +25,14 @@ async function guarded(fn: () => Promise<unknown>): Promise<ToolText> {
 
 /** Shows markdown in the detail panel; returns where it ended up, for the model to know. */
 export type ShowDetail = (title: string, markdown: string) => string;
+export type ShowGraph = (title: string, graph: TeardownGraph) => string;
 
-export function createJarvisServer(cfg: JarvisConfig, runner: Runner = realRunner, showDetail?: ShowDetail) {
+export function createJarvisServer(
+  cfg: JarvisConfig,
+  runner: Runner = realRunner,
+  showDetail?: ShowDetail,
+  showGraph?: ShowGraph,
+) {
   return createSdkMcpServer({
     name: SERVER_NAME,
     version: "0.1.0",
@@ -65,6 +72,16 @@ export function createJarvisServer(cfg: JarvisConfig, runner: Runner = realRunne
         "Show the user detail on screen in your HUD panel: lists, tables, steps, code, a report section, anything too long or visual to say aloud. Markdown. Speak a short summary alongside it.",
         { title: z.string().min(1).max(120), markdown: z.string().min(1).max(200_000) },
         (args) => guarded(async () => (showDetail ? showDetail(args.title, args.markdown) : "No screen is attached; say it instead.")),
+      ),
+      tool(
+        "show_graph",
+        "Show an interactive 3D map of a teardown in your HUD: nodes are the app/site, its modules, frameworks, features, data stores and outside services; edges are how they connect (label them: uses, contains, stores in, calls). Ground it in REA evidence; set inferred: true on links you deduced rather than observed; put the evidence in each node's detail.",
+        { title: z.string().min(1).max(120), ...graphShape },
+        (args) =>
+          guarded(async () => {
+            const graph = checkGraph({ nodes: args.nodes, edges: args.edges });
+            return showGraph ? showGraph(args.title, graph) : "No screen is attached; describe the structure instead.";
+          }),
       ),
       tool(
         "open_app",

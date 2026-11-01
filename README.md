@@ -32,6 +32,7 @@ answers, then listens for your reply. Say nothing for a few seconds and it goes 
 | "Build me my own version" | Builds an original app under `workspace/` from the blueprint, tests it, opens it |
 | "Open Safari" / "Open the app you built" | Opens apps, or files Astra made |
 | "What did we learn about igloo?" | Searches the brain |
+| "Show me a 3D map of the Notes teardown" | Opens an interactive 3D map of the app's structure: orbit, zoom, click nodes for evidence |
 
 ## Set up (macOS)
 
@@ -84,7 +85,7 @@ In either mode you can also type a request. Commands: `/new` (fresh conversation
 |-----------------------|----------------|
 | Reading files, searching the web | Shell commands |
 | Saving and reading brain notes | REA tools (answer "always" to stop being asked for that tool this session) |
-| Writing files inside `workspace/` | Writing anywhere outside `workspace/` |
+| Writing files inside `workspace/` and her brain | Writing anywhere else |
 | Opening apps, and files inside its own folders | |
 
 Each request also has a spending cap (`JARVIS_MAX_BUDGET_USD`, default $5).

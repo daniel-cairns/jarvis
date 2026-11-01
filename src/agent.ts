@@ -9,12 +9,15 @@ import type { JarvisConfig } from "./config.js";
 import { decide, describeCall, parseAnswer, spokenQuestion } from "./permissions.js";
 import { jarvisInstructions } from "./prompt.js";
 import { createJarvisServer, SERVER_NAME } from "./tools/server.js";
+import type { TeardownGraph } from "./ui/graph.js";
 
 export type JarvisIO = {
   /** Called with each piece of top-level assistant text as it arrives. */
   say(text: string): Promise<void>;
   /** Status lines that are shown but not spoken. */
   status(text: string): void;
+  /** Shows a teardown's 3D map (or a text version without the orb); returns where it went. */
+  graph?(title: string, graph: TeardownGraph): string;
   /** Puts detail on screen (the orb's panel, or the terminal); returns where it went. */
   show?(title: string, markdown: string): string;
   /** Asks the user a yes/always/no question (spoken briefly, detail shown) and returns their raw answer. */
@@ -69,7 +72,7 @@ export class Jarvis {
       maxBudgetUsd: this.cfg.maxBudgetUsd,
       systemPrompt: { type: "preset", preset: "claude_code", append: jarvisInstructions(this.cfg) },
       mcpServers: {
-        [SERVER_NAME]: createJarvisServer(this.cfg, undefined, this.io.show?.bind(this.io)),
+        [SERVER_NAME]: createJarvisServer(this.cfg, undefined, this.io.show?.bind(this.io), this.io.graph?.bind(this.io)),
         rea: { type: "stdio", command: reaCmd!, args: reaArgs },
       },
       permissionMode: "default",
@@ -83,6 +86,7 @@ export class Jarvis {
   private readonly canUseTool: CanUseTool = async (toolName, input) => {
     const decision = decide(toolName, input, {
       workspaceDir: this.cfg.workspaceDir,
+      brainDir: this.cfg.brainDir,
       sessionAllowed: this.sessionAllowed,
     });
     if (decision === "allow") return { behavior: "allow", updatedInput: input };

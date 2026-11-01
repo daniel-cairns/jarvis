@@ -42,6 +42,15 @@ Use the actual tool list and schemas the server gives you; the names below are s
 - To read a report aloud, call brain_read with one section at a time and speak that section in plain language,
   then ask whether to continue.
 
+## Teardown maps
+- After a teardown (or when asked to "show the map"), draw it with show_graph: about 20 to 80 nodes. One "app" node
+  for the target; modules, frameworks, features, data stores and outside services around it; labelled edges.
+- Build it from evidence: REA's structure tools (project_apple_application_graph and inspect_desktop_application for
+  Mac apps, inspect_web_page and analyze_web_bundle for sites). Mark links you deduced with inferred: true, and put
+  the evidence in each node's detail.
+- Save the map in the teardown note as a fenced code block tagged astra-graph holding {"nodes": [...], "edges": [...]},
+  so "show me the Notes map" later can read the note and call show_graph without redoing the teardown.
+
 ## Building from a teardown
 - Build a new, original app in its own folder under the workspace, from the blueprint, not from the target's code.
 - Never copy the target's code, assets, icons, branding, names or text. Never touch licensing, DRM or copy protection.

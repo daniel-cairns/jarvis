@@ -8,6 +8,7 @@ import path from "node:path";
 import readline from "node:readline";
 import { fileURLToPath } from "node:url";
 import type { Answer } from "../permissions.js";
+import type { TeardownGraph } from "./graph.js";
 
 export type OrbState = "idle" | "listening" | "thinking" | "speaking";
 
@@ -18,6 +19,7 @@ export type ToOrb =
   | { type: "ask"; id: string; spoken: string; detail: string }
   | { type: "answered"; id: string }
   | { type: "detail"; title: string; html: string }
+  | { type: "graph"; title: string; graph: TeardownGraph }
   | { type: "quit" };
 
 export type FromOrb =

@@ -114,7 +114,8 @@ app.whenReady().then(() => {
       Menu.buildFromTemplate([
         win.isVisible() ? { label: "Hide Astra", click: () => win.hide() } : { label: "Show Astra", click: show },
         { label: "Stop Astra", click: () => send({ type: "stop" }) },
-        { label: "Show last detail", enabled: lastDetail !== null, click: () => openPanel(lastDetail) },
+        { label: "Show last detail", enabled: slabs.detail.last !== null, click: () => openSlab("detail", slabs.detail.last) },
+        { label: "Show last map", enabled: slabs.graph.last !== null, click: () => openSlab("graph", slabs.graph.last) },
         { type: "separator" },
         {
           label: "Quit Astra",
@@ -128,21 +129,23 @@ app.whenReady().then(() => {
     ),
   );
 
-  // The detail panel: a second HUD window for anything too long to say. Opens beside the orb.
-  let panel = null;
-  let lastDetail = null;
-  const openPanel = (msg) => {
-    lastDetail = msg;
-    if (panel && !panel.isDestroyed()) {
-      panel.webContents.send("jarvis", msg);
-      panel.showInactive();
+  // Glass slab windows beside the orb: the detail panel (text) and the teardown map (3D graph). One of each.
+  const slabs = {
+    detail: { file: "panel.html", width: 540, height: 620, win: null, last: null },
+    graph: { file: "graph.html", width: 880, height: 640, win: null, last: null },
+  };
+  const openSlab = (kind, msg) => {
+    const slab = slabs[kind];
+    slab.last = msg;
+    if (slab.win && !slab.win.isDestroyed()) {
+      slab.win.webContents.send("jarvis", msg);
+      slab.win.showInactive();
       return;
     }
     const bounds = win.getBounds();
     const { workArea } = screen.getDisplayMatching(bounds);
-    const width = 540;
-    const height = 620;
-    panel = new BrowserWindow({
+    const { width, height } = slab;
+    const w = new BrowserWindow({
       width,
       height,
       x: Math.max(workArea.x + 12, bounds.x - width - 8),
@@ -162,12 +165,13 @@ app.whenReady().then(() => {
       show: false,
       webPreferences: WEB_PREFERENCES,
     });
-    panel.setAlwaysOnTop(true, "floating");
-    harden(panel);
-    panel.loadFile(path.join(__dirname, "panel.html"));
-    panel.webContents.once("did-finish-load", () => {
-      panel.webContents.send("jarvis", msg);
-      panel.showInactive();
+    slab.win = w;
+    w.setAlwaysOnTop(true, "floating");
+    harden(w);
+    w.loadFile(path.join(__dirname, slab.file));
+    w.webContents.once("did-finish-load", () => {
+      w.webContents.send("jarvis", msg);
+      w.showInactive();
     });
   };
 
@@ -182,7 +186,7 @@ app.whenReady().then(() => {
   ipcMain.on("orb", (event, m) => {
     const sender = BrowserWindow.fromWebContents(event.sender);
     if (m?.type === "minimise") return win.hide();
-    if (m?.type === "panel-close") return panel?.close();
+    if (m?.type === "panel-close") return sender && sender !== win ? sender.close() : undefined;
     if (m?.type === "drag-start" && sender) {
       const p = screen.getCursorScreenPoint();
       const [winX, winY] = sender.getPosition();
@@ -209,7 +213,7 @@ app.whenReady().then(() => {
         return;
       }
       if (m.type === "quit") app.quit();
-      else if (m.type === "detail") openPanel(m);
+      else if (m.type === "detail" || m.type === "graph") openSlab(m.type, m);
       else if (m.type === "ask") {
         // A question needs you, so a minimised orb comes back for it.
         if (!win.isVisible()) show();

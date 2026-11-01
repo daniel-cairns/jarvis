@@ -14,13 +14,15 @@ const WRITE_TOOLS = new Set(["Write", "Edit", "MultiEdit", "NotebookEdit"]);
 export function decide(
   toolName: string,
   input: Record<string, unknown>,
-  ctx: { workspaceDir: string; sessionAllowed: ReadonlySet<string> },
+  ctx: { workspaceDir: string; brainDir?: string; sessionAllowed: ReadonlySet<string> },
 ): Decision {
   if (toolName.startsWith("mcp__jarvis__")) return "allow";
   if (ALWAYS_ALLOWED.has(toolName)) return "allow";
   if (WRITE_TOOLS.has(toolName)) {
+    // Astra's own folders: the workspace she builds in and the brain she keeps notes in.
     const target = input.file_path ?? input.notebook_path;
-    if (typeof target === "string" && isInside(ctx.workspaceDir, path.resolve(ctx.workspaceDir, target))) {
+    const roots = [ctx.workspaceDir, ...(ctx.brainDir ? [ctx.brainDir] : [])];
+    if (typeof target === "string" && roots.some((root) => isInside(root, path.resolve(ctx.workspaceDir, target)))) {
       return "allow";
     }
   }

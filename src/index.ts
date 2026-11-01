@@ -7,6 +7,7 @@ import { Jarvis } from "./agent.js";
 import { loadConfig } from "./config.js";
 import { parseAnswer } from "./permissions.js";
 import { renderDetail } from "./ui/detail.js";
+import { graphAsText } from "./ui/graph.js";
 import { stopServing } from "./tools/serve.js";
 import { askDialog } from "./ui/dialog.js";
 import { Orb } from "./ui/orb.js";
@@ -277,6 +278,14 @@ async function main(): Promise<void> {
 
   const jarvis = new Jarvis(cfg, {
     say,
+    graph: (title, graph) => {
+      if (orb?.alive) {
+        orb.send({ type: "graph", title, graph });
+        return "Shown as a 3D map. The user can orbit it and click nodes for detail.";
+      }
+      console.log(`\n${graphAsText(title, graph)}\n`);
+      return "Printed as text in the terminal (no orb is open).";
+    },
     show: (title, markdown) => {
       if (orb?.alive) {
         orb.send({ type: "detail", title, html: renderDetail(markdown) });

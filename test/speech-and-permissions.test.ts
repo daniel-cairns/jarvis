@@ -70,6 +70,9 @@ describe("decide", () => {
     expect(decide("Write", { file_path: "/Users/dan/.jarvis/workspace/notes-app/index.html" }, ctx)).toBe("allow");
     expect(decide("Write", { file_path: "notes-app/app.js" }, ctx)).toBe("allow");
     expect(decide("Write", { file_path: "/Users/dan/.zshrc" }, ctx)).toBe("ask");
+    const withBrain = { ...ctx, brainDir: "/Users/dan/.jarvis/brain" };
+    expect(decide("Edit", { file_path: "/Users/dan/.jarvis/brain/teardowns/notes.md" }, withBrain)).toBe("allow");
+    expect(decide("Edit", { file_path: "/Users/dan/.jarvis/brain/../secrets.md" }, withBrain)).toBe("ask");
     expect(decide("Edit", { file_path: "/Users/dan/.jarvis/workspace/../escape" }, ctx)).toBe("ask");
   });
 

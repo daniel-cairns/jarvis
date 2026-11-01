@@ -59,7 +59,7 @@
     if (!COLOURS[next]) return;
     state = next;
     stateLabel.textContent = LABELS[next];
-    stopButton.hidden = next === "idle";
+    stopButton.disabled = next === "idle";
     talk.setAttribute("aria-label", TALK_LABELS[next] ?? "Talk to Astra");
   }
 
@@ -170,6 +170,14 @@
     if (value) answer(value);
   });
   stopButton.addEventListener("click", () => bridge.send({ type: "stop" }));
+  // The altar's columns light up under the pointer (they're drawn on the canvas; the buttons sit over them).
+  let hovered = null;
+  for (const [el, id] of [[stopButton, "stop"], [document.getElementById("minimise"), "minimise"]]) {
+    el.addEventListener("pointerenter", () => (hovered = id));
+    el.addEventListener("pointerleave", () => (hovered = null));
+    el.addEventListener("focus", () => (hovered = id));
+    el.addEventListener("blur", () => (hovered = null));
+  }
 
   window.addEventListener("keydown", (e) => {
     if (!askId) {
@@ -253,6 +261,72 @@
         ctx.quadraticCurveTo(-s * 0.2, -s * 0.6, 0, -s * 0.3);
     }
     ctx.stroke();
+  }
+
+  /**
+   * The altar under the eye: a gorge cornice, two papyrus columns and a stepped plinth. The left column is stop
+   * (lit red-gold while Astra is busy), the right is minimise; the DOM buttons sit over the column shafts.
+   */
+  function altar(cx, t, busy, hover) {
+    const GOLD_DARK = [150, 104, 34];
+    const columnFill = (x0, w, glow) => {
+      const g = ctx.createLinearGradient(x0, 0, x0 + w, 0);
+      g.addColorStop(0, rgba(GOLD_DARK, 0.95));
+      g.addColorStop(0.45, rgba(GOLD.map((v) => lerp(v, 255, 0.25 + glow * 0.3)), 1));
+      g.addColorStop(1, rgba(GOLD_DARK, 0.95));
+      return g;
+    };
+    // Plinth: two steps.
+    ctx.fillStyle = rgba(GOLD_DARK, 0.95);
+    ctx.fillRect(cx - 40, 242, 80, 5);
+    ctx.fillStyle = columnFill(cx - 34, 68, 0);
+    ctx.fillRect(cx - 34, 236, 68, 6);
+
+    for (const [side, id] of [[-1, "stop"], [1, "minimise"]]) {
+      const x0 = cx + side * 14 - 10;
+      const active = id === "stop" ? busy : true;
+      const glow = (hover === id ? 0.8 : 0) + (id === "stop" && busy ? 0.35 + 0.25 * Math.sin(t * 4) : 0);
+      ctx.save();
+      ctx.globalAlpha = active ? 1 : 0.45;
+      if (glow > 0) {
+        ctx.shadowColor = id === "stop" && busy ? "rgba(255, 110, 90, 0.9)" : "rgba(248, 220, 149, 0.9)";
+        ctx.shadowBlur = 10 + glow * 8;
+      }
+      // Shaft with fluting.
+      ctx.fillStyle = columnFill(x0, 20, glow);
+      ctx.fillRect(x0, 211, 20, 25);
+      ctx.shadowBlur = 0;
+      ctx.strokeStyle = rgba(GOLD_DARK, 0.55);
+      ctx.lineWidth = 0.8;
+      for (const fx of [4, 16]) {
+        ctx.beginPath();
+        ctx.moveTo(x0 + fx, 212);
+        ctx.lineTo(x0 + fx, 235);
+        ctx.stroke();
+      }
+      // Papyrus capital: flares out to the abacus.
+      ctx.beginPath();
+      ctx.moveTo(x0, 211);
+      ctx.lineTo(x0 - 3, 206);
+      ctx.lineTo(x0 + 23, 206);
+      ctx.lineTo(x0 + 20, 211);
+      ctx.closePath();
+      ctx.fillStyle = columnFill(x0 - 3, 26, glow);
+      ctx.fill();
+      ctx.restore();
+    }
+
+    // Gorge cornice: the flared Egyptian lintel across both columns.
+    ctx.beginPath();
+    ctx.moveTo(cx - 32, 206);
+    ctx.lineTo(cx + 32, 206);
+    ctx.lineTo(cx + 36, 199);
+    ctx.lineTo(cx - 36, 199);
+    ctx.closePath();
+    ctx.fillStyle = columnFill(cx - 36, 72, 0);
+    ctx.fill();
+    ctx.fillStyle = rgba(LAPIS, 0.9);
+    ctx.fillRect(cx - 36, 197, 72, 2);
   }
 
   /** The Eye of Horus in the core; `open` 0..1 squashes it shut. */
@@ -351,22 +425,6 @@
       ctx.restore();
     }
 
-    // Gold stems from each wing to its medallion (minimise always; stop while busy).
-    for (const [x, on] of [[63, state !== "idle"], [257, true]]) {
-      if (!on) continue;
-      ctx.beginPath();
-      ctx.moveTo(x, cy + 24);
-      ctx.lineTo(x, 175);
-      ctx.strokeStyle = rgba(GOLD, 0.8);
-      ctx.lineWidth = 1.2;
-      ctx.stroke();
-      ctx.beginPath();
-      ctx.moveTo(x, cy + 21); ctx.lineTo(x + 3, cy + 24); ctx.lineTo(x, cy + 27); ctx.lineTo(x - 3, cy + 24);
-      ctx.closePath();
-      ctx.fillStyle = rgba(GOLD, 0.95);
-      ctx.fill();
-    }
-
     // Listening ripples
     if (state === "listening") {
       for (let k = 0; k < 3; k++) {
@@ -422,6 +480,8 @@
       ctx.lineWidth = 1;
       ctx.stroke();
     }
+
+    altar(cx, t, state !== "idle", hovered);
 
     // Core: white-hot sun disc
     const core = ctx.createRadialGradient(cx, cy, r * 0.05, cx, cy, r);

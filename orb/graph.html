@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en-NZ">
+<head>
+  <meta charset="utf-8">
+  <!-- The graph library styles its tooltip inline, so this page allows inline styles (never inline script). -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:">
+  <title>Astra · Map</title>
+  <link rel="stylesheet" href="panel.css">
+  <link rel="stylesheet" href="graph.css">
+</head>
+<body>
+  <div class="slab">
+    <header id="bar" title="Drag to move">
+      <span class="sensor" aria-hidden="true"><i></i></span>
+      <div class="heading">
+        <p class="label">Teardown map</p>
+        <h1 id="title">Astra</h1>
+      </div>
+      <button id="close" type="button" aria-label="Close map (Esc)" title="Close (Esc)">×</button>
+    </header>
+    <main class="stage-wrap">
+      <div id="graph" class="stage" role="img" aria-label="3D map of the teardown; the same map is listed as text below for screen readers"></div>
+      <ul id="legend" class="legend" aria-label="Legend"></ul>
+      <p class="hint" aria-hidden="true">Drag to orbit · scroll to zoom · click a node</p>
+      <aside id="info" class="info" hidden aria-live="polite">
+        <button id="info-close" type="button" aria-label="Close node details">×</button>
+        <p id="info-group" class="label"></p>
+        <h2 id="info-title"></h2>
+        <p id="info-detail"></p>
+        <ul id="info-links"></ul>
+      </aside>
+      <ul id="outline" class="visually-hidden" aria-label="Map as a list"></ul>
+    </main>
+    <footer aria-hidden="true"><span>ASTRA · HUD-01 · MAP</span><span id="stamp"></span></footer>
+  </div>
+  <script src="build/graph.js"></script>
+</body>
+</html>
