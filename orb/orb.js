@@ -11,6 +11,7 @@
   const card = document.getElementById("card");
   const caption = document.getElementById("caption");
   const activity = document.getElementById("activity");
+  const cardToggle = document.getElementById("card-toggle");
   const question = document.getElementById("question");
   const questionQ = document.getElementById("question-q");
   const questionOptions = document.getElementById("question-options");
@@ -64,8 +65,86 @@
   const rgba = (c, a) => `rgba(${c[0] | 0}, ${c[1] | 0}, ${c[2] | 0}, ${Math.max(0, Math.min(1, a))})`;
   const lerp = (a, b, t) => a + (b - a) * t;
 
+  // ── Gate dial: on each state change the glyph ring dials like a stargate ──
+  // The ring spins and settles on a symbol, the top chevron engages and the next chevron round lights; it reverses
+  // for the next symbol, three locks in all, then the lit chevrons flare and a burst ripples out from the eye.
+  const CHEVRONS = 9;
+  const LOCKS = 3;
+  const SPIN_MS = 420;
+  const ENGAGE_MS = 230;
+  const BURST_MS = 650;
+  const FADE_MS = 900;
+  const LOCK_MS = SPIN_MS + ENGAGE_MS;
+  const DIAL_MS = LOCKS * LOCK_MS;
+  let ringOffset = 0;
+  let dialFrom = 0;
+  let dialAt = -Infinity;
+  let dialing = false;
+  const easeInOut = (p) => (p < 0.5 ? 4 * p ** 3 : 1 - (-2 * p + 2) ** 3 / 2);
+  // How far each lock's spin travels (in glyph slots of 30°), alternating direction like a gate dialling.
+  const spinFor = (k) => (k % 2 === 0 ? 1 : -1) * (Math.PI / 6) * (5 + k * 2);
+
+  function startUnlock() {
+    if (reducedMotion) return;
+    if (dialing) ringOffset = dialFrom + [0, 1, 2].reduce((sum, k) => sum + spinFor(k), 0);
+    dialFrom = ringOffset;
+    dialAt = performance.now();
+    dialing = true;
+  }
+
+  /** This frame's ring offset, top-chevron engage (0..1), chevrons lit, burst (0..1) and lit-chevron fade (0..1). */
+  function unlockFrame(now) {
+    const e = now - dialAt;
+    if (!dialing && e > DIAL_MS + BURST_MS + FADE_MS) return { offset: ringOffset, engage: 0, lit: 0, burst: 0, glow: 0 };
+    if (e >= DIAL_MS) {
+      if (dialing) {
+        ringOffset = dialFrom + [0, 1, 2].reduce((sum, k) => sum + spinFor(k), 0);
+        dialing = false;
+      }
+      const after = e - DIAL_MS;
+      return {
+        offset: ringOffset,
+        engage: 0,
+        lit: LOCKS,
+        burst: after < BURST_MS ? after / BURST_MS : 0,
+        glow: after < BURST_MS ? 1 : Math.max(0, 1 - (after - BURST_MS) / FADE_MS),
+      };
+    }
+    const k = Math.floor(e / LOCK_MS);
+    const within = e - k * LOCK_MS;
+    let offset = dialFrom;
+    for (let j = 0; j < k; j++) offset += spinFor(j);
+    if (within < SPIN_MS) offset += spinFor(k) * easeInOut(within / SPIN_MS);
+    else offset += spinFor(k);
+    const engage = within >= SPIN_MS ? Math.sin(((within - SPIN_MS) / ENGAGE_MS) * Math.PI) : 0;
+    return { offset, engage, lit: k + (within >= SPIN_MS + ENGAGE_MS / 2 ? 1 : 0), burst: 0, glow: 1 };
+  }
+
+  /** A chevron: a gold V-wedge pointing in at the ring, lit or dim. */
+  function chevron(lit, dip) {
+    ctx.beginPath();
+    ctx.moveTo(-6, -4 + dip);
+    ctx.lineTo(0, 3 + dip);
+    ctx.lineTo(6, -4 + dip);
+    ctx.lineTo(3.2, -5.5 + dip);
+    ctx.lineTo(0, -1 + dip);
+    ctx.lineTo(-3.2, -5.5 + dip);
+    ctx.closePath();
+    if (lit > 0) {
+      ctx.fillStyle = rgba([255, 228, 150], 0.35 + 0.6 * lit);
+      ctx.shadowColor = rgba(COLOURS.listening, 0.9 * lit);
+      ctx.shadowBlur = 10 * lit;
+      ctx.fill();
+      ctx.shadowBlur = 0;
+    }
+    ctx.strokeStyle = rgba(GOLD, 0.4 + 0.6 * Math.max(lit, 0));
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+
   function setState(next) {
     if (!COLOURS[next]) return;
+    if (next !== state) startUnlock();
     state = next;
     stateLabel.textContent = LABELS[next];
     stopButton.disabled = next === "idle";
@@ -126,6 +205,26 @@
     activity.append(li);
     while (activity.children.length > 4) activity.firstElementChild.remove();
     keepCard();
+  }
+
+  // Collapsing the thinking window leaves one line: her current step. Remembered between runs (per this Mac).
+  function setCollapsed(collapsed) {
+    card.classList.toggle("collapsed", collapsed);
+    cardToggle.setAttribute("aria-expanded", String(!collapsed));
+    cardToggle.setAttribute("aria-label", collapsed ? "Expand her thinking window" : "Collapse her thinking window");
+    cardToggle.title = collapsed ? "Expand" : "Collapse";
+    cardToggle.textContent = collapsed ? "▸" : "▾";
+    try {
+      localStorage.setItem("astra.cardCollapsed", collapsed ? "1" : "0");
+    } catch {
+      // Storage unavailable: the choice just won't persist.
+    }
+  }
+  cardToggle.addEventListener("click", () => setCollapsed(!card.classList.contains("collapsed")));
+  try {
+    setCollapsed(localStorage.getItem("astra.cardCollapsed") === "1");
+  } catch {
+    setCollapsed(false);
   }
 
   function resetActivity() {
@@ -588,8 +687,9 @@
       }
     }
 
-    // Glyph ring: gold double ring with symbols, turning slowly
+    // Glyph ring: gold double ring with symbols, turning slowly (and dialling like a gate on state changes)
     const gr = r * 1.72;
+    const dial = unlockFrame(now);
     ctx.strokeStyle = rgba(GOLD, 0.55);
     ctx.lineWidth = 1;
     for (const rr of [gr - 7, gr + 7]) {
@@ -597,12 +697,31 @@
       ctx.arc(cx, cy, rr, 0, Math.PI * 2);
       ctx.stroke();
     }
+    // Burst: a turquoise ripple out from the eye when the last chevron locks.
+    if (dial.burst) {
+      const rr = r + dial.burst * (gr + 30 - r);
+      ctx.beginPath();
+      ctx.arc(cx, cy, rr, 0, Math.PI * 2);
+      ctx.strokeStyle = rgba(COLOURS.listening, 0.8 * (1 - dial.burst));
+      ctx.lineWidth = 6 * (1 - dial.burst) + 1;
+      ctx.stroke();
+    }
+    // Chevrons round the outside; the top one is the master that engages on each lock.
+    for (let c = 0; c < CHEVRONS; c++) {
+      const a = -Math.PI / 2 + (c * Math.PI * 2) / CHEVRONS;
+      const lit = c === 0 ? Math.max(dial.engage, dial.lit >= LOCKS ? dial.glow : 0) : c <= dial.lit ? dial.glow : 0;
+      ctx.save();
+      ctx.translate(cx + Math.cos(a) * (gr + 13), cy + Math.sin(a) * (gr + 13));
+      ctx.rotate(a + Math.PI / 2); // local +y points in at the ring
+      chevron(lit, c === 0 ? 3 * dial.engage : 0);
+      ctx.restore();
+    }
     ctx.strokeStyle = rgba(GOLD, 0.85);
     ctx.lineWidth = 1.1;
     ctx.lineCap = "round";
     const working = state !== "idle" && activeGlyph;
     for (let i = 0; i < 12; i++) {
-      const a = spin * 0.6 + (i / 12) * Math.PI * 2;
+      const a = spin * 0.6 + (i / 12) * Math.PI * 2 + dial.offset;
       const kind = GLYPHS[i % GLYPHS.length];
       const lit = working && kind === activeGlyph;
       ctx.save();

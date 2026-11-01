@@ -301,7 +301,7 @@ async function main(): Promise<void> {
     }
     const quick = quickUiCommand(request);
     if (quick && !dialogWake) {
-      console.log(`\n(${quick.action.replace(/_/g, " ")}${quick.level !== undefined ? ` ${quick.level}` : ""})`);
+      console.log(`\n(${quick.action.replace(/_/g, " ")}${quick.level !== undefined ? ` ${quick.level}` : ""}${quick.position ? ` ${quick.position.replace(/_/g, " ")}` : ""})`);
       return void runUi(quick);
     }
     if (dialogWake) return dialogWake(request);
@@ -336,7 +336,15 @@ async function main(): Promise<void> {
           woke = null;
           tries++;
           console.log("  🎙  listening for your answer…");
+          const startedAt = Date.now();
           heard = await listenOnce(12_000, signal);
+          // She started talking while this was recording (a line queued after the question): that's her voice,
+          // not an answer. Throw it away and listen again once she's done.
+          if (heard && lastSpokeAt >= startedAt) {
+            console.log("  (that was my own voice; listening again)");
+            tries--;
+            continue;
+          }
         } else {
           await new Promise<void>((resolve) => {
             wakeUp = resolve;
@@ -439,7 +447,13 @@ async function main(): Promise<void> {
 
   /** Astra working her own interface, by voice or via ui_control. */
   const runUi = async (command: UiCommand | UiAction): Promise<string> => {
-    const { action, level } = typeof command === "string" ? { action: command, level: undefined } : command;
+    const { action, level, position } = typeof command === "string" ? { action: command, level: undefined, position: undefined } : command;
+    if (action === "move") {
+      if (!position) return "Say where: a spot like top_left or centre, or a nudge.";
+      if (!orb?.alive) return "No orb is open.";
+      orb.send({ type: "ui", action, position });
+      return `Moving ${position.startsWith("nudge_") ? position.slice(6) : `to the ${position.replace("_", " ")}`}.`;
+    }
     if (action === "volume_up") return setVolume(settings.volume + 0.15);
     if (action === "volume_down") return setVolume(settings.volume - 0.15);
     if (action === "set_volume") return setVolume((level ?? 80) / 100);
@@ -450,7 +464,7 @@ async function main(): Promise<void> {
     if (action === "show_brain") return openBrain();
     if (!orb?.alive) return "No orb is open.";
     orb.send({ type: "ui", action });
-    const done: Record<Exclude<UiAction, "stop" | "show_brain" | "volume_up" | "volume_down" | "set_volume">, string> = {
+    const done: Record<Exclude<UiAction, "stop" | "show_brain" | "volume_up" | "volume_down" | "set_volume" | "move">, string> = {
       minimise: "Minimised to the menu bar.",
       show: "The orb is back.",
       close_panels: "Closed the panels.",
@@ -536,7 +550,7 @@ async function main(): Promise<void> {
       return answer;
     },
     // ui_control: Astra working her own interface (panels, minimise, stop).
-    ui: (action, level) => runUi({ action, level }),
+    ui: (action, level, position) => runUi({ action, level, position }),
   });
   await jarvis.init();
 

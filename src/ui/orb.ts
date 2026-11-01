@@ -11,7 +11,7 @@ import type { Answer } from "../permissions.js";
 import type { Choice, QuestionAnswer, QuestionSpec } from "../voice/answers.js";
 import type { ActivityGlyph } from "../activity.js";
 import type { BrainEntry } from "../tools/brain.js";
-import type { UiAction } from "./control.js";
+import type { Position, UiAction } from "./control.js";
 import type { TeardownGraph } from "./graph.js";
 
 export type OrbState = "idle" | "listening" | "thinking" | "speaking";
@@ -27,7 +27,7 @@ export type ToOrb =
   | { type: "question"; id: string; question: string; options: Choice[]; multiSelect: boolean; allowOther: boolean }
   | { type: "activity"; text: string; glyph?: ActivityGlyph }
   | { type: "activity-reset" }
-  | { type: "ui"; action: UiAction }
+  | { type: "ui"; action: UiAction; position?: Position }
   | { type: "volume-level"; level: number; quiet?: boolean }
   | { type: "brain"; notes: BrainEntry[] }
   | { type: "brain-note"; path: string; title: string; html: string; hasMap: boolean }

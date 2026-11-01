@@ -23,7 +23,10 @@ mic stays on while she runs (`/wake off` or `JARVIS_WAKE=off` to disable). Sayin
 over her is best-effort, since her own voice is in the mic; the stop glyph and Esc always work).
 **Questions and approvals** can be answered by voice: she listens for your answer once she's finished asking ("yes",
 "always", "the second one"), or click the card. She can interview you with option cards (ask_user).
-**She works her own interface**: "Astra, minimise", "open my brain", "show me the map again", "louder", "volume 40".
+**She works her own interface**: "Astra, minimise", "open my brain", "show me the map again", "louder", "volume 40",
+"move to the top left", "go to the centre", "move a bit right".
+**State changes dial like a gate**: the glyph ring spins and locks onto symbols as nine chevrons engage, then a burst
+ripples out from the eye. **Her thinking window collapses** to one line with the ▾ on its tab.
 **Volume**: by voice, by scrolling over the orb, or from the menu-bar menu; remembered in `~/.jarvis/settings.json`.
 **The brain browser** (menu bar → Open brain, or "Astra, open my brain") lists every note and teardown with search, and
 opens saved teardown maps. Maps have zoom buttons (+ / − / fit, or the + − 0 keys).

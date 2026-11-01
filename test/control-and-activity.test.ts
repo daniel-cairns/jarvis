@@ -84,3 +84,19 @@ describe("settings", () => {
     fs.rmSync(home, { recursive: true, force: true });
   });
 });
+
+describe("move commands", () => {
+  it("reads spots on screen and nudges", () => {
+    expect(quickUiCommand("Move to the top left.")).toEqual({ action: "move", position: "top_left" });
+    expect(quickUiCommand("go to the centre")).toEqual({ action: "move", position: "centre" });
+    expect(quickUiCommand("move to the bottom right corner")).toEqual({ action: "move", position: "bottom_right" });
+    expect(quickUiCommand("move to the right side of the screen")).toEqual({ action: "move", position: "right" });
+    expect(quickUiCommand("move a bit left")).toEqual({ action: "move", position: "nudge_left" });
+    expect(quickUiCommand("move up please")).toEqual({ action: "move", position: "nudge_up" });
+  });
+
+  it("leaves other 'move' requests to Claude", () => {
+    expect(quickUiCommand("move the file to my desktop")).toBeNull();
+    expect(quickUiCommand("move on to the next step")).toBeNull();
+  });
+});

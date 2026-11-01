@@ -9,7 +9,7 @@ import type { JarvisConfig } from "./config.js";
 import { decide, describeCall, parseAnswer, spokenQuestion } from "./permissions.js";
 import { jarvisInstructions } from "./prompt.js";
 import { createJarvisServer, SERVER_NAME } from "./tools/server.js";
-import type { UiAction } from "./ui/control.js";
+import type { Position, UiAction } from "./ui/control.js";
 import type { TeardownGraph } from "./ui/graph.js";
 import type { QuestionAnswer, QuestionSpec } from "./voice/answers.js";
 
@@ -19,7 +19,7 @@ export type JarvisIO = {
   /** Status lines that are shown but not spoken; tool calls come with their input for a short detail. */
   status(text: string, input?: Record<string, unknown>): void;
   /** Works Astra's own interface (panels, minimise, stop); returns what happened. */
-  ui?(action: UiAction, level?: number): string | Promise<string>;
+  ui?(action: UiAction, level?: number, position?: Position): string | Promise<string>;
   /** Asks the user a question (with options) and waits; null if they didn't answer. */
   question?(spec: QuestionSpec): Promise<QuestionAnswer | null>;
   /** Shows a teardown's 3D map (or a text version without the orb); returns where it went. */

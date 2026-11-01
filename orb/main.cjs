@@ -208,6 +208,61 @@ app.whenReady().then(() => {
     else if (action === "show_last_map" && slabs.graph.last) openSlab("graph", slabs.graph.last);
   };
 
+  /** Slides the window to (x, y) over ~450 ms, eased, instead of jumping. */
+  let gliding = null;
+  const glideTo = (x, y) =>
+    new Promise((resolve) => {
+      clearInterval(gliding);
+      const [x0, y0] = win.getPosition();
+      const start = Date.now();
+      const ease = (p) => (p < 0.5 ? 2 * p * p : 1 - (-2 * p + 2) ** 2 / 2);
+      gliding = setInterval(() => {
+        const p = Math.min(1, (Date.now() - start) / 450);
+        win.setPosition(Math.round(x0 + (x - x0) * ease(p)), Math.round(y0 + (y - y0) * ease(p)));
+        if (p === 1) {
+          clearInterval(gliding);
+          gliding = null;
+          resolve();
+        }
+      }, 16);
+    });
+
+  /**
+   * Astra moving herself: a spot on screen (where the orb, not the window, should end up) or a nudge. For a spot in
+   * the other half of the screen the layout flips first, so the orb lands exactly there.
+   */
+  const ORB_CENTRE = 136; // the orb's centre inside its canvas (orb.js: H / 2 + 6)
+  const NUDGE = 140;
+  const moveTo = async (position) => {
+    if (!win.isVisible()) show();
+    const b = win.getBounds();
+    const { workArea: wa } = screen.getDisplayMatching(b);
+    if (position.startsWith("nudge_")) {
+      const dx = position === "nudge_left" ? -NUDGE : position === "nudge_right" ? NUDGE : 0;
+      const dy = position === "nudge_up" ? -NUDGE : position === "nudge_down" ? NUDGE : 0;
+      const x = Math.max(wa.x, Math.min(b.x + dx, wa.x + wa.width - b.width));
+      await glideTo(x, b.y + dy);
+      return void updateLayout();
+    }
+    const [vertical, horizontal] = position.includes("_") ? position.split("_") : ["top", "bottom"].includes(position) ? [position, "centre"] : ["middle", position];
+    const wantTop = vertical === "top";
+    if (vertical !== "middle" && wantTop !== layoutTop) {
+      flipping = true;
+      layoutTop = wantTop;
+      win.webContents.send("jarvis", { type: "layout", top: wantTop });
+      await new Promise((r) => setTimeout(r, 40));
+      orbOffset = await orbTop();
+      flipping = false;
+    }
+    const margin = 8;
+    const x =
+      horizontal === "left" ? wa.x + margin : horizontal === "right" ? wa.x + wa.width - b.width - margin : Math.round(wa.x + (wa.width - b.width) / 2);
+    const orbY =
+      vertical === "top" ? wa.y + ORB_CENTRE - 20 : vertical === "bottom" ? wa.y + wa.height - 150 : Math.round(wa.y + wa.height / 2);
+    await glideTo(x, Math.round(orbY - orbOffset - ORB_CENTRE));
+    void updateLayout();
+  };
+
   // The orb sits at the top of its window in the upper half of the screen and at the bottom in the lower half, so
   // it can be dragged right up under the menu bar (macOS won't move a window's top edge above it).
   // When it flips, the window shifts by however far the orb moved inside it, so the orb stays under the cursor.
@@ -299,6 +354,7 @@ app.whenReady().then(() => {
       if (m.type === "quit") app.quit();
       else if (m.type === "detail" || m.type === "graph" || m.type === "brain") openSlab(m.type, m);
       else if (m.type === "brain-note") slabs.brain.win?.webContents.send("jarvis", m);
+      else if (m.type === "ui" && m.action === "move" && typeof m.position === "string") void moveTo(m.position);
       else if (m.type === "ui") runUi(m.action);
       else if (m.type === "volume-level") {
         volume = m.level;
