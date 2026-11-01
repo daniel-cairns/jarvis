@@ -30,6 +30,10 @@ over her is best-effort, since her own voice is in the mic; the stop glyph and E
 spark: feature, cylinder: data, cloud: service).
 **She folds away and unfolds**: minimising, quitting or "Astra, fold up" folds her wings, retracts her rings into
 the eye and closes it before she hides; showing her again (menu bar, "unfold", "come back") plays it in reverse.
+**Terminal and git panels** show what she's doing: every command she (or a background session) runs, with output and
+✓/✗, and the repos she touches with changed files, +/− counts and click-to-view diffs. They open on their own when she
+runs a command or edits a repo (closing one keeps it closed until your next request), collapse to their header with ▾,
+and are in the menu-bar menu, or say "show your terminal" / "show the git changes".
 **State changes dial like a gate**: the glyph ring spins and locks onto symbols as nine chevrons engage, then a burst
 ripples out from the eye. **Her thinking window collapses** away entirely with the ▾ on its tab (click the state label under the orb, or say "expand your panel", to bring it back); while
 collapsed, the gate's chevrons show her state (breathing: listening, chasing: thinking, pulsing: speaking).

@@ -16,6 +16,7 @@ function fromPage(m) {
     return { type: "answer", id: m.id, answer: m.answer };
   }
   if (m.type === "volume" && typeof m.delta === "number" && Math.abs(m.delta) <= 0.25) return { type: "volume", delta: m.delta };
+  if (m.type === "git-diff" && typeof m.root === "string" && typeof m.path === "string") return { type: "git-diff", root: m.root, path: m.path };
   if ((m.type === "brain-open" || m.type === "brain-map") && typeof m.path === "string" && m.path.length <= 300) {
     return { type: m.type, path: m.path };
   }
@@ -153,6 +154,8 @@ app.whenReady().then(() => {
         { label: "Show last detail", enabled: slabs.detail.last !== null, click: () => openSlab("detail", slabs.detail.last) },
         { label: "Show last map", enabled: slabs.graph.last !== null, click: () => openSlab("graph", slabs.graph.last) },
         { label: "Open brain", click: () => send({ type: "brain-request" }) },
+        { label: "Show terminal", click: () => openSlab("terminal", slabs.terminal.last ?? { type: "terminal", entries: [] }) },
+        { label: "Show git changes", click: () => openSlab("git", slabs.git.last ?? { type: "git", repos: [] }) },
         {
           label: "Volume",
           submenu: [25, 50, 75, 100].map((pct) => ({
@@ -182,7 +185,11 @@ app.whenReady().then(() => {
     detail: { file: "panel.html", width: 540, height: 620, win: null, last: null },
     graph: { file: "graph.html", width: 880, height: 640, win: null, last: null },
     brain: { file: "brain.html", width: 920, height: 660, win: null, last: null },
+    // The work panels stack at the bottom-left of the orb: the terminal at the bottom, git changes above it.
+    terminal: { file: "terminal.html", width: 600, height: 330, win: null, last: null, place: "bottom" },
+    git: { file: "git.html", width: 600, height: 420, win: null, last: null, place: "above-terminal" },
   };
+  const dismissed = new Set();
   const openSlab = (kind, msg) => {
     const slab = slabs[kind];
     slab.last = msg;
@@ -194,11 +201,19 @@ app.whenReady().then(() => {
     const bounds = win.getBounds();
     const { workArea } = screen.getDisplayMatching(bounds);
     const { width, height } = slab;
+    const left = Math.max(workArea.x + 12, bounds.x - width - 8);
+    const bottom = workArea.y + workArea.height - 12;
+    const placed =
+      slab.place === "bottom"
+        ? { x: left, y: bottom - height }
+        : slab.place === "above-terminal"
+          ? { x: left, y: Math.max(workArea.y + 12, bottom - slabs.terminal.height - 10 - height) }
+          : null;
     const w = new BrowserWindow({
       width,
       height,
-      x: Math.max(workArea.x + 12, bounds.x - width - 8),
-      y: Math.max(workArea.y + 12, Math.min(bounds.y, workArea.y + workArea.height - height - 12)),
+      x: placed?.x ?? left,
+      y: placed?.y ?? Math.max(workArea.y + 12, Math.min(bounds.y, workArea.y + workArea.height - height - 12)),
       minWidth: 340,
       minHeight: 220,
       frame: false,
@@ -356,7 +371,25 @@ app.whenReady().then(() => {
     if (m?.type === "minimise") return void hideOrb();
     if (m?.type === "transform-done" && sender === win) return transformWaiter?.();
     if (m?.type === "fit" && sender === win && Number.isFinite(m.height)) return void fitHeight(m.height);
-    if (m?.type === "panel-close") return sender && sender !== win ? sender.close() : undefined;
+    if (m?.type === "panel-close") {
+      // Closing a work panel keeps it closed for the rest of this request (it reopens on the next one).
+      for (const [kind, slab] of Object.entries(slabs)) if (slab.win === sender) dismissed.add(kind);
+      return sender && sender !== win ? sender.close() : undefined;
+    }
+    if (m?.type === "slab-collapse" && sender && sender !== win) {
+      const slab = Object.values(slabs).find((s) => s.win === sender);
+      if (!slab) return;
+      const [w] = sender.getSize();
+      if (m.collapsed && Number.isFinite(m.height)) {
+        slab.fullHeight = sender.getSize()[1];
+        sender.setMinimumSize(340, 60);
+        sender.setSize(w, Math.max(60, Math.round(m.height)));
+      } else if (!m.collapsed && slab.fullHeight) {
+        sender.setMinimumSize(340, 220);
+        sender.setSize(w, slab.fullHeight);
+      }
+      return;
+    }
     if (m?.type === "drag-start" && sender) {
       const p = screen.getCursorScreenPoint();
       const [winX, winY] = sender.getPosition();
@@ -388,6 +421,20 @@ app.whenReady().then(() => {
         void (win.isVisible() ? transform("close") : Promise.resolve()).then(() => app.quit());
       }
       else if (m.type === "detail" || m.type === "graph" || m.type === "brain") openSlab(m.type, m);
+      // Work panels open by themselves when there's something new, unless closed during this request (or asked for).
+      else if (m.type === "terminal" || m.type === "git") {
+        const slab = slabs[m.type];
+        const hasContent = m.type === "terminal" ? m.entries.length > 0 : m.repos.length > 0;
+        if (slab.win && !slab.win.isDestroyed()) openSlab(m.type, m);
+        else if (m.force || (hasContent && !dismissed.has(m.type))) {
+          dismissed.delete(m.type);
+          openSlab(m.type, m);
+        } else slab.last = m;
+      } else if (m.type === "git-diff-result") slabs.git.win?.webContents.send("jarvis", m);
+      else if (m.type === "activity-reset") {
+        dismissed.clear();
+        win.webContents.send("jarvis", m);
+      }
       else if (m.type === "brain-note") slabs.brain.win?.webContents.send("jarvis", m);
       else if (m.type === "ui" && m.action === "move" && typeof m.position === "string") void moveTo(m.position);
       else if (m.type === "ui") runUi(m.action);

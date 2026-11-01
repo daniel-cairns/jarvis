@@ -11,6 +11,8 @@ import { renderDetail } from "./ui/detail.js";
 import { checkGraph, graphAsText, graphShape } from "./ui/graph.js";
 import { brainIndex, noteMap, readNote } from "./tools/brain.js";
 import { realRunner } from "./tools/mac.js";
+import { fileDiff, gitRoot, repoState, type RepoState } from "./tools/git.js";
+import { WorkLog, type ToolEvent } from "./ui/worklog.js";
 import { SessionRunner } from "./tools/runner.js";
 import type { SessionTools } from "./tools/server.js";
 import { appLinks, findSession, listSessions, resolveProject, type SessionSummary } from "./tools/sessions.js";
@@ -201,6 +203,7 @@ async function main(): Promise<void> {
         lines.inject("/quit");
       },
       onBrain: (msg) => void onBrain(msg),
+      onGitDiff: (msg) => void onGitDiff(msg),
       onVolume: (msg) => void setVolume(msg.level ?? settings.volume + (msg.delta ?? 0)),
       onStop: () => {
         if (interrupt()) {
@@ -465,6 +468,14 @@ async function main(): Promise<void> {
       orb.send({ type: "ui", action, position });
       return `Moving ${position.startsWith("nudge_") ? position.slice(6) : `to the ${position.replace("_", " ")}`}.`;
     }
+    if (action === "show_terminal") {
+      sendTerminal(true);
+      return "Showing my terminal.";
+    }
+    if (action === "show_git") {
+      await refreshGit(true);
+      return repos.length ? `Showing changes in ${repos.map((r) => r.name).join(", ")}.` : "Showing the git panel; I haven't touched a repo yet.";
+    }
     if (action === "volume_up") return setVolume(settings.volume + 0.15);
     if (action === "volume_down") return setVolume(settings.volume - 0.15);
     if (action === "set_volume") return setVolume((level ?? 80) / 100);
@@ -475,7 +486,7 @@ async function main(): Promise<void> {
     if (action === "show_brain") return openBrain();
     if (!orb?.alive) return "No orb is open.";
     orb.send({ type: "ui", action });
-    const done: Record<Exclude<UiAction, "stop" | "show_brain" | "volume_up" | "volume_down" | "set_volume" | "move">, string> = {
+    const done: Record<Exclude<UiAction, "stop" | "show_brain" | "volume_up" | "volume_down" | "set_volume" | "move" | "show_terminal" | "show_git">, string> = {
       minimise: "Minimised to the menu bar.",
       show: "The orb is back.",
       close_panels: "Closed the panels.",
@@ -528,6 +539,51 @@ async function main(): Promise<void> {
     return answer ?? "no";
   };
 
+  // ── The terminal and git panels: what she (and her background sessions) run and change ──
+  const work = new WorkLog();
+  let repos: RepoState[] = [];
+  let terminalTimer: NodeJS.Timeout | undefined;
+  let gitTimer: NodeJS.Timeout | undefined;
+
+  const sendTerminal = (force = false) =>
+    orb?.send({
+      type: "terminal",
+      force,
+      entries: work.entries.slice(-40).map((e) => ({ ...e, output: e.output.length > 4000 ? `…${e.output.slice(-4000)}` : e.output })),
+    });
+
+  /** Re-reads the repos her commands and edits touched (the three most recent) and updates the git panel. */
+  const refreshGit = async (force = false) => {
+    const roots: string[] = [];
+    for (const dir of work.touched) {
+      const root = await gitRoot(dir);
+      if (root && !roots.includes(root)) roots.push(root);
+      if (roots.length === 3) break;
+    }
+    repos = (await Promise.all(roots.map((r) => repoState(r).catch(() => null)))).filter((r): r is RepoState => r !== null);
+    if (repos.length || force) orb?.send({ type: "git", repos, force });
+  };
+
+  const onToolEvent = (source: string, cwd: string, e: ToolEvent) => {
+    const changed = work.record(source, cwd, e);
+    if (changed.terminal) {
+      clearTimeout(terminalTimer);
+      terminalTimer = setTimeout(() => sendTerminal(), 120);
+    }
+    if (changed.files) {
+      clearTimeout(gitTimer);
+      gitTimer = setTimeout(() => void refreshGit(), 800);
+    }
+  };
+
+  /** The git panel asked for a file's diff: only for repos and files it was shown. */
+  const onGitDiff = async ({ root, path: file }: { root: string; path: string }) => {
+    const repo = repos.find((r) => r.root === root);
+    if (!repo || !repo.files.some((f) => f.path === file)) return;
+    const diff = await fileDiff(root, file).catch((err: Error) => `Couldn't read the diff: ${err.message}`);
+    orb?.send({ type: "git-diff-result", root, path: file, diff });
+  };
+
   // ── Your other Claude Code sessions: read them, start or continue them in the background, open them in the app ──
   const sessionRunner = new SessionRunner(cfg, {
     activity: (job, tool, input) => {
@@ -535,6 +591,7 @@ async function main(): Promise<void> {
       orb?.send({ type: "activity", text: `${job.label}: ${describeActivity(tool, input)}`, glyph: activityGlyph(tool) });
     },
     ask: (_job, approval) => askApproval(approval),
+    toolEvent: (job, e) => onToolEvent(job.label, job.folder, e),
     finished: (job) => {
       const first = job.lastText.split(/(?<=[.!?])\s/)[0]?.slice(0, 220) ?? "";
       const what =
@@ -623,6 +680,7 @@ async function main(): Promise<void> {
   const jarvis = new Jarvis(cfg, {
     say,
     sessions,
+    toolEvent: (e) => onToolEvent("Astra", cfg.workspaceDir, e),
     graph: (title, graph) => {
       if (orb?.alive) {
         orb.send({ type: "graph", title, graph });

@@ -7,6 +7,7 @@ import { query, type CanUseTool, type SDKMessage } from "@anthropic-ai/claude-ag
 import type { JarvisConfig } from "../config.js";
 import type { Approval } from "../agent.js";
 import { describeCall, parseAnswer } from "../permissions.js";
+import { toolEvents, type ToolEvent } from "../ui/worklog.js";
 
 export type JobStatus = "running" | "done" | "failed" | "stopped";
 
@@ -31,6 +32,8 @@ export type RunnerEvents = {
   ask(job: Job, approval: Approval): Promise<string>;
   /** A run ended (done, failed or stopped). */
   finished(job: Job): void;
+  /** Each tool call and its result in a background session, for the terminal and git panels. */
+  toolEvent?(job: Job, e: ToolEvent): void;
 };
 
 type QueryFn = typeof query;
@@ -137,6 +140,7 @@ export class SessionRunner {
   }
 
   private onMessage(job: Job, msg: SDKMessage): void {
+    for (const e of toolEvents(msg)) this.events.toolEvent?.(job, e);
     if (msg.type === "system" && msg.subtype === "init") job.sessionId = msg.session_id;
     if (msg.type === "assistant" && msg.parent_tool_use_id === null) {
       for (const block of msg.message.content) {

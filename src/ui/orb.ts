@@ -11,6 +11,8 @@ import type { Answer } from "../permissions.js";
 import type { Choice, QuestionAnswer, QuestionSpec } from "../voice/answers.js";
 import type { ActivityGlyph } from "../activity.js";
 import type { BrainEntry } from "../tools/brain.js";
+import type { RepoState } from "../tools/git.js";
+import type { TermEntry } from "./worklog.js";
 import type { Position, UiAction } from "./control.js";
 import type { TeardownGraph } from "./graph.js";
 
@@ -30,6 +32,9 @@ export type ToOrb =
   | { type: "ui"; action: UiAction; position?: Position }
   | { type: "volume-level"; level: number; quiet?: boolean }
   | { type: "brain"; notes: BrainEntry[] }
+  | { type: "terminal"; entries: TermEntry[]; force?: boolean }
+  | { type: "git"; repos: RepoState[]; force?: boolean }
+  | { type: "git-diff-result"; root: string; path: string; diff: string }
   | { type: "brain-note"; path: string; title: string; html: string; hasMap: boolean }
   | { type: "quit" };
 
@@ -42,7 +47,8 @@ export type FromOrb =
   | { type: "question-answer"; id: string; answer: QuestionAnswer }
   | { type: "brain-request" }
   | { type: "brain-open" | "brain-map"; path: string }
-  | { type: "volume"; delta?: number; level?: number };
+  | { type: "volume"; delta?: number; level?: number }
+  | { type: "git-diff"; root: string; path: string };
 
 export type OrbHandlers = {
   onTalk(): void;
@@ -50,6 +56,8 @@ export type OrbHandlers = {
   onQuit(): void;
   /** The brain browser asked for its note list, one note, or a note's map. */
   onBrain?(msg: Extract<FromOrb, { type: "brain-request" | "brain-open" | "brain-map" }>): void;
+  /** The git panel asked for one file's diff. */
+  onGitDiff?(msg: { root: string; path: string }): void;
   /** Scroll on the orb (delta) or the menu-bar volume menu (level), both 0..1 scale. */
   onVolume?(msg: { delta?: number; level?: number }): void;
 };
@@ -71,6 +79,9 @@ export function parseFromOrb(line: string): FromOrb | null {
   }
   if ((msg.type === "brain-open" || msg.type === "brain-map") && typeof msg.path === "string" && msg.path.length <= 300) {
     return { type: msg.type, path: msg.path };
+  }
+  if (msg.type === "git-diff" && typeof msg.root === "string" && typeof msg.path === "string" && msg.root.length < 500 && msg.path.length < 500) {
+    return { type: "git-diff", root: msg.root, path: msg.path };
   }
   if (msg.type === "volume") {
     const delta = typeof msg.delta === "number" && Math.abs(msg.delta) <= 0.25 ? msg.delta : undefined;
@@ -170,6 +181,7 @@ export class Orb {
     else if (msg?.type === "quit") this.handlers.onQuit();
     else if (msg?.type === "brain-request" || msg?.type === "brain-open" || msg?.type === "brain-map") this.handlers.onBrain?.(msg);
     else if (msg?.type === "volume") this.handlers.onVolume?.(msg);
+    else if (msg?.type === "git-diff") this.handlers.onGitDiff?.(msg);
     else if (msg?.type === "answer" || msg?.type === "question-answer") {
       const resolve = this.pending.get(msg.id);
       this.pending.delete(msg.id);

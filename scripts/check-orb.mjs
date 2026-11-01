@@ -41,6 +41,18 @@ send({
   title: "Check",
   graph: { nodes: [{ id: "a", label: "App", group: "app" }, { id: "b", label: "Lib", group: "framework" }], edges: [{ source: "a", target: "b" }] },
 });
+send({
+  type: "terminal",
+  force: true,
+  entries: [{ id: "1", source: "Astra", command: "npm test", cwd: "/w/app", output: "12 passed", status: "ok", at: new Date().toISOString() }],
+});
+send({
+  type: "git",
+  force: true,
+  repos: [{ name: "app", root: "/w/app", branch: "main", files: [{ path: "src/a.ts", status: " M", added: 3, removed: 1 }] }],
+});
+await wait(1500);
+send({ type: "git-diff-result", root: "/w/app", path: "src/a.ts", diff: "@@ -1 +1 @@\n-old\n+new" });
 await wait(3000);
 send({ type: "ui", action: "close_panels" });
 await wait(500);
@@ -52,4 +64,4 @@ if (errors.length) {
   console.error(`Orb check failed:\n${errors.slice(0, 10).join("\n")}`);
   process.exit(1);
 }
-console.log("Orb check passed: no renderer errors in the orb, detail panel, map or brain browser.");
+console.log("Orb check passed: no renderer errors in the orb, detail panel, map, brain browser, terminal or git panel.");

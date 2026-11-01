@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en-NZ">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'none'">
+  <title>Astra · Git changes</title>
+  <link rel="stylesheet" href="panel.css">
+  <link rel="stylesheet" href="frame.css">
+  <link rel="stylesheet" href="work.css">
+</head>
+<body>
+  <div class="slab">
+    <div class="nub" aria-hidden="true"><svg viewBox="0 0 170 22" preserveAspectRatio="none"><polygon class="plate" points="0,22 170,22 170,10 156,0 0,0"/><polyline class="edge" points="0,0.8 156,0.8 169.5,10.5"/><polyline class="edge-inner" points="0,4 154,4 165,12"/></svg><p class="nub-label">Git</p></div>
+    <div class="rail" aria-hidden="true"><i></i><i></i><i></i><span class="gap"></span><i></i><i></i><i></i></div>
+    <header id="bar" class="face" title="Drag to move">
+      <span class="leds" aria-hidden="true"><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i></span>
+      <svg class="face-icon" viewBox="0 0 34 34" aria-hidden="true"><circle cx="10" cy="8" r="3"/><circle cx="10" cy="26" r="3"/><circle cx="24" cy="14" r="3"/><path d="M10 11v12M24 17c0 5-6 5-12 7"/></svg>
+      <div class="heading">
+        <h1 id="title">Git changes</h1>
+        <p class="meta" aria-hidden="true" id="meta">ASTRA-01 | CLASS: CHANGES | STATUS: ACTIVE</p>
+      </div>
+      <button id="collapse" type="button" aria-expanded="true" aria-label="Collapse or expand this panel" title="Collapse">▾</button>
+      <button id="close" type="button" aria-label="Close git changes (Esc)" title="Close (Esc)">×</button>
+    </header>
+    <div class="rail rail--bot" aria-hidden="true"></div>
+    <div class="shelf" aria-hidden="true"></div>
+    <main id="repos" class="work-body" aria-live="polite" tabindex="0">
+      <p class="empty">No repos touched yet.</p>
+    </main>
+    <footer class="nub nub--foot"><svg viewBox="0 0 170 22" preserveAspectRatio="none" aria-hidden="true"><polygon class="plate" points="0,22 170,22 170,10 156,0 0,0"/><polyline class="edge" points="0,0.8 156,0.8 169.5,10.5"/><polyline class="edge-inner" points="0,4 154,4 165,12"/></svg><p class="nub-label"><span id="stamp"></span></p></footer>
+  </div>
+  <script src="slab.js"></script>
+  <script src="git.js"></script>
+</body>
+</html>

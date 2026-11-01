@@ -11,6 +11,7 @@ import { jarvisInstructions } from "./prompt.js";
 import { sessionEnv } from "./tools/runner.js";
 import { createJarvisServer, SERVER_NAME, type SessionTools } from "./tools/server.js";
 import type { Position, UiAction } from "./ui/control.js";
+import { toolEvents, type ToolEvent } from "./ui/worklog.js";
 import type { TeardownGraph } from "./ui/graph.js";
 import type { QuestionAnswer, QuestionSpec } from "./voice/answers.js";
 
@@ -21,6 +22,8 @@ export type JarvisIO = {
   status(text: string, input?: Record<string, unknown>): void;
   /** Working the user's other Claude Code sessions. */
   sessions?: SessionTools;
+  /** Each tool call and its result, for the terminal and git panels. */
+  toolEvent?(e: ToolEvent): void;
   /** Works Astra's own interface (panels, minimise, stop); returns what happened. */
   ui?(action: UiAction, level?: number, position?: Position): string | Promise<string>;
   /** Asks the user a question (with options) and waits; null if they didn't answer. */
@@ -137,6 +140,7 @@ export class Jarvis {
   }
 
   private async onMessage(msg: SDKMessage): Promise<TurnResult | undefined> {
+    for (const e of toolEvents(msg)) this.io.toolEvent?.(e);
     if (msg.type === "system" && msg.subtype === "init") {
       this.sessionId = msg.session_id;
       // Each server problem is reported once per run, not on every request.

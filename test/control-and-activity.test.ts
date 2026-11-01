@@ -21,6 +21,8 @@ describe("quickUiCommand", () => {
     expect(quickUiCommand("open my brain")).toEqual({ action: "show_brain" });
     expect(quickUiCommand("show me the map again")).toEqual({ action: "show_last_map" });
     expect(quickUiCommand("collapse your panel")).toEqual({ action: "collapse_panel" });
+    expect(quickUiCommand("Show me your terminal.")).toEqual({ action: "show_terminal" });
+    expect(quickUiCommand("show the git changes")).toEqual({ action: "show_git" });
     expect(quickUiCommand("Expand the thinking window.")).toEqual({ action: "expand_panel" });
   });
 
@@ -59,6 +61,7 @@ describe("parseFromOrb (new messages)", () => {
     expect(parseFromOrb('{"type":"question-answer","id":"2","answer":"Something else"}')).toMatchObject({ answer: "Something else" });
     expect(parseFromOrb('{"type":"brain-open","path":"teardowns/a.md"}')).toEqual({ type: "brain-open", path: "teardowns/a.md" });
     expect(parseFromOrb('{"type":"brain-request"}')).toEqual({ type: "brain-request" });
+    expect(parseFromOrb('{"type":"git-diff","root":"/w/app","path":"src/a.ts"}')).toEqual({ type: "git-diff", root: "/w/app", path: "src/a.ts" });
   });
 
   it("rejects malformed ones", () => {
