@@ -16,11 +16,14 @@
     <p id="state" class="state" aria-live="polite">Idle</p>
 
     <section id="card" class="card" hidden>
-      <p id="caption" class="caption" aria-live="polite"></p>
+      <p id="caption-label" class="label">Transmission</p>
+      <p id="caption" class="caption" aria-hidden="true"></p>
+      <p id="caption-spoken" class="visually-hidden" aria-live="polite"></p>
       <p id="status" class="status"></p>
     </section>
 
     <section id="ask" class="card ask" role="alertdialog" aria-labelledby="ask-q" aria-describedby="ask-d" hidden>
+      <p class="label">Authorisation required</p>
       <h2 id="ask-q"></h2>
       <pre id="ask-d"></pre>
       <div class="buttons">

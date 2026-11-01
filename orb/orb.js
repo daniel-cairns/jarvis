@@ -10,6 +10,8 @@
   const ask = document.getElementById("ask");
   const askQ = document.getElementById("ask-q");
   const askD = document.getElementById("ask-d");
+  const captionLabel = document.getElementById("caption-label");
+  const captionSpoken = document.getElementById("caption-spoken");
 
   const bridge = window.jarvis ?? { onMessage() {}, send() {} };
   const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -59,11 +61,32 @@
     talk.setAttribute("aria-label", TALK_LABELS[next] ?? "Talk to Jarvis");
   }
 
+  let typing = 0;
+
+  /** Types text out a few characters per frame; the full text is set for screen readers straight away. */
+  function typeOut(el, text) {
+    cancelAnimationFrame(typing);
+    if (reducedMotion) {
+      el.textContent = text;
+      return;
+    }
+    let shown = 0;
+    const step = () => {
+      shown = Math.min(text.length, shown + 3);
+      el.textContent = text.slice(0, shown);
+      if (shown < text.length) typing = requestAnimationFrame(step);
+    };
+    step();
+  }
+
   function showCaption(text, role) {
     card.hidden = false;
     if (role === "status") status.textContent = text;
     else {
-      caption.textContent = role === "you" ? `You: ${text}` : text;
+      captionLabel.textContent = role === "you" ? "You" : "Transmission";
+      card.dataset.role = role;
+      captionSpoken.textContent = text;
+      typeOut(caption, text);
       status.textContent = "";
     }
     clearTimeout(captionTimer);
@@ -104,23 +127,42 @@
     else if (m.type === "answered") hideAsk(m.id);
   });
 
-  talk.addEventListener("click", () => bridge.send({ type: "talk" }));
   document.getElementById("minimise").addEventListener("click", () => bridge.send({ type: "minimise" }));
 
-  canvas.addEventListener("pointerdown", (e) => {
-    if (e.button !== 0) return;
-    canvas.setPointerCapture(e.pointerId);
-    canvas.classList.add("dragging");
-    bridge.send({ type: "drag-start" });
+  /**
+   * Press-and-move drags the window (the main process follows the cursor). A press that barely moves is a click,
+   * so the core can be dragged and still talks when tapped.
+   */
+  function draggable(el, onTap) {
+    let press = null;
+    el.addEventListener("pointerdown", (e) => {
+      if (e.button !== 0) return;
+      el.setPointerCapture(e.pointerId);
+      press = { x: e.screenX, y: e.screenY, moved: false };
+      canvas.classList.add("dragging");
+      bridge.send({ type: "drag-start" });
+    });
+    el.addEventListener("pointermove", (e) => {
+      if (press && Math.hypot(e.screenX - press.x, e.screenY - press.y) > 4) press.moved = true;
+    });
+    const end = (tapped) => {
+      if (!press) return;
+      const wasTap = tapped && !press.moved;
+      press = null;
+      canvas.classList.remove("dragging");
+      bridge.send({ type: "drag-end" });
+      if (wasTap) onTap?.();
+    };
+    el.addEventListener("pointerup", () => end(true));
+    el.addEventListener("pointercancel", () => end(false));
+    el.addEventListener("lostpointercapture", () => end(false));
+  }
+  draggable(canvas);
+  draggable(talk, () => bridge.send({ type: "talk" }));
+  // Keyboard activation (Enter/Space) arrives as a click with no pointer press.
+  talk.addEventListener("click", (e) => {
+    if (e.detail === 0) bridge.send({ type: "talk" });
   });
-  const endDrag = () => {
-    if (!canvas.classList.contains("dragging")) return;
-    canvas.classList.remove("dragging");
-    bridge.send({ type: "drag-end" });
-  };
-  canvas.addEventListener("pointerup", endDrag);
-  canvas.addEventListener("pointercancel", endDrag);
-  canvas.addEventListener("lostpointercapture", endDrag);
   ask.addEventListener("click", (e) => {
     const value = e.target.closest("[data-answer]")?.dataset.answer;
     if (value) answer(value);
