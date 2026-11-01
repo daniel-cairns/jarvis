@@ -111,19 +111,44 @@ app.whenReady().then(() => {
   win.loadFile(path.join(__dirname, "index.html"));
   win.webContents.once("did-finish-load", () => send({ type: "ready" }));
 
-  const show = () => {
-    win.showInactive();
-    win.moveTop();
+  // Folding away and unfolding: the orb page plays the transform and reports "transform-done" (or we move on after
+  // 1.6 s), so the window only hides once she has folded up, and unfolds after it reappears.
+  let transformWaiter = null;
+  let foldingToQuit = false;
+  const transform = (to) =>
+    new Promise((resolve) => {
+      transformWaiter?.();
+      const timer = setTimeout(() => done(), 1600);
+      const done = () => {
+        clearTimeout(timer);
+        if (transformWaiter === done) transformWaiter = null;
+        resolve();
+      };
+      transformWaiter = done;
+      win.webContents.send("jarvis", { type: "transform", to });
+    });
+  const show = async () => {
+    if (!win.isVisible()) {
+      win.webContents.send("jarvis", { type: "transform", to: "closed-now" });
+      win.showInactive();
+      win.moveTop();
+    }
+    await transform("open");
+  };
+  const hideOrb = async () => {
+    if (!win.isVisible()) return;
+    await transform("close");
+    win.hide();
   };
   const tray = new Tray(trayIcon());
   tray.setToolTip("Astra");
   // One click on the menu-bar icon brings the orb back (or tucks it away); right-click shows the same as a menu.
-  const toggle = () => (win.isVisible() ? win.hide() : show());
+  const toggle = () => void (win.isVisible() ? hideOrb() : show());
   tray.on("click", toggle);
   tray.on("right-click", () =>
     tray.popUpContextMenu(
       Menu.buildFromTemplate([
-        win.isVisible() ? { label: "Hide Astra", click: () => win.hide() } : { label: "Show Astra", click: show },
+        win.isVisible() ? { label: "Hide Astra", click: () => void hideOrb() } : { label: "Show Astra", click: () => void show() },
         { label: "Stop Astra", click: () => send({ type: "stop" }) },
         { label: "Show last detail", enabled: slabs.detail.last !== null, click: () => openSlab("detail", slabs.detail.last) },
         { label: "Show last map", enabled: slabs.graph.last !== null, click: () => openSlab("graph", slabs.graph.last) },
@@ -201,8 +226,8 @@ app.whenReady().then(() => {
 
   /** Astra working her own interface (ui_control and quick spoken commands). */
   const runUi = (action) => {
-    if (action === "minimise") win.hide();
-    else if (action === "show") show();
+    if (action === "minimise") void hideOrb();
+    else if (action === "show") void show();
     else if (action === "close_panels") for (const slab of Object.values(slabs)) slab.win?.isDestroyed() === false && slab.win.close();
     else if (action === "show_last_detail" && slabs.detail.last) openSlab("detail", slabs.detail.last);
     else if (action === "show_last_map" && slabs.graph.last) openSlab("graph", slabs.graph.last);
@@ -328,7 +353,8 @@ app.whenReady().then(() => {
 
   ipcMain.on("orb", (event, m) => {
     const sender = BrowserWindow.fromWebContents(event.sender);
-    if (m?.type === "minimise") return win.hide();
+    if (m?.type === "minimise") return void hideOrb();
+    if (m?.type === "transform-done" && sender === win) return transformWaiter?.();
     if (m?.type === "fit" && sender === win && Number.isFinite(m.height)) return void fitHeight(m.height);
     if (m?.type === "panel-close") return sender && sender !== win ? sender.close() : undefined;
     if (m?.type === "drag-start" && sender) {
@@ -356,7 +382,11 @@ app.whenReady().then(() => {
       } catch {
         return;
       }
-      if (m.type === "quit") app.quit();
+      // Quitting folds her away first (she's gone either way within 1.6 s).
+      if (m.type === "quit") {
+        foldingToQuit = true;
+        void (win.isVisible() ? transform("close") : Promise.resolve()).then(() => app.quit());
+      }
       else if (m.type === "detail" || m.type === "graph" || m.type === "brain") openSlab(m.type, m);
       else if (m.type === "brain-note") slabs.brain.win?.webContents.send("jarvis", m);
       else if (m.type === "ui" && m.action === "move" && typeof m.position === "string") void moveTo(m.position);
@@ -372,7 +402,10 @@ app.whenReady().then(() => {
         win.focus();
       } else win.webContents.send("jarvis", m);
     })
-    .on("close", () => app.quit());
+    // Astra's process closed the pipe: quit, unless a quit fold is already playing (it quits when done).
+    .on("close", () => {
+      if (!foldingToQuit) app.quit();
+    });
 });
 
 app.on("window-all-closed", () => app.quit());

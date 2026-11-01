@@ -12,6 +12,11 @@ describe("quickUiCommand", () => {
     expect(quickUiCommand("minimise")).toEqual({ action: "minimise" });
     expect(quickUiCommand("Hide yourself.")).toEqual({ action: "minimise" });
     expect(quickUiCommand("come back")).toEqual({ action: "show" });
+    expect(quickUiCommand("Fold up.")).toEqual({ action: "minimise" });
+    expect(quickUiCommand("close yourself")).toEqual({ action: "minimise" });
+    expect(quickUiCommand("transform closed")).toEqual({ action: "minimise" });
+    expect(quickUiCommand("unfold")).toEqual({ action: "show" });
+    expect(quickUiCommand("open up")).toEqual({ action: "show" });
     expect(quickUiCommand("close the map")).toEqual({ action: "close_panels" });
     expect(quickUiCommand("open my brain")).toEqual({ action: "show_brain" });
     expect(quickUiCommand("show me the map again")).toEqual({ action: "show_last_map" });

@@ -28,6 +28,8 @@ over her is best-effort, since her own voice is in the mic; the stop glyph and E
 **Her cards sit below the orb** when there's room, above it near the bottom of the screen; the window sizes itself.
 **The teardown map draws each node as an icon** for its kind of tech (sun: the app, cube: module, layers: framework,
 spark: feature, cylinder: data, cloud: service).
+**She folds away and unfolds**: minimising, quitting or "Astra, fold up" folds her wings, retracts her rings into
+the eye and closes it before she hides; showing her again (menu bar, "unfold", "come back") plays it in reverse.
 **State changes dial like a gate**: the glyph ring spins and locks onto symbols as nine chevrons engage, then a burst
 ripples out from the eye. **Her thinking window collapses** away entirely with the ▾ on its tab (click the state label under the orb, or say "expand your panel", to bring it back); while
 collapsed, the gate's chevrons show her state (breathing: listening, chasing: thinking, pulsing: speaking).

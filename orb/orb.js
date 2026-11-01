@@ -364,6 +364,7 @@
     else if (m.type === "activity-reset") resetActivity();
     else if (m.type === "layout") document.body.classList.toggle("top", !!m.top);
     else if (m.type === "collapse") setCollapsed(!!m.collapsed);
+    else if (m.type === "transform") transformTo(m.to);
     else if (m.type === "volume-level" && !m.quiet) showVolume(m.level);
   });
 
@@ -619,8 +620,63 @@
     ctx.restore();
   }
 
+  // ── Transform: fold away (close) and unfold (open) ──
+  // Closing: the wings fold in, then the rings and chevrons retract into the eye, then the eye closes; opening runs
+  // the same stages backwards. `form` is 1 open, 0 closed. The main process waits for "transform-done" before hiding.
+  const FORM_MS = 900;
+  let formFrom = 0;
+  let formTo = 1;
+  let formAt = performance.now();
+  let formReported = true;
+  const smooth = (p) => {
+    const c = Math.min(1, Math.max(0, p));
+    return c * c * (3 - 2 * c);
+  };
+
+  function transformTo(to) {
+    const now = performance.now();
+    if (to === "closed-now") {
+      formFrom = formTo = 0;
+      formReported = true;
+      return;
+    }
+    formFrom = currentForm(now);
+    formTo = to === "open" ? 1 : 0;
+    formAt = reducedMotion ? now - FORM_MS : now;
+    formReported = false;
+  }
+
+  function currentForm(now) {
+    const p = smooth((now - formAt) / FORM_MS);
+    return formFrom + (formTo - formFrom) * p;
+  }
+
+  /** Each stage's openness (0..1) for a given form: wings, rings, eye. */
+  function stages(form) {
+    const closing = 1 - form;
+    return {
+      wings: 1 - smooth(closing / 0.4),
+      rings: 1 - smooth((closing - 0.3) / 0.5),
+      eye: 1 - smooth((closing - 0.7) / 0.3),
+    };
+  }
+
+  let shownOpacity = null;
+
   function draw(now) {
     const t = now / 1000;
+    const form = currentForm(now);
+    if (!formReported && Math.abs(form - formTo) < 0.001) {
+      formReported = true;
+      bridge.send({ type: "transform-done", to: formTo === 1 ? "open" : "close" });
+    }
+    const st = stages(form);
+    // The controls and the state label fade with the wings.
+    const controlsOpacity = Math.round(st.wings * 20) / 20;
+    if (controlsOpacity !== shownOpacity) {
+      shownOpacity = controlsOpacity;
+      for (const el of [stopButton, document.getElementById("minimise"), stateLabel]) el.style.opacity = String(controlsOpacity);
+    }
     const cx = W / 2;
     const cy = H / 2 + 6;
     const target = COLOURS[state];
@@ -681,11 +737,19 @@
         ctx.shadowColor = rgba(COLOURS.listening, 0.9);
         ctx.shadowBlur = 8 + listenGlow * 12;
       }
-      ctx.translate(cx + side * r * 1.55, cy);
-      ctx.scale(side, 1);
+      ctx.globalAlpha = st.wings;
+      ctx.translate(cx + side * r * 1.55 * (0.4 + 0.6 * st.wings), cy);
+      ctx.scale(side * st.wings, 1);
       wing(wingOpen, Math.max(level, listenGlow));
       ctx.restore();
     }
+
+    // Everything from here to the lower wings retracts into the eye as the rings stage closes.
+    ctx.save();
+    ctx.globalAlpha = st.rings;
+    ctx.translate(cx, cy);
+    ctx.scale(0.3 + 0.7 * st.rings, 0.3 + 0.7 * st.rings);
+    ctx.translate(-cx, -cy);
 
     // Listening ripples
     if (state === "listening") {
@@ -793,11 +857,17 @@
       ctx.stroke();
     }
 
+    ctx.restore();
+
     ctx.save();
     if (listenGlow) {
       ctx.shadowColor = rgba(COLOURS.listening, 0.9);
       ctx.shadowBlur = 8 + listenGlow * 10;
     }
+    ctx.globalAlpha = st.wings;
+    ctx.translate(cx, cy);
+    ctx.scale(0.4 + 0.6 * st.wings, 0.4 + 0.6 * st.wings);
+    ctx.translate(-cx, -cy);
     lowerWings(cx, cy, gr + 7, t, state !== "idle", hovered, listenGlow);
     ctx.restore();
 
@@ -830,7 +900,7 @@
 
     ctx.save();
     ctx.translate(cx, cy - 1);
-    horusEye(eye);
+    horusEye(eye * st.eye);
     ctx.restore();
 
     requestAnimationFrame(draw);

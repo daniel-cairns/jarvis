@@ -115,7 +115,7 @@ export function createJarvisServer(
       ),
       tool(
         "ui_control",
-        "Work your own interface when the user asks: minimise or show the orb, stop speaking/working, close your panels, collapse or expand your thinking window, re-open the last detail panel or map, open the brain browser (all notes and teardowns), or change your speaking volume (volume_up, volume_down, or set_volume with level 0-100), or move yourself on screen (move with a position: a spot like top_left or centre, or a nudge_left/right/up/down). Use this rather than shell commands to move your window.",
+        "Work your own interface when the user asks: minimise (you fold away into the menu bar) or show (you unfold back), stop speaking/working, close your panels, collapse or expand your thinking window, re-open the last detail panel or map, open the brain browser (all notes and teardowns), or change your speaking volume (volume_up, volume_down, or set_volume with level 0-100), or move yourself on screen (move with a position: a spot like top_left or centre, or a nudge_left/right/up/down). Use this rather than shell commands to move your window.",
         { action: z.enum(UI_ACTIONS), level: z.number().int().min(0).max(100).optional(), position: z.enum(POSITIONS).optional() },
         (args) => guarded(async () => (uiControl ? uiControl(args.action, args.level, args.position) : "No screen is attached.")),
       ),

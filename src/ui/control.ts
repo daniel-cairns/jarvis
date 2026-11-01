@@ -55,8 +55,12 @@ export function quickUiCommand(request: string): UiCommand | null {
   const level = request.match(/^\s*(?:set\s+)?(?:your\s+|the\s+)?volume\s+(?:to\s+)?(\d{1,3})\s*(?:%|percent)?\s*[.!]?\s*$/i);
   if (level) return { action: "set_volume", level: Math.min(100, Number(level[1])) };
   const s = request.toLowerCase().replace(/[^\p{L}\s]/gu, " ").replace(/\s+/g, " ").trim();
-  if (/^(minimi[sz]e|hide|go away|tuck away)( yourself| the orb)?$/.test(s)) return { action: "minimise" };
-  if (/^(show yourself|come back|unhide|appear|show the orb)$/.test(s)) return { action: "show" };
+  if (/^(minimi[sz]e|hide|go away|tuck away|fold( yourself)? (up|away)|close yourself|close up|transform( closed?)?)( yourself| the orb)?$/.test(s)) {
+    return { action: "minimise" };
+  }
+  if (/^(show yourself|come back|unhide|appear|show the orb|unfold( yourself)?|open up|open yourself|transform open)$/.test(s)) {
+    return { action: "show" };
+  }
   if (/^close( the| all| all the)? (panels?|map|detail|windows?)$/.test(s)) return { action: "close_panels" };
   if (/^(open|show)( me)? (my |your |the )?brain$/.test(s)) return { action: "show_brain" };
   if (/^(show|open)( me)? the (last )?map( again)?$/.test(s)) return { action: "show_last_map" };
