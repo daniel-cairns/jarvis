@@ -286,16 +286,8 @@ body.top .card, body.top .question { order: 1; }
 }
 .card-toggle:hover { color: #fff3d6; }
 .card-toggle:focus-visible { outline: 2px solid var(--reactor); outline-offset: 1px; }
-/* Collapsed: a slim pill with just the current step (and its glyph) and the expand toggle. */
-.card.collapsed {
-  align-self: center;
-  width: auto;
-  max-width: 250px;
-  padding: 3px 32px 3px 10px;
-  border-radius: 999px;
-}
-.card.collapsed .nub, .card.collapsed .shelf, .card.collapsed .caption, .card.collapsed .activity li.done { display: none; }
-.card.collapsed .activity { margin: 0; font-size: 10px; }
-.card.collapsed .activity:empty::before { content: "Idle"; color: var(--muted); }
-.card.collapsed .activity:empty { display: block; }
-.card.collapsed .card-toggle { top: 50%; right: 6px; transform: translateY(-50%); }
+/* Collapsed: no panel at all, just the orb, whose gate shows her state. The state label brings it back. */
+.card.collapsed { display: none !important; }
+body.collapsed .state { cursor: pointer; text-decoration: underline dotted rgba(70, 224, 214, 0.5); text-underline-offset: 3px; }
+.state { cursor: pointer; }
+.state:focus-visible { outline: 2px solid var(--reactor); outline-offset: 3px; border-radius: 4px; }

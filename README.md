@@ -29,7 +29,7 @@ over her is best-effort, since her own voice is in the mic; the stop glyph and E
 **The teardown map draws each node as an icon** for its kind of tech (sun: the app, cube: module, layers: framework,
 spark: feature, cylinder: data, cloud: service).
 **State changes dial like a gate**: the glyph ring spins and locks onto symbols as nine chevrons engage, then a burst
-ripples out from the eye. **Her thinking window collapses** to a one-line pill with the ▾ on its tab (or "Astra, collapse your panel"); while
+ripples out from the eye. **Her thinking window collapses** away entirely with the ▾ on its tab (click the state label under the orb, or say "expand your panel", to bring it back); while
 collapsed, the gate's chevrons show her state (breathing: listening, chasing: thinking, pulsing: speaking).
 **Volume**: by voice, by scrolling over the orb, or from the menu-bar menu; remembered in `~/.jarvis/settings.json`.
 **The brain browser** (menu bar → Open brain, or "Astra, open my brain") lists every note and teardown with search, and

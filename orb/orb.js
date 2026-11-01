@@ -210,6 +210,8 @@
   // Collapsing the thinking window leaves one line: her current step. Remembered between runs (per this Mac).
   function setCollapsed(collapsed) {
     card.classList.toggle("collapsed", collapsed);
+    document.body.classList.toggle("collapsed", collapsed);
+    stateLabel.setAttribute("aria-expanded", String(!collapsed));
     cardToggle.setAttribute("aria-expanded", String(!collapsed));
     cardToggle.setAttribute("aria-label", collapsed ? "Expand her thinking window" : "Collapse her thinking window");
     cardToggle.title = collapsed ? "Expand" : "Collapse";
@@ -221,6 +223,15 @@
     }
   }
   cardToggle.addEventListener("click", () => setCollapsed(!card.classList.contains("collapsed")));
+  // The state label under the orb toggles the panel too: with it collapsed, it's the way back.
+  const toggleFromLabel = () => setCollapsed(!card.classList.contains("collapsed"));
+  stateLabel.addEventListener("click", toggleFromLabel);
+  stateLabel.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      toggleFromLabel();
+    }
+  });
   try {
     setCollapsed(localStorage.getItem("astra.cardCollapsed") === "1");
   } catch {
