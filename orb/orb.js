@@ -1,13 +1,22 @@
 // Draws the orb and handles Astra's messages. States: idle, listening, thinking, speaking.
 (() => {
   const canvas = document.getElementById("orb");
-  const ctx = canvas.getContext("2d");
+  let ctx = canvas.getContext("2d");
+  // The ring glyph for whatever she's doing right now glows while she works.
+  let activeGlyph = null;
+  let activeGlyphAt = 0;
   const talk = document.getElementById("talk");
   const stopButton = document.getElementById("stop");
   const stateLabel = document.getElementById("state");
   const card = document.getElementById("card");
   const caption = document.getElementById("caption");
-  const status = document.getElementById("status");
+  const activity = document.getElementById("activity");
+  const question = document.getElementById("question");
+  const questionQ = document.getElementById("question-q");
+  const questionOptions = document.getElementById("question-options");
+  const questionOther = document.getElementById("question-other");
+  const questionText = document.getElementById("question-text");
+  const questionDoneRow = document.getElementById("question-done-row");
   const ask = document.getElementById("ask");
   const askQ = document.getElementById("ask-q");
   const askD = document.getElementById("ask-d");
@@ -81,16 +90,64 @@
     step();
   }
 
-  function showCaption(text, role) {
+  /** What she's doing, newest last: the current step marked live, earlier ones ticked off. Keeps the last four. */
+  /** A small line-art glyph for the activity feed, drawn with the same strokes as the ring's. */
+  function glyphIcon(kind) {
+    const c = document.createElement("canvas");
+    c.width = 28;
+    c.height = 28;
+    c.className = "glyph";
+    c.setAttribute("aria-hidden", "true");
+    const g = c.getContext("2d");
+    g.translate(14, 14);
+    g.strokeStyle = "#ecbc52";
+    g.lineWidth = 2.2;
+    g.lineCap = "round";
+    const saved = ctx;
+    ctx = g;
+    glyph(kind, 9);
+    ctx = saved;
+    return c;
+  }
+
+  function addActivity(text, kind = "sun") {
     card.hidden = false;
-    if (role === "status") status.textContent = text;
-    else {
-      captionLabel.textContent = role === "you" ? "You" : "Transmission";
-      card.dataset.role = role;
-      captionSpoken.textContent = text;
-      typeOut(caption, text);
-      status.textContent = "";
-    }
+    activeGlyph = kind;
+    activeGlyphAt = performance.now();
+    const last = activity.lastElementChild;
+    if (last && last.dataset.text === text) return;
+    for (const li of activity.children) li.className = "done";
+    const li = document.createElement("li");
+    li.className = "current";
+    li.dataset.text = text;
+    const label = document.createElement("span");
+    label.textContent = text;
+    li.append(glyphIcon(kind), label);
+    activity.append(li);
+    while (activity.children.length > 4) activity.firstElementChild.remove();
+    keepCard();
+  }
+
+  function resetActivity() {
+    activity.replaceChildren();
+    caption.textContent = "";
+    captionSpoken.textContent = "";
+  }
+
+  function keepCard() {
+    clearTimeout(captionTimer);
+    captionTimer = setTimeout(() => {
+      if (state === "idle") card.hidden = true;
+    }, 12000);
+  }
+
+  function showCaption(text, role) {
+    if (role === "status") return addActivity(text);
+    card.hidden = false;
+    captionLabel.textContent = role === "you" ? "You" : "Transmission";
+    card.dataset.role = role;
+    captionSpoken.textContent = text;
+    typeOut(caption, text);
     clearTimeout(captionTimer);
     captionTimer = setTimeout(() => {
       if (state === "idle") card.hidden = true;
@@ -111,6 +168,69 @@
     ask.hidden = true;
   }
 
+  // ── Questions (ask_user): options to click or press 1–9, Done for several, or a typed answer ──
+  let questionId = null;
+  let questionMulti = false;
+  let questionLabels = [];
+  const picked = new Set();
+
+  function showQuestion(m) {
+    questionId = m.id;
+    questionMulti = !!m.multiSelect;
+    questionLabels = (m.options || []).map((o) => o.label);
+    picked.clear();
+    questionQ.textContent = m.question;
+    questionOptions.replaceChildren(
+      ...(m.options || []).map((o, i) => {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.dataset.index = String(i);
+        b.textContent = `${i + 1}. ${o.label}`;
+        if (o.description) b.title = o.description;
+        if (questionMulti) b.setAttribute("aria-pressed", "false");
+        return b;
+      }),
+    );
+    questionOther.hidden = !(m.allowOther || !questionLabels.length);
+    questionText.value = "";
+    questionDoneRow.hidden = !questionMulti;
+    question.hidden = false;
+    (questionOptions.firstElementChild || questionText).focus();
+  }
+
+  function hideQuestion(id) {
+    if (id !== undefined && id !== questionId) return;
+    questionId = null;
+    question.hidden = true;
+  }
+
+  function answerQuestion(answerValue) {
+    if (!questionId) return;
+    bridge.send({ type: "question-answer", id: questionId, answer: answerValue });
+    hideQuestion();
+  }
+
+  function pickOption(i) {
+    const label = questionLabels[i];
+    if (label === undefined) return;
+    if (!questionMulti) return answerQuestion([label]);
+    picked.has(i) ? picked.delete(i) : picked.add(i);
+    questionOptions.children[i]?.setAttribute("aria-pressed", String(picked.has(i)));
+  }
+
+  questionOptions.addEventListener("click", (e) => {
+    const i = e.target.closest("[data-index]")?.dataset.index;
+    if (i !== undefined) pickOption(Number(i));
+  });
+  document.getElementById("question-done").addEventListener("click", () => {
+    if (picked.size) answerQuestion([...picked].sort((a, b) => a - b).map((i) => questionLabels[i]));
+  });
+  questionOther.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const text = questionText.value.trim();
+    if (text) answerQuestion(text);
+  });
+
   function answer(value) {
     if (!askId) return;
     bridge.send({ type: "answer", id: askId, answer: value });
@@ -126,7 +246,14 @@
       if (m.text) showCaption(m.text, "jarvis");
     } else if (m.type === "caption") showCaption(m.text, m.role);
     else if (m.type === "ask") showAsk(m);
-    else if (m.type === "answered") hideAsk(m.id);
+    else if (m.type === "question") showQuestion(m);
+    else if (m.type === "answered") {
+      hideAsk(m.id);
+      hideQuestion(m.id);
+    } else if (m.type === "activity") addActivity(m.text, m.glyph);
+    else if (m.type === "activity-reset") resetActivity();
+    else if (m.type === "layout") document.body.classList.toggle("top", !!m.top);
+    else if (m.type === "volume-level" && !m.quiet) showVolume(m.level);
   });
 
   document.getElementById("minimise").addEventListener("click", () => bridge.send({ type: "minimise" }));
@@ -160,6 +287,29 @@
     el.addEventListener("lostpointercapture", () => end(false));
   }
   draggable(canvas);
+
+  // Volume: scroll over the orb. A gold arc and the label show the level for a moment.
+  let volumeLevel = null;
+  let volumeShownAt = 0;
+  let lastWheel = 0;
+  function showVolume(level) {
+    volumeLevel = level;
+    volumeShownAt = performance.now();
+    stateLabel.textContent = `Volume ${Math.round(level * 100)}%`;
+    clearTimeout(showVolume.timer);
+    showVolume.timer = setTimeout(() => setState(state), 1500);
+  }
+  canvas.addEventListener(
+    "wheel",
+    (e) => {
+      e.preventDefault();
+      const now = performance.now();
+      if (now - lastWheel < 80) return;
+      lastWheel = now;
+      bridge.send({ type: "volume", delta: e.deltaY < 0 ? 0.05 : -0.05 });
+    },
+    { passive: false },
+  );
   draggable(talk, () => bridge.send({ type: "talk" }));
   // Keyboard activation (Enter/Space) arrives as a click with no pointer press.
   talk.addEventListener("click", (e) => {
@@ -180,6 +330,11 @@
   }
 
   window.addEventListener("keydown", (e) => {
+    if (questionId && e.target !== questionText) {
+      if (/^[1-9]$/.test(e.key)) return pickOption(Number(e.key) - 1);
+      if (e.key === "Enter" && questionMulti && picked.size) return document.getElementById("question-done").click();
+    }
+    if (questionId) return;
     if (!askId) {
       if (e.key === "Escape") bridge.send({ type: "stop" });
       return;
@@ -269,7 +424,7 @@
    * DOM buttons are positioned over GLYPH_ANGLE, and this draws the glow behind each glyph.
    */
   const GLYPH_ANGLE = 0.24;
-  function lowerWings(cx, cy, ringR, t, busy, hover) {
+  function lowerWings(cx, cy, ringR, t, busy, hover, glow = 0) {
     const base = ringR + 9; // just outside the ring's outer line
     const tiers = [
       { h: 7, end: 1.08, alpha: 0.95 },
@@ -292,7 +447,7 @@
           ctx.lineTo(...at(th1 + side * step * 0.15, r0 + h));
           ctx.lineTo(...at(th0 + side * step * 0.15, r0 + h));
           ctx.closePath();
-          ctx.fillStyle = rgba(GOLD, tier.alpha * (1 - f * 0.5) * (0.6 + level * 0.4));
+          ctx.fillStyle = rgba(GOLD, tier.alpha * (1 - f * 0.5) * (0.6 + Math.max(level, glow) * 0.4));
           ctx.fill();
         }
         // Lapis line under each tier, following the ring's curve.
@@ -407,12 +562,17 @@
       }
     }
 
-    // Wings
+    // Wings (glowing turquoise while she listens)
+    const listenGlow = state === "listening" ? 0.65 + (reducedMotion ? 0 : 0.35 * Math.sin(t * 3)) : 0;
     for (const side of [1, -1]) {
       ctx.save();
+      if (listenGlow) {
+        ctx.shadowColor = rgba(COLOURS.listening, 0.9);
+        ctx.shadowBlur = 8 + listenGlow * 12;
+      }
       ctx.translate(cx + side * r * 1.55, cy);
       ctx.scale(side, 1);
-      wing(wingOpen, level);
+      wing(wingOpen, Math.max(level, listenGlow));
       ctx.restore();
     }
 
@@ -440,12 +600,24 @@
     ctx.strokeStyle = rgba(GOLD, 0.85);
     ctx.lineWidth = 1.1;
     ctx.lineCap = "round";
+    const working = state !== "idle" && activeGlyph;
     for (let i = 0; i < 12; i++) {
       const a = spin * 0.6 + (i / 12) * Math.PI * 2;
+      const kind = GLYPHS[i % GLYPHS.length];
+      const lit = working && kind === activeGlyph;
       ctx.save();
       ctx.translate(cx + Math.cos(a) * gr, cy + Math.sin(a) * gr);
       ctx.rotate(a + Math.PI / 2);
-      glyph(GLYPHS[i % GLYPHS.length], 4.2);
+      if (lit) {
+        const pulse = reducedMotion ? 1 : 0.6 + 0.4 * Math.sin((now - activeGlyphAt) / 160);
+        ctx.strokeStyle = rgba([255, 236, 180], 0.95);
+        ctx.shadowColor = rgba(COLOURS[state] ?? COLOURS.thinking, 0.95);
+        ctx.shadowBlur = 6 + pulse * 8;
+        ctx.lineWidth = 1.6;
+        glyph(kind, 5.4);
+      } else {
+        glyph(kind, 4.2);
+      }
       ctx.restore();
     }
 
@@ -472,7 +644,24 @@
       ctx.stroke();
     }
 
-    lowerWings(cx, cy, gr + 7, t, state !== "idle", hovered);
+    ctx.save();
+    if (listenGlow) {
+      ctx.shadowColor = rgba(COLOURS.listening, 0.9);
+      ctx.shadowBlur = 8 + listenGlow * 10;
+    }
+    lowerWings(cx, cy, gr + 7, t, state !== "idle", hovered, listenGlow);
+    ctx.restore();
+
+    // Volume arc, briefly, after a change: gold, clockwise from the top, around the outside of the ring.
+    if (volumeLevel !== null && now - volumeShownAt < 1500) {
+      const fade = 1 - (now - volumeShownAt) / 1500;
+      ctx.beginPath();
+      ctx.arc(cx, cy, gr + 14, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * volumeLevel);
+      ctx.strokeStyle = rgba(GOLD, 0.9 * fade);
+      ctx.lineWidth = 3;
+      ctx.lineCap = "round";
+      ctx.stroke();
+    }
 
     // Core: white-hot sun disc
     const core = ctx.createRadialGradient(cx, cy, r * 0.05, cx, cy, r);
@@ -497,6 +686,29 @@
 
     requestAnimationFrame(draw);
   }
+
+  // The window sizes itself to what's showing (the orb, plus any caption, approval or question card), so cards are
+  // never cut off and no invisible window is left blocking clicks. The main process keeps the orb where it is.
+  const main = document.querySelector("main");
+  let lastFit = 0;
+  const reportFit = () => {
+    const style = getComputedStyle(main);
+    const gap = parseFloat(style.rowGap) || 0;
+    const shown = [...main.children].filter((el) => !el.hidden && el.getClientRects().length);
+    const height =
+      shown.reduce((sum, el) => sum + el.getBoundingClientRect().height + parseFloat(getComputedStyle(el).marginTop || 0), 0) +
+      gap * Math.max(0, shown.length - 1) +
+      parseFloat(style.paddingTop) +
+      parseFloat(style.paddingBottom) +
+      8;
+    const rounded = Math.ceil(height);
+    if (Math.abs(rounded - lastFit) < 2) return;
+    lastFit = rounded;
+    bridge.send({ type: "fit", height: rounded });
+  };
+  new ResizeObserver(reportFit).observe(main);
+  for (const el of main.children) new ResizeObserver(reportFit).observe(el);
+  new MutationObserver(reportFit).observe(main, { subtree: true, attributes: true, attributeFilter: ["hidden"] });
 
   setState("idle");
   requestAnimationFrame(draw);

@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import fs from "node:fs";
 import { describe, expect, it } from "vitest";
 import { renderDetail } from "../src/ui/detail.js";
 import { parseFromOrb } from "../src/ui/orb.js";
@@ -118,6 +119,19 @@ describe("Speaker", () => {
     await Promise.all([first, second]);
     expect(tts.rendered.length).toBeLessThanOrEqual(1);
     expect(speaker.busy).toBe(false);
+  });
+
+  it("plays at the set volume", async () => {
+    const peaks: number[] = [];
+    const speaker = new Speaker(fakeTts("primary"), null, true, {}, (wav) => {
+      const { samples } = decodeWav16(fs.readFileSync(wav));
+      peaks.push(Math.max(...samples.map(Math.abs)));
+      return spawn(process.execPath, ["-e", "0"], { stdio: "ignore" });
+    });
+    await speaker.speak("Full.");
+    speaker.volume = 0.25;
+    await speaker.speak("Quiet.");
+    expect(peaks[1]! / peaks[0]!).toBeCloseTo(0.25, 1);
   });
 
   it("stays silent when disabled", async () => {

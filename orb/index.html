@@ -28,7 +28,7 @@
       <div class="shelf" aria-hidden="true"></div>
       <p id="caption" class="caption" aria-hidden="true"></p>
       <p id="caption-spoken" class="visually-hidden" aria-live="polite"></p>
-      <p id="status" class="status"></p>
+      <ul id="activity" class="activity" aria-live="polite" aria-label="What Astra is doing"></ul>
     </section>
 
     <section id="ask" class="card ask" role="alertdialog" aria-labelledby="ask-q" aria-describedby="ask-d" hidden>
@@ -42,6 +42,19 @@
         <button type="button" data-answer="yes" class="primary" aria-keyshortcuts="Y">Yes</button>
       </div>
       <p class="hint">or say it: click the orb, then “yes”, “always” or “no”</p>
+    </section>
+    <section id="question" class="card question" role="dialog" aria-labelledby="question-q" hidden>
+      <div class="nub" aria-hidden="true"><svg viewBox="0 0 170 22" preserveAspectRatio="none"><polygon class="plate" points="0,22 170,22 170,10 156,0 0,0"/><polyline class="edge" points="0,0.8 156,0.8 169.5,10.5"/><polyline class="edge-inner" points="0,4 154,4 165,12"/></svg><p class="nub-label">Question</p></div>
+      <div class="shelf" aria-hidden="true"></div>
+      <h2 id="question-q"></h2>
+      <div id="question-options" class="options" role="group" aria-labelledby="question-q"></div>
+      <form id="question-other" class="other" hidden>
+        <label class="visually-hidden" for="question-text">Your answer</label>
+        <input id="question-text" type="text" placeholder="Or type an answer…" autocomplete="off">
+        <button type="submit">Send</button>
+      </form>
+      <div id="question-done-row" class="buttons" hidden><button type="button" id="question-done" class="primary">Done</button></div>
+      <p class="hint">say it, click, or press 1–9</p>
     </section>
   </main>
   <script src="orb.js"></script>

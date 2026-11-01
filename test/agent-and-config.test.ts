@@ -144,3 +144,28 @@ describe("voice defaults", () => {
     expect(() => loadConfig({ JARVIS_PAUSE_SEC: "0" })).toThrow("JARVIS_PAUSE_SEC");
   });
 });
+
+describe("Jarvis cancel", () => {
+  it("stops speaking messages that arrive after it's cancelled", async () => {
+    const home = await fs.mkdtemp(path.join(os.tmpdir(), "jarvis-test-"));
+    const cfg = loadConfig({ JARVIS_HOME: home });
+    const said: string[] = [];
+    let jarvis: Jarvis;
+    const io: JarvisIO = {
+      say: async (t) => {
+        said.push(t);
+        jarvis.cancel();
+      },
+      status: () => {},
+      ask: async () => "no",
+    };
+    jarvis = new Jarvis(cfg, io, (async function* () {
+      yield msg({ type: "assistant", parent_tool_use_id: null, message: { content: [{ type: "text", text: "First." }] } });
+      yield msg({ type: "assistant", parent_tool_use_id: null, message: { content: [{ type: "text", text: "Second." }] } });
+    }) as never);
+    const result = await jarvis.handle("talk");
+    expect(said).toEqual(["First."]);
+    expect(result.summary).toBe("Cancelled");
+    await fs.rm(home, { recursive: true, force: true });
+  });
+});

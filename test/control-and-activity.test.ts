@@ -1,0 +1,86 @@
+import { describe, expect, it } from "vitest";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { activityDetail, activityGlyph, describeActivity } from "../src/activity.js";
+import { clampVolume, loadSettings, saveSettings } from "../src/settings.js";
+import { quickUiCommand } from "../src/ui/control.js";
+import { parseFromOrb } from "../src/ui/orb.js";
+
+describe("quickUiCommand", () => {
+  it("handles plain spoken commands instantly", () => {
+    expect(quickUiCommand("minimise")).toEqual({ action: "minimise" });
+    expect(quickUiCommand("Hide yourself.")).toEqual({ action: "minimise" });
+    expect(quickUiCommand("come back")).toEqual({ action: "show" });
+    expect(quickUiCommand("close the map")).toEqual({ action: "close_panels" });
+    expect(quickUiCommand("open my brain")).toEqual({ action: "show_brain" });
+    expect(quickUiCommand("show me the map again")).toEqual({ action: "show_last_map" });
+  });
+
+  it("understands volume commands", () => {
+    expect(quickUiCommand("Louder.")).toEqual({ action: "volume_up" });
+    expect(quickUiCommand("turn it down please")).toEqual({ action: "volume_down" });
+    expect(quickUiCommand("Volume 40%.")).toEqual({ action: "set_volume", level: 40 });
+    expect(quickUiCommand("set the volume to 75 percent")).toEqual({ action: "set_volume", level: 75 });
+  });
+
+  it("leaves anything less direct to Claude", () => {
+    expect(quickUiCommand("minimise the Notes app for me")).toBeNull();
+    expect(quickUiCommand("what's in my brain about Spotify?")).toBeNull();
+  });
+});
+
+describe("activity details", () => {
+  it("adds a short, useful detail from the tool's input", () => {
+    expect(describeActivity("mcp__jarvis__brain_read", { path: "teardowns/2026-11-01-teardown-macos-notes-app.md" })).toBe(
+      "Reading a note: teardown macos notes app",
+    );
+    expect(describeActivity("Bash", { command: "npx nuxi generate\nnpm test" })).toBe("Running a command: npx nuxi generate");
+    expect(describeActivity("WebFetch", { url: "https://example.com/a/b" })).toBe("Reading a web page: example.com");
+    expect(describeActivity("Write", { file_path: "/Users/dan/.jarvis/workspace/quire/app.vue" })).toBe("Writing code: app.vue");
+  });
+
+  it("falls back to the plain phrase without a detail", () => {
+    expect(describeActivity("mcp__jarvis__brain_list", {})).toBe("Looking through your notes…");
+    expect(activityDetail("Bash", { command: "x".repeat(80) }).length).toBeLessThanOrEqual(48);
+  });
+});
+
+describe("parseFromOrb (new messages)", () => {
+  it("accepts question answers and brain browser requests", () => {
+    expect(parseFromOrb('{"type":"question-answer","id":"2","answer":["Spotify"]}')).toEqual({ type: "question-answer", id: "2", answer: ["Spotify"] });
+    expect(parseFromOrb('{"type":"question-answer","id":"2","answer":"Something else"}')).toMatchObject({ answer: "Something else" });
+    expect(parseFromOrb('{"type":"brain-open","path":"teardowns/a.md"}')).toEqual({ type: "brain-open", path: "teardowns/a.md" });
+    expect(parseFromOrb('{"type":"brain-request"}')).toEqual({ type: "brain-request" });
+  });
+
+  it("rejects malformed ones", () => {
+    expect(parseFromOrb('{"type":"question-answer","id":"2","answer":[1,2]}')).toBeNull();
+    expect(parseFromOrb('{"type":"question-answer","id":"2","answer":"   "}')).toBeNull();
+    expect(parseFromOrb(`{"type":"brain-open","path":"${"a".repeat(400)}"}`)).toBeNull();
+  });
+});
+
+describe("activityGlyph", () => {
+  it("gives each kind of work its glyph from the ring", () => {
+    expect(activityGlyph("mcp__rea__inspect_web_page")).toBe("eye");
+    expect(activityGlyph("mcp__jarvis__brain_read")).toBe("eye");
+    expect(activityGlyph("Write")).toBe("ankh");
+    expect(activityGlyph("Bash")).toBe("djed");
+    expect(activityGlyph("WebSearch")).toBe("water");
+    expect(activityGlyph("mcp__jarvis__ask_user")).toBe("reed");
+    expect(activityGlyph("SomethingElse")).toBe("sun");
+  });
+});
+
+describe("settings", () => {
+  it("remembers the volume, clamped, and falls back to defaults", () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "astra-settings-"));
+    expect(loadSettings(home).volume).toBe(0.8);
+    saveSettings(home, { volume: clampVolume(1.7) });
+    expect(loadSettings(home).volume).toBe(1);
+    fs.writeFileSync(path.join(home, "settings.json"), "not json");
+    expect(loadSettings(home).volume).toBe(0.8);
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+});

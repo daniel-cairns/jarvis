@@ -9,13 +9,19 @@ import type { JarvisConfig } from "./config.js";
 import { decide, describeCall, parseAnswer, spokenQuestion } from "./permissions.js";
 import { jarvisInstructions } from "./prompt.js";
 import { createJarvisServer, SERVER_NAME } from "./tools/server.js";
+import type { UiAction } from "./ui/control.js";
 import type { TeardownGraph } from "./ui/graph.js";
+import type { QuestionAnswer, QuestionSpec } from "./voice/answers.js";
 
 export type JarvisIO = {
   /** Called with each piece of top-level assistant text as it arrives. */
   say(text: string): Promise<void>;
-  /** Status lines that are shown but not spoken. */
-  status(text: string): void;
+  /** Status lines that are shown but not spoken; tool calls come with their input for a short detail. */
+  status(text: string, input?: Record<string, unknown>): void;
+  /** Works Astra's own interface (panels, minimise, stop); returns what happened. */
+  ui?(action: UiAction, level?: number): string | Promise<string>;
+  /** Asks the user a question (with options) and waits; null if they didn't answer. */
+  question?(spec: QuestionSpec): Promise<QuestionAnswer | null>;
   /** Shows a teardown's 3D map (or a text version without the orb); returns where it went. */
   graph?(title: string, graph: TeardownGraph): string;
   /** Puts detail on screen (the orb's panel, or the terminal); returns where it went. */
@@ -72,7 +78,14 @@ export class Jarvis {
       maxBudgetUsd: this.cfg.maxBudgetUsd,
       systemPrompt: { type: "preset", preset: "claude_code", append: jarvisInstructions(this.cfg) },
       mcpServers: {
-        [SERVER_NAME]: createJarvisServer(this.cfg, undefined, this.io.show?.bind(this.io), this.io.graph?.bind(this.io)),
+        [SERVER_NAME]: createJarvisServer(
+          this.cfg,
+          undefined,
+          this.io.show?.bind(this.io),
+          this.io.graph?.bind(this.io),
+          this.io.question?.bind(this.io),
+          this.io.ui?.bind(this.io),
+        ),
         rea: { type: "stdio", command: reaCmd!, args: reaArgs },
       },
       permissionMode: "default",
@@ -106,8 +119,11 @@ export class Jarvis {
 
     try {
       for await (const msg of this.runQuery({ prompt, options: this.buildOptions(abort) })) {
+        // Once stopped, anything still arriving from this request is dropped, not spoken.
+        if (abort.signal.aborted) break;
         result = (await this.onMessage(msg)) ?? result;
       }
+      if (abort.signal.aborted) return { ok: false, costUsd: result.costUsd, summary: "Cancelled" };
     } catch (err) {
       if (abort.signal.aborted) return { ok: false, costUsd: 0, summary: "Cancelled" };
       throw err;
@@ -134,7 +150,7 @@ export class Jarvis {
     if (msg.type === "assistant" && msg.parent_tool_use_id === null) {
       for (const block of msg.message.content) {
         if (block.type === "text" && block.text.trim()) await this.io.say(block.text);
-        if (block.type === "tool_use") this.io.status(`→ ${block.name}`);
+        if (block.type === "tool_use") this.io.status(`→ ${block.name}`, block.input as Record<string, unknown>);
         if (block.type === "thinking") this.io.status("… thinking");
       }
       return undefined;

@@ -8,6 +8,10 @@ import path from "node:path";
 import readline from "node:readline";
 import { fileURLToPath } from "node:url";
 import type { Answer } from "../permissions.js";
+import type { Choice, QuestionAnswer, QuestionSpec } from "../voice/answers.js";
+import type { ActivityGlyph } from "../activity.js";
+import type { BrainEntry } from "../tools/brain.js";
+import type { UiAction } from "./control.js";
 import type { TeardownGraph } from "./graph.js";
 
 export type OrbState = "idle" | "listening" | "thinking" | "speaking";
@@ -20,6 +24,13 @@ export type ToOrb =
   | { type: "answered"; id: string }
   | { type: "detail"; title: string; html: string }
   | { type: "graph"; title: string; graph: TeardownGraph }
+  | { type: "question"; id: string; question: string; options: Choice[]; multiSelect: boolean; allowOther: boolean }
+  | { type: "activity"; text: string; glyph?: ActivityGlyph }
+  | { type: "activity-reset" }
+  | { type: "ui"; action: UiAction }
+  | { type: "volume-level"; level: number; quiet?: boolean }
+  | { type: "brain"; notes: BrainEntry[] }
+  | { type: "brain-note"; path: string; title: string; html: string; hasMap: boolean }
   | { type: "quit" };
 
 export type FromOrb =
@@ -27,9 +38,21 @@ export type FromOrb =
   | { type: "talk" }
   | { type: "stop" }
   | { type: "quit" }
-  | { type: "answer"; id: string; answer: Answer };
+  | { type: "answer"; id: string; answer: Answer }
+  | { type: "question-answer"; id: string; answer: QuestionAnswer }
+  | { type: "brain-request" }
+  | { type: "brain-open" | "brain-map"; path: string }
+  | { type: "volume"; delta?: number; level?: number };
 
-export type OrbHandlers = { onTalk(): void; onStop(): void; onQuit(): void };
+export type OrbHandlers = {
+  onTalk(): void;
+  onStop(): void;
+  onQuit(): void;
+  /** The brain browser asked for its note list, one note, or a note's map. */
+  onBrain?(msg: Extract<FromOrb, { type: "brain-request" | "brain-open" | "brain-map" }>): void;
+  /** Scroll on the orb (delta) or the menu-bar volume menu (level), both 0..1 scale. */
+  onVolume?(msg: { delta?: number; level?: number }): void;
+};
 
 const ANSWERS = new Set<string>(["yes", "always", "no"]);
 
@@ -43,9 +66,25 @@ export function parseFromOrb(line: string): FromOrb | null {
   }
   if (!m || typeof m !== "object") return null;
   const msg = m as Record<string, unknown>;
-  if (msg.type === "ready" || msg.type === "talk" || msg.type === "stop" || msg.type === "quit") return { type: msg.type };
+  if (msg.type === "ready" || msg.type === "talk" || msg.type === "stop" || msg.type === "quit" || msg.type === "brain-request") {
+    return { type: msg.type };
+  }
+  if ((msg.type === "brain-open" || msg.type === "brain-map") && typeof msg.path === "string" && msg.path.length <= 300) {
+    return { type: msg.type, path: msg.path };
+  }
+  if (msg.type === "volume") {
+    const delta = typeof msg.delta === "number" && Math.abs(msg.delta) <= 0.25 ? msg.delta : undefined;
+    const level = typeof msg.level === "number" && msg.level >= 0 && msg.level <= 1 ? msg.level : undefined;
+    if (delta !== undefined || level !== undefined) return { type: "volume", delta, level };
+  }
   if (msg.type === "answer" && typeof msg.id === "string" && typeof msg.answer === "string" && ANSWERS.has(msg.answer)) {
     return { type: "answer", id: msg.id, answer: msg.answer as Answer };
+  }
+  if (msg.type === "question-answer" && typeof msg.id === "string") {
+    const a = msg.answer;
+    const labels = Array.isArray(a) && a.length <= 8 && a.every((x) => typeof x === "string" && x.length <= 200);
+    const text = typeof a === "string" && a.trim().length > 0 && a.length <= 2000;
+    if (labels || text) return { type: "question-answer", id: msg.id, answer: a as QuestionAnswer };
   }
   return null;
 }
@@ -53,7 +92,7 @@ export function parseFromOrb(line: string): FromOrb | null {
 export const ORB_MAIN = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../orb/main.cjs");
 
 export class Orb {
-  private readonly pending = new Map<string, (answer: Answer | null) => void>();
+  private readonly pending = new Map<string, (answer: Answer | QuestionAnswer | null) => void>();
   private seq = 0;
   private exited = false;
 
@@ -93,6 +132,16 @@ export class Orb {
 
   /** Shows the approval card. Resolves null if aborted or the orb goes away. */
   ask(spoken: string, detail: string, signal: AbortSignal): Promise<Answer | null> {
+    return this.cardAnswer(signal, (id) => ({ type: "ask", id, spoken, detail })) as Promise<Answer | null>;
+  }
+
+  /** Shows a question card with options. Resolves with the chosen labels or typed text; null if aborted. */
+  question(spec: QuestionSpec, signal: AbortSignal): Promise<QuestionAnswer | null> {
+    return this.cardAnswer(signal, (id) => ({ type: "question", id, ...spec })) as Promise<QuestionAnswer | null>;
+  }
+
+  /** Shows a card and waits for its answer; withdraws the card if the signal aborts. */
+  private cardAnswer(signal: AbortSignal, card: (id: string) => ToOrb): Promise<Answer | QuestionAnswer | null> {
     if (this.exited || signal.aborted) return Promise.resolve(null);
     const id = String(++this.seq);
     return new Promise((resolve) => {
@@ -106,7 +155,7 @@ export class Orb {
         signal.removeEventListener("abort", onAbort);
         resolve(answer);
       });
-      this.send({ type: "ask", id, spoken, detail });
+      this.send(card(id));
     });
   }
 
@@ -119,7 +168,9 @@ export class Orb {
     if (msg?.type === "talk") this.handlers.onTalk();
     else if (msg?.type === "stop") this.handlers.onStop();
     else if (msg?.type === "quit") this.handlers.onQuit();
-    else if (msg?.type === "answer") {
+    else if (msg?.type === "brain-request" || msg?.type === "brain-open" || msg?.type === "brain-map") this.handlers.onBrain?.(msg);
+    else if (msg?.type === "volume") this.handlers.onVolume?.(msg);
+    else if (msg?.type === "answer" || msg?.type === "question-answer") {
       const resolve = this.pending.get(msg.id);
       this.pending.delete(msg.id);
       resolve?.(msg.answer);

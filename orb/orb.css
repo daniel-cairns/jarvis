@@ -26,7 +26,7 @@ main {
   flex-direction: column;
   align-items: center;
   justify-content: flex-end;
-  height: 100%;
+  min-height: 100%;
   padding: 0 12px 12px;
   gap: 6px;
 }
@@ -208,3 +208,61 @@ main {
   color: rgba(157, 180, 200, 0.85);
   text-align: right;
 }
+
+/* Live activity: newest step glowing, earlier ones ticked off. */
+.activity { margin: 6px 0 0; padding: 0; list-style: none; font: 10.5px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; }
+.activity:empty { display: none; }
+.activity li { display: flex; align-items: center; gap: 6px; white-space: nowrap; overflow: hidden; }
+.activity li span { overflow: hidden; text-overflow: ellipsis; }
+.activity .glyph { flex: none; width: 14px; height: 14px; }
+.activity li.done .glyph { opacity: 0.45; }
+.activity li.current .glyph { filter: drop-shadow(0 0 3px rgba(236, 188, 82, 0.9)); animation: activity-pulse 1.2s ease-in-out infinite; }
+.activity li.done { color: rgba(157, 180, 200, 0.6); }
+
+.activity li.current { color: var(--accent); }
+
+@keyframes activity-pulse { 50% { opacity: 0.3; } }
+@media (prefers-reduced-motion: reduce) { .activity li.current .glyph { animation: none; } }
+
+/* Question cards (ask_user). */
+.question h2 { margin: 0 0 8px; font: 600 14.5px/1.3 "Avenir Next", -apple-system, sans-serif; color: #fff3d6; }
+.options { display: flex; flex-direction: column; gap: 5px; margin-bottom: 8px; }
+.options button {
+  text-align: left;
+  padding: 7px 11px;
+  border: 0;
+  border-radius: 10px;
+  font: 600 12.5px/1.25 "Avenir Next", -apple-system, sans-serif;
+  color: var(--ink);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0.04));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3), inset 0 0 0 1px rgba(70, 224, 214, 0.35);
+  cursor: pointer;
+}
+.options button:hover { background: linear-gradient(180deg, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0.08)); }
+.options button[aria-pressed="true"] { color: var(--accent-ink); background: linear-gradient(180deg, #f8dc95, var(--accent)); }
+.options button:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+.other { display: flex; gap: 6px; margin-bottom: 6px; }
+.other[hidden] { display: none; }
+.other input {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 9px;
+  font: 13px/1.3 "Avenir Next", -apple-system, sans-serif;
+  color: var(--ink);
+  background: rgba(0, 8, 24, 0.5);
+  box-shadow: inset 0 0 0 1px rgba(70, 224, 214, 0.35);
+}
+.other input:focus { outline: 2px solid var(--reactor); outline-offset: 1px; }
+.other button {
+  padding: 6px 12px; border: 0; border-radius: 999px; cursor: pointer;
+  font: 700 10.5px/1 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--accent-ink); background: linear-gradient(180deg, #f8dc95, var(--accent));
+}
+.question[hidden], #question-done-row[hidden] { display: none; }
+
+/* Layout: in the lower half of the screen the cards sit above the orb; in the upper half (body.top), below it. */
+.card, .question { order: -1; }
+body.top main { justify-content: flex-start; }
+body.top .card, body.top .question { order: 1; }

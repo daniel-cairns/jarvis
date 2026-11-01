@@ -5,6 +5,8 @@ import { listNotes, readNote, saveNote, searchNotes } from "./brain.js";
 import { launchCleanBrowser, openApp, openPath, realRunner, type Runner } from "./mac.js";
 import { serveApp } from "./serve.js";
 import { checkGraph, graphShape, type TeardownGraph } from "../ui/graph.js";
+import type { QuestionAnswer, QuestionSpec } from "../voice/answers.js";
+import { UI_ACTIONS, type UiAction } from "../ui/control.js";
 
 export const SERVER_NAME = "jarvis";
 
@@ -26,12 +28,16 @@ async function guarded(fn: () => Promise<unknown>): Promise<ToolText> {
 /** Shows markdown in the detail panel; returns where it ended up, for the model to know. */
 export type ShowDetail = (title: string, markdown: string) => string;
 export type ShowGraph = (title: string, graph: TeardownGraph) => string;
+export type AskQuestion = (spec: QuestionSpec) => Promise<QuestionAnswer | null>;
+export type UiControl = (action: UiAction, level?: number) => string | Promise<string>;
 
 export function createJarvisServer(
   cfg: JarvisConfig,
   runner: Runner = realRunner,
   showDetail?: ShowDetail,
   showGraph?: ShowGraph,
+  askQuestion?: AskQuestion,
+  uiControl?: UiControl,
 ) {
   return createSdkMcpServer({
     name: SERVER_NAME,
@@ -72,6 +78,46 @@ export function createJarvisServer(
         "Show the user detail on screen in your HUD panel: lists, tables, steps, code, a report section, anything too long or visual to say aloud. Markdown. Speak a short summary alongside it.",
         { title: z.string().min(1).max(120), markdown: z.string().min(1).max(200_000) },
         (args) => guarded(async () => (showDetail ? showDetail(args.title, args.markdown) : "No screen is attached; say it instead.")),
+      ),
+      tool(
+        "ask_user",
+        "Ask the user one or more questions and wait for the answers: a card on screen with option buttons, answerable by voice or click. Use it whenever you need a decision or preferences (several questions in a row for an interview). Keep options short (2 to 5), each a few words.",
+        {
+          questions: z
+            .array(
+              z.object({
+                question: z.string().min(1).max(300),
+                options: z.array(z.object({ label: z.string().min(1).max(60), description: z.string().max(200).optional() })).max(8).optional(),
+                multiSelect: z.boolean().optional(),
+                allowOther: z.boolean().optional(),
+              }),
+            )
+            .min(1)
+            .max(8),
+        },
+        (args) =>
+          guarded(async () => {
+            if (!askQuestion) return "No way to ask on screen here; ask in your reply instead.";
+            const answers: { question: string; answer: QuestionAnswer | "(no answer)" }[] = [];
+            for (const q of args.questions) {
+              const spec: QuestionSpec = {
+                question: q.question,
+                options: q.options ?? [],
+                multiSelect: q.multiSelect ?? false,
+                allowOther: q.allowOther ?? true,
+              };
+              const answer = await askQuestion(spec);
+              answers.push({ question: q.question, answer: answer ?? "(no answer)" });
+              if (answer === null) break;
+            }
+            return answers;
+          }),
+      ),
+      tool(
+        "ui_control",
+        "Work your own interface when the user asks: minimise or show the orb, stop speaking/working, close your panels, re-open the last detail panel or map, open the brain browser (all notes and teardowns), or change your speaking volume (volume_up, volume_down, or set_volume with level 0-100).",
+        { action: z.enum(UI_ACTIONS), level: z.number().int().min(0).max(100).optional() },
+        (args) => guarded(async () => (uiControl ? uiControl(args.action, args.level) : "No screen is attached.")),
       ),
       tool(
         "show_graph",

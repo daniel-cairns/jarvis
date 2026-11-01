@@ -14,6 +14,21 @@ export function matchWake(transcript: string): string | null {
   return text.slice(m[0].length).trim();
 }
 
+const WAKE_ANYWHERE = /\b(?:astra|astrah|astro|astrid|ashtra|astre|astrae)(?:'s)?\b[\s,.!?:;-]*/gi;
+
+/**
+ * For barge-in while Astra is talking: her own voice is in the same recording, so the name may not come first.
+ * Finds the last "Astra" anywhere and returns what followed it, unless the sentence she's speaking has her name in
+ * it (then it's probably her own voice), in which case it returns null.
+ */
+export function matchWakeAnywhere(transcript: string, ownSpeech: string): string | null {
+  if (/\bastra\b/i.test(ownSpeech)) return null;
+  let last: RegExpExecArray | null = null;
+  for (const m of transcript.matchAll(WAKE_ANYWHERE)) last = m as RegExpExecArray;
+  if (!last) return null;
+  return transcript.slice(last.index! + last[0].length).trim();
+}
+
 /**
  * A sentence that primes whisper with names it would otherwise mishear ("Quire" → "choir").
  * It must read as a sentence: a bare comma-separated list made whisper return nothing in testing.

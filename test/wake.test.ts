@@ -1,5 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { matchWake, speechHint } from "../src/voice/wake.js";
+import { matchWake, matchWakeAnywhere, speechHint } from "../src/voice/wake.js";
+
+describe("matchWakeAnywhere", () => {
+  it("finds the name mid-recording while she talks", () => {
+    expect(matchWakeAnywhere("and the teardown found three modules Astra stop", "And the teardown found three modules.")).toBe("stop");
+    expect(matchWakeAnywhere("so the app uses CloudKit. Astra, open Quire.", "So the app uses CloudKit.")).toBe("open Quire.");
+  });
+
+  it("ignores her own voice saying her name, and recordings without it", () => {
+    expect(matchWakeAnywhere("Hi, Astra here.", "Hi Dan. Astra here.")).toBeNull();
+    expect(matchWakeAnywhere("the app uses CloudKit", "The app uses CloudKit.")).toBeNull();
+  });
+});
 
 describe("matchWake", () => {
   it("wakes on Astra at the start, returning the rest as the request", () => {

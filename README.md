@@ -19,6 +19,17 @@ it needs your permission, showing the details with No / Always / Yes buttons.
 the mic waits for sound, and each phrase is transcribed on your Mac and dropped unless it starts with her name. The
 mic stays on while she runs (`/wake off` or `JARVIS_WAKE=off` to disable). Saying "Astra, stop" stops her.
 
+**She's always listening for her name**, even while she's working or talking: "Astra, stop" interrupts her (talking
+over her is best-effort, since her own voice is in the mic; the stop glyph and Esc always work).
+**Questions and approvals** can be answered by voice: she listens for your answer once she's finished asking ("yes",
+"always", "the second one"), or click the card. She can interview you with option cards (ask_user).
+**She works her own interface**: "Astra, minimise", "open my brain", "show me the map again", "louder", "volume 40".
+**Volume**: by voice, by scrolling over the orb, or from the menu-bar menu; remembered in `~/.jarvis/settings.json`.
+**The brain browser** (menu bar → Open brain, or "Astra, open my brain") lists every note and teardown with search, and
+opens saved teardown maps. Maps have zoom buttons (+ / − / fit, or the + − 0 keys).
+**What she's doing** shows live under the orb, each step marked with a glyph from her ring (eye: reading, ankh:
+building, djed: commands, water: the web, reed: asking you, sun: thinking), and that glyph lights up on the ring.
+
 **Talking is a conversation:** say her name, click the core of the orb, or press Enter, and speak. Astra notices when you pause,
 answers, then listens for your reply. Say nothing for a few seconds and it goes back to sleep.
 

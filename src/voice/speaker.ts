@@ -32,6 +32,8 @@ export class Speaker {
   private tail: Promise<void> = Promise.resolve();
   private pending = 0;
   private speakingNow = false;
+  /** 0..1, applied to each sentence as it's played; the next sentence picks up a change. */
+  volume = 1;
   private tts: Tts;
 
   constructor(
@@ -136,7 +138,8 @@ export class Speaker {
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), "jarvis-voice-"));
     const wav = path.join(dir, "line.wav");
     try {
-      await fs.writeFile(wav, encodeWav16(pcm));
+      const samples = this.volume === 1 ? pcm.samples : pcm.samples.map((s) => s * this.volume);
+      await fs.writeFile(wav, encodeWav16({ samples, rate: pcm.rate }));
       // Checked again after the file write: a stop() during it must not let this line start playing anyway.
       if (gen !== this.generation) return;
       await new Promise<void>((resolve) => {

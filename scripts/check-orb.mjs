@@ -20,7 +20,20 @@ for (const state of ["idle", "listening", "thinking", "speaking"]) {
   if (state === "speaking") send({ type: "utterance", text: "Checking.", envelope: [0.2, 0.8, 0.5, 0.1], frameMs: 50 });
   await wait(400);
 }
-send({ type: "caption", role: "status", text: "Searching your brain…" });
+send({ type: "activity-reset" });
+send({ type: "activity", text: "Thinking…" });
+send({ type: "activity", text: "Reading a note: notes teardown" });
+send({ type: "layout", top: true });
+send({ type: "question", id: "q1", question: "Which service?", options: [{ label: "Spotify" }, { label: "Apple Music" }], multiSelect: true, allowOther: true });
+await wait(300);
+send({ type: "answered", id: "q1" });
+send({ type: "layout", top: false });
+send({
+  type: "brain",
+  notes: [{ path: "teardowns/a.md", title: "A teardown", modified: new Date().toISOString(), folder: "teardowns", snippet: "x", hasMap: true }],
+});
+await wait(1200);
+send({ type: "brain-note", path: "teardowns/a.md", title: "A teardown", html: "<h2>Summary</h2><p>ok</p>", hasMap: true });
 send({ type: "ask", id: "1", spoken: "May I?", detail: "Smoke check." });
 send({ type: "detail", title: "Check", html: "<h2>Detail</h2><p>ok</p>" });
 send({
@@ -29,6 +42,8 @@ send({
   graph: { nodes: [{ id: "a", label: "App", group: "app" }, { id: "b", label: "Lib", group: "framework" }], edges: [{ source: "a", target: "b" }] },
 });
 await wait(3000);
+send({ type: "ui", action: "close_panels" });
+await wait(500);
 child.stdin.end();
 await new Promise((r) => child.on("exit", r));
 
@@ -37,4 +52,4 @@ if (errors.length) {
   console.error(`Orb check failed:\n${errors.slice(0, 10).join("\n")}`);
   process.exit(1);
 }
-console.log("Orb check passed: no renderer errors in the orb, detail panel or map.");
+console.log("Orb check passed: no renderer errors in the orb, detail panel, map or brain browser.");
