@@ -9,7 +9,8 @@
     "pretext": "npm run -s build:orb",
     "build:orb": "esbuild orb/graph/graph-src.js --bundle --format=iife --minify --outfile=orb/build/graph.js --log-level=warning",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "check:orb": "npm run -s build:orb && node scripts/check-orb.mjs"
   },
   "license": "MIT",
   "dependencies": {
