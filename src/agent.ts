@@ -15,6 +15,8 @@ export type JarvisIO = {
   say(text: string): Promise<void>;
   /** Status lines that are shown but not spoken. */
   status(text: string): void;
+  /** Puts detail on screen (the orb's panel, or the terminal); returns where it went. */
+  show?(title: string, markdown: string): string;
   /** Asks the user a yes/always/no question (spoken briefly, detail shown) and returns their raw answer. */
   ask(question: Approval): Promise<string>;
 };
@@ -28,6 +30,7 @@ type QueryFn = typeof query;
 export class Jarvis {
   private sessionId: string | undefined;
   private readonly sessionAllowed = new Set<string>();
+  private readonly reportedServers = new Set<string>();
   private abort: AbortController | null = null;
 
   constructor(
@@ -66,10 +69,12 @@ export class Jarvis {
       maxBudgetUsd: this.cfg.maxBudgetUsd,
       systemPrompt: { type: "preset", preset: "claude_code", append: jarvisInstructions(this.cfg) },
       mcpServers: {
-        [SERVER_NAME]: createJarvisServer(this.cfg),
+        [SERVER_NAME]: createJarvisServer(this.cfg, undefined, this.io.show?.bind(this.io)),
         rea: { type: "stdio", command: reaCmd!, args: reaArgs },
       },
       permissionMode: "default",
+      // Claude Code's question dialog has no voice or orb front end here; Astra asks out loud instead.
+      disallowedTools: ["AskUserQuestion"],
       canUseTool: this.canUseTool,
       resume: this.sessionId,
     };
@@ -111,8 +116,13 @@ export class Jarvis {
   private async onMessage(msg: SDKMessage): Promise<TurnResult | undefined> {
     if (msg.type === "system" && msg.subtype === "init") {
       this.sessionId = msg.session_id;
-      const failed = msg.mcp_servers.filter((s) => s.status !== "connected");
-      for (const s of failed) this.io.status(`MCP server "${s.name}" is ${s.status}`);
+      // Each server problem is reported once per run, not on every request.
+      for (const s of msg.mcp_servers) {
+        const note = `${s.name}:${s.status}`;
+        if (s.status === "connected" || this.reportedServers.has(note)) continue;
+        this.reportedServers.add(note);
+        this.io.status(`MCP server "${s.name}" is ${s.status}`);
+      }
       return undefined;
     }
 

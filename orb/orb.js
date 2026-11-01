@@ -3,6 +3,7 @@
   const canvas = document.getElementById("orb");
   const ctx = canvas.getContext("2d");
   const talk = document.getElementById("talk");
+  const stopButton = document.getElementById("stop");
   const stateLabel = document.getElementById("state");
   const card = document.getElementById("card");
   const caption = document.getElementById("caption");
@@ -58,6 +59,7 @@
     if (!COLOURS[next]) return;
     state = next;
     stateLabel.textContent = LABELS[next];
+    stopButton.hidden = next === "idle";
     talk.setAttribute("aria-label", TALK_LABELS[next] ?? "Talk to Astra");
   }
 
@@ -167,8 +169,13 @@
     const value = e.target.closest("[data-answer]")?.dataset.answer;
     if (value) answer(value);
   });
+  stopButton.addEventListener("click", () => bridge.send({ type: "stop" }));
+
   window.addEventListener("keydown", (e) => {
-    if (!askId) return;
+    if (!askId) {
+      if (e.key === "Escape") bridge.send({ type: "stop" });
+      return;
+    }
     const key = e.key.toLowerCase();
     if (key === "y") answer("yes");
     else if (key === "a") answer("always");

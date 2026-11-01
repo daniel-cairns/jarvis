@@ -2,7 +2,7 @@
  * Astra's orb: a frameless, transparent, always-on-top window. Astra drives it with JSON lines on stdin and
  * hears back on stdout. Run by Electron as a child of the Astra CLI; quits when Astra closes stdin.
  */
-const { app, BrowserWindow, Menu, Tray, ipcMain, nativeImage, screen } = require("electron");
+const { app, BrowserWindow, Menu, Tray, ipcMain, nativeImage, screen, shell } = require("electron");
 const path = require("node:path");
 const readline = require("node:readline");
 
@@ -11,7 +11,7 @@ const ANSWERS = new Set(["yes", "always", "no"]);
 /** Only well-formed messages from the page reach Astra. */
 function fromPage(m) {
   if (!m || typeof m !== "object") return null;
-  if (m.type === "talk") return { type: "talk" };
+  if (m.type === "talk" || m.type === "stop") return { type: m.type };
   if (m.type === "answer" && typeof m.id === "string" && ANSWERS.has(m.answer)) {
     return { type: "answer", id: m.id, answer: m.answer };
   }
@@ -51,6 +51,28 @@ function trayIcon() {
   return image;
 }
 
+const WEB_PREFERENCES = {
+  preload: path.join(__dirname, "preload.cjs"),
+  contextIsolation: true,
+  nodeIntegration: false,
+  sandbox: true,
+};
+
+/** No window may navigate or open new windows; web links go to the user's browser instead. */
+function harden(w) {
+  const external = (url) => {
+    if (/^(https?:|mailto:)/i.test(url)) shell.openExternal(url);
+  };
+  w.webContents.setWindowOpenHandler(({ url }) => {
+    external(url);
+    return { action: "deny" };
+  });
+  w.webContents.on("will-navigate", (e, url) => {
+    e.preventDefault();
+    external(url);
+  });
+}
+
 app.dock?.hide();
 
 app.whenReady().then(() => {
@@ -70,17 +92,11 @@ app.whenReady().then(() => {
     fullscreenable: false,
     skipTaskbar: true,
     alwaysOnTop: true,
-    webPreferences: {
-      preload: path.join(__dirname, "preload.cjs"),
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: true,
-    },
+    webPreferences: WEB_PREFERENCES,
   });
   win.setAlwaysOnTop(true, "floating");
   win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
-  win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
-  win.webContents.on("will-navigate", (e) => e.preventDefault());
+  harden(win);
   win.loadFile(path.join(__dirname, "index.html"));
   win.webContents.once("did-finish-load", () => send({ type: "ready" }));
 
@@ -97,25 +113,81 @@ app.whenReady().then(() => {
     tray.popUpContextMenu(
       Menu.buildFromTemplate([
         win.isVisible() ? { label: "Hide Astra", click: () => win.hide() } : { label: "Show Astra", click: show },
+        { label: "Stop Astra", click: () => send({ type: "stop" }) },
+        { label: "Show last detail", enabled: lastDetail !== null, click: () => openPanel(lastDetail) },
+        { type: "separator" },
+        {
+          label: "Quit Astra",
+          click: () => {
+            send({ type: "quit" });
+            // Astra closes the orb as it exits; if it doesn't answer, close anyway.
+            setTimeout(() => app.quit(), 3000);
+          },
+        },
       ]),
     ),
   );
 
+  // The detail panel: a second HUD window for anything too long to say. Opens beside the orb.
+  let panel = null;
+  let lastDetail = null;
+  const openPanel = (msg) => {
+    lastDetail = msg;
+    if (panel && !panel.isDestroyed()) {
+      panel.webContents.send("jarvis", msg);
+      panel.showInactive();
+      return;
+    }
+    const bounds = win.getBounds();
+    const { workArea } = screen.getDisplayMatching(bounds);
+    const width = 540;
+    const height = 620;
+    panel = new BrowserWindow({
+      width,
+      height,
+      x: Math.max(workArea.x + 12, bounds.x - width - 8),
+      y: Math.max(workArea.y + 12, Math.min(bounds.y, workArea.y + workArea.height - height - 12)),
+      minWidth: 340,
+      minHeight: 220,
+      frame: false,
+      // Frosted glass: macOS blurs whatever is behind the window; panel.css adds tint, rim light and sheen.
+      vibrancy: "hud",
+      visualEffectState: "active",
+      backgroundColor: "#00000000",
+      roundedCorners: true,
+      resizable: true,
+      fullscreenable: false,
+      skipTaskbar: true,
+      alwaysOnTop: true,
+      show: false,
+      webPreferences: WEB_PREFERENCES,
+    });
+    panel.setAlwaysOnTop(true, "floating");
+    harden(panel);
+    panel.loadFile(path.join(__dirname, "panel.html"));
+    panel.webContents.once("did-finish-load", () => {
+      panel.webContents.send("jarvis", msg);
+      panel.showInactive();
+    });
+  };
+
   // Dragging is done here rather than with CSS drag regions, which don't take hold reliably on a transparent window.
   let drag = null;
   const dragStep = () => {
-    if (!drag) return;
+    if (!drag || drag.target.isDestroyed()) return;
     const p = screen.getCursorScreenPoint();
-    win.setPosition(drag.winX + p.x - drag.cursorX, drag.winY + p.y - drag.cursorY);
+    drag.target.setPosition(drag.winX + p.x - drag.cursorX, drag.winY + p.y - drag.cursorY);
   };
 
-  ipcMain.on("orb", (_event, m) => {
+  ipcMain.on("orb", (event, m) => {
+    const sender = BrowserWindow.fromWebContents(event.sender);
     if (m?.type === "minimise") return win.hide();
-    if (m?.type === "drag-start") {
+    if (m?.type === "panel-close") return panel?.close();
+    if (m?.type === "drag-start" && sender) {
       const p = screen.getCursorScreenPoint();
-      const [winX, winY] = win.getPosition();
+      const [winX, winY] = sender.getPosition();
       clearInterval(drag?.timer);
-      drag = { cursorX: p.x, cursorY: p.y, winX, winY, timer: setInterval(dragStep, 16) };
+      drag = { target: sender, cursorX: p.x, cursorY: p.y, winX, winY, timer: setInterval(dragStep, 16) };
       return;
     }
     if (m?.type === "drag-end") {
@@ -137,6 +209,7 @@ app.whenReady().then(() => {
         return;
       }
       if (m.type === "quit") app.quit();
+      else if (m.type === "detail") openPanel(m);
       else if (m.type === "ask") {
         // A question needs you, so a minimised orb comes back for it.
         if (!win.isVisible()) show();

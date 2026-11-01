@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { describe, expect, it } from "vitest";
+import { renderDetail } from "../src/ui/detail.js";
 import { parseFromOrb } from "../src/ui/orb.js";
 import { recorderArgs } from "../src/voice/listener.js";
 import { decodeWav16, encodeWav16, loudnessEnvelope } from "../src/voice/audio.js";
@@ -100,6 +101,7 @@ describe("Speaker", () => {
 describe("parseFromOrb", () => {
   it("accepts only well-formed orb messages", () => {
     expect(parseFromOrb('{"type":"talk"}')).toEqual({ type: "talk" });
+    expect(parseFromOrb('{"type":"stop"}')).toEqual({ type: "stop" });
     expect(parseFromOrb('{"type":"answer","id":"3","answer":"always"}')).toEqual({ type: "answer", id: "3", answer: "always" });
     expect(parseFromOrb('{"type":"answer","id":"3","answer":"sure"}')).toBeNull();
     expect(parseFromOrb('{"type":"exec","cmd":"rm"}')).toBeNull();
@@ -113,5 +115,24 @@ describe("recorderArgs", () => {
     expect(recorderArgs("/tmp/a.wav", { autoStop: true, pauseSec: 2 }).slice(8)).toEqual(
       ["silence", "1", "0.1", "1%", "1", "2", "1%"],
     );
+  });
+});
+
+describe("renderDetail", () => {
+  it("renders markdown structure for the panel", () => {
+    const html = renderDetail("## Stack\n\n| Part | Tech |\n|---|---|\n| UI | Vue |\n\n- one\n- **two**\n\n```ts\nconst a = 1;\n```");
+    expect(html).toContain("<h2>Stack</h2>");
+    expect(html).toContain("<table>");
+    expect(html).toContain("<strong>two</strong>");
+    expect(html).toContain('<code class="language-ts">');
+  });
+
+  it("can't be used to inject markup or script", () => {
+    const html = renderDetail('<img src=x onerror="alert(1)"> <script>alert(2)</script>\n\n[bad](javascript:alert(3)) [ok](https://example.com "t") ![logo](https://e.com/x.png)');
+    expect(html).not.toMatch(/<img|<script|href="javascript/i);
+    expect(html).toContain("&lt;img src=x onerror=");
+    expect(html).toContain("&lt;script&gt;");
+    expect(html).toContain('<a href="https://example.com" title="t">ok</a>');
+    expect(html).toContain("[image: logo]");
   });
 });

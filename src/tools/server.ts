@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { JarvisConfig } from "../config.js";
 import { listNotes, readNote, saveNote, searchNotes } from "./brain.js";
 import { launchCleanBrowser, openApp, openPath, realRunner, type Runner } from "./mac.js";
+import { serveApp } from "./serve.js";
 
 export const SERVER_NAME = "jarvis";
 
@@ -21,7 +22,10 @@ async function guarded(fn: () => Promise<unknown>): Promise<ToolText> {
   }
 }
 
-export function createJarvisServer(cfg: JarvisConfig, runner: Runner = realRunner) {
+/** Shows markdown in the detail panel; returns where it ended up, for the model to know. */
+export type ShowDetail = (title: string, markdown: string) => string;
+
+export function createJarvisServer(cfg: JarvisConfig, runner: Runner = realRunner, showDetail?: ShowDetail) {
   return createSdkMcpServer({
     name: SERVER_NAME,
     version: "0.1.0",
@@ -57,6 +61,12 @@ export function createJarvisServer(cfg: JarvisConfig, runner: Runner = realRunne
         { annotations: { readOnlyHint: true } },
       ),
       tool(
+        "show_detail",
+        "Show the user detail on screen in your HUD panel: lists, tables, steps, code, a report section, anything too long or visual to say aloud. Markdown. Speak a short summary alongside it.",
+        { title: z.string().min(1).max(120), markdown: z.string().min(1).max(200_000) },
+        (args) => guarded(async () => (showDetail ? showDetail(args.title, args.markdown) : "No screen is attached; say it instead.")),
+      ),
+      tool(
         "open_app",
         "Open a macOS application by name, e.g. 'Notes' or 'Safari'.",
         { name: z.string().min(1).max(80) },
@@ -67,6 +77,17 @@ export function createJarvisServer(cfg: JarvisConfig, runner: Runner = realRunne
         "Open a file or folder Astra made (inside the workspace or brain) with its default macOS app, e.g. an index.html in a browser window.",
         { path: z.string().min(1) },
         (args) => guarded(() => openPath(args.path, [cfg.workspaceDir, cfg.brainDir], runner)),
+      ),
+      tool(
+        "serve_app",
+        "Serve a built web app from the workspace on 127.0.0.1 and open it in the user's browser. Pass the folder that holds index.html (for Nuxt: run `npx nuxi generate`, then pass .output/public). Returns the URL.",
+        { path: z.string().min(1) },
+        (args) =>
+          guarded(async () => {
+            const url = await serveApp(args.path, cfg.workspaceDir);
+            await runner.run("open", [url]);
+            return `Serving at ${url} and opened it in the browser.`;
+          }),
       ),
       tool(
         "launch_clean_browser",

@@ -2,6 +2,8 @@ import readline from "node:readline";
 import { Jarvis } from "./agent.js";
 import { loadConfig } from "./config.js";
 import { parseAnswer } from "./permissions.js";
+import { renderDetail } from "./ui/detail.js";
+import { stopServing } from "./tools/serve.js";
 import { askDialog } from "./ui/dialog.js";
 import { Orb } from "./ui/orb.js";
 import { Listener } from "./voice/listener.js";
@@ -26,6 +28,10 @@ class LineReader {
       this.closed = true;
       for (const w of this.waiting.splice(0)) w(null);
     });
+  }
+
+  get isClosed(): boolean {
+    return this.closed;
   }
 
   /** Queues a line as if it were typed; the orb uses this to stand in for pressing Enter. */
@@ -91,7 +97,40 @@ async function main(): Promise<void> {
   const listener = new Listener(cfg);
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout, terminal: true });
   const lines = new LineReader(rl);
-  if (!args.has("--no-orb") && process.platform === "darwin") orb = Orb.launch(() => lines.inject(""));
+  let asking = false;
+  let currentAsk: AbortController | null = null;
+  let currentListen: AbortController | null = null;
+
+  /** Stops speech, listening, a pending approval and the request in progress. Returns whether anything was running. */
+  const interrupt = (): boolean => {
+    const active = speaking || listening || busy;
+    speaker.stop();
+    currentListen?.abort();
+    currentAsk?.abort();
+    if (busy) jarvis.cancel();
+    return active;
+  };
+
+  if (!args.has("--no-orb") && process.platform === "darwin") {
+    orb = Orb.launch({
+      // Clicking the core: answers an approval by voice, ends listening, or barges in on speech/work to listen.
+      onTalk: () => {
+        if (!asking && !listening && (speaking || busy)) interrupt();
+        lines.inject("");
+      },
+      // "Quit Astra" from the menu bar: stop whatever is running, then leave the main loop.
+      onQuit: () => {
+        interrupt();
+        lines.inject("/quit");
+      },
+      onStop: () => {
+        if (interrupt()) {
+          console.log("\n(stopped)");
+          orb?.send({ type: "caption", role: "status", text: "Stopped" });
+        }
+      },
+    });
+  }
 
   let voiceMode = !textMode;
   if (voiceMode) {
@@ -127,18 +166,23 @@ async function main(): Promise<void> {
     listening = true;
     syncOrb();
     const early = new AbortController();
+    const stopped = new AbortController();
+    currentListen = stopped;
     const how = await Promise.race([
       listener.whenDone().then(() => "paused" as const),
       lines
         .next("🎙  Listening... (I'll stop when you pause; Enter or click the orb to stop now) ",
-          signal ? AbortSignal.any([signal, early.signal]) : early.signal)
+          AbortSignal.any([early.signal, stopped.signal, ...(signal ? [signal] : [])]))
         .then((line) => (line === null ? ("cancelled" as const) : ("pressed" as const))),
     ]);
     early.abort();
+    currentListen = null;
     listening = false;
     syncOrb();
     const heard = await listener.stopAndTranscribe();
-    if (how === "cancelled" || signal?.aborted) return null;
+    if (lines.isClosed || signal?.aborted) return null;
+    // Stopped from the orb or Ctrl-C: throw the recording away rather than send it.
+    if (how === "cancelled" || stopped.signal.aborted) return "";
     lastInputWasVoice = true;
     if (heard || !listenNow) {
       console.log(heard ? `You: ${heard}` : "(I didn't catch anything)");
@@ -149,6 +193,14 @@ async function main(): Promise<void> {
 
   const jarvis = new Jarvis(cfg, {
     say,
+    show: (title, markdown) => {
+      if (orb?.alive) {
+        orb.send({ type: "detail", title, html: renderDetail(markdown) });
+        return "Shown in the detail panel.";
+      }
+      console.log(`\n── ${title} ──\n${markdown}\n`);
+      return "Printed in the terminal (no orb is open).";
+    },
     status: (text) => {
       console.log(`  ${text}`);
       orb?.send({ type: "caption", role: "status", text: text.replace(/mcp__([^_]+)__/, "$1: ").replace(/_/g, " ") });
@@ -157,6 +209,8 @@ async function main(): Promise<void> {
     ask: async ({ spoken, detail }) => {
       console.log(`\n  Approval needed: ${detail}`);
       const answered = new AbortController();
+      asking = true;
+      currentAsk = answered;
       const viaVisual = orb?.alive ? orb.ask(spoken, detail, answered.signal) : askDialog(detail, answered.signal);
       void say(spoken);
       const where = orb?.alive ? "the orb" : "the pop-up";
@@ -164,6 +218,8 @@ async function main(): Promise<void> {
       const viaInput = getInput(prompt, answered.signal);
       const answer = await Promise.race([viaVisual.then((a) => a ?? viaInput), viaInput.then((a) => a ?? viaVisual)]);
       answered.abort();
+      asking = false;
+      currentAsk = null;
       speaker.stop();
       console.log(`  → ${parseAnswer(answer ?? "no")}`);
       return answer ?? "no";
@@ -172,9 +228,8 @@ async function main(): Promise<void> {
   await jarvis.init();
 
   rl.on("SIGINT", () => {
-    speaker.stop();
-    if (busy && jarvis.cancel()) {
-      console.log("\n(cancelling)");
+    if (interrupt()) {
+      console.log("\n(stopped)");
       return;
     }
     rl.close();
@@ -215,11 +270,15 @@ async function main(): Promise<void> {
 
   speaker.stop();
   orb?.close();
+  stopServing();
   rl.close();
-  process.exit(0);
+  // Let Node exit on its own: process.exit() while the voice model's native threads are alive aborts with
+  // "mutex lock failed". If anything still holds the process open after 3 s, end it hard.
+  setTimeout(() => process.kill(process.pid, "SIGKILL"), 3_000).unref();
 }
 
 main().catch((err) => {
   console.error(err instanceof Error ? err.message : err);
-  process.exit(1);
+  process.exitCode = 1;
+  setTimeout(() => process.kill(process.pid, "SIGKILL"), 3_000).unref();
 });

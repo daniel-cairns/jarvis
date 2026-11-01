@@ -17,9 +17,17 @@ export type ToOrb =
   | { type: "caption"; role: "jarvis" | "you" | "status"; text: string }
   | { type: "ask"; id: string; spoken: string; detail: string }
   | { type: "answered"; id: string }
+  | { type: "detail"; title: string; html: string }
   | { type: "quit" };
 
-export type FromOrb = { type: "ready" } | { type: "talk" } | { type: "answer"; id: string; answer: Answer };
+export type FromOrb =
+  | { type: "ready" }
+  | { type: "talk" }
+  | { type: "stop" }
+  | { type: "quit" }
+  | { type: "answer"; id: string; answer: Answer };
+
+export type OrbHandlers = { onTalk(): void; onStop(): void; onQuit(): void };
 
 const ANSWERS = new Set<string>(["yes", "always", "no"]);
 
@@ -33,7 +41,7 @@ export function parseFromOrb(line: string): FromOrb | null {
   }
   if (!m || typeof m !== "object") return null;
   const msg = m as Record<string, unknown>;
-  if (msg.type === "ready" || msg.type === "talk") return { type: msg.type };
+  if (msg.type === "ready" || msg.type === "talk" || msg.type === "stop" || msg.type === "quit") return { type: msg.type };
   if (msg.type === "answer" && typeof msg.id === "string" && typeof msg.answer === "string" && ANSWERS.has(msg.answer)) {
     return { type: "answer", id: msg.id, answer: msg.answer as Answer };
   }
@@ -49,7 +57,7 @@ export class Orb {
 
   constructor(
     private readonly child: ChildProcess,
-    private readonly onTalk: () => void,
+    private readonly handlers: OrbHandlers,
   ) {
     readline.createInterface({ input: child.stdout! }).on("line", (line) => this.receive(parseFromOrb(line)));
     child.on("exit", () => this.markGone());
@@ -58,7 +66,7 @@ export class Orb {
   }
 
   /** Starts the orb window. Returns null if Electron isn't installed. */
-  static launch(onTalk: () => void, electronBin?: string): Orb | null {
+  static launch(handlers: OrbHandlers, electronBin?: string): Orb | null {
     let bin = electronBin;
     if (!bin) {
       try {
@@ -69,7 +77,7 @@ export class Orb {
       }
     }
     const child = spawn(bin, [ORB_MAIN], { stdio: ["pipe", "pipe", "ignore"] });
-    return new Orb(child, onTalk);
+    return new Orb(child, handlers);
   }
 
   get alive(): boolean {
@@ -106,7 +114,9 @@ export class Orb {
   }
 
   private receive(msg: FromOrb | null): void {
-    if (msg?.type === "talk") this.onTalk();
+    if (msg?.type === "talk") this.handlers.onTalk();
+    else if (msg?.type === "stop") this.handlers.onStop();
+    else if (msg?.type === "quit") this.handlers.onQuit();
     else if (msg?.type === "answer") {
       const resolve = this.pending.get(msg.id);
       this.pending.delete(msg.id);

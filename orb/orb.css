@@ -85,42 +85,49 @@ main {
   white-space: nowrap;
 }
 
-/* HUD panel: cut corners, gold corner brackets, faint scanlines, reactor glow. */
+/* Glass cards: tinted, rim-lit and sheened. (The orb window is see-through, so there's no native blur behind them.) */
 .card {
-  --cut: 12px;
   position: relative;
   width: 100%;
-  padding: 10px 14px 12px;
+  padding: 11px 15px 13px;
   color: var(--ink);
+  border-radius: 18px;
+  overflow: hidden;
   background:
-    linear-gradient(var(--accent), var(--accent)) left var(--cut) top 0 / 28px 2px no-repeat,
-    linear-gradient(var(--accent), var(--accent)) left 0 top var(--cut) / 2px 22px no-repeat,
-    linear-gradient(var(--accent), var(--accent)) right var(--cut) bottom 0 / 28px 2px no-repeat,
-    linear-gradient(var(--accent), var(--accent)) right 0 bottom var(--cut) / 2px 22px no-repeat,
-    linear-gradient(180deg, rgba(10, 26, 52, 0.94), rgba(6, 12, 32, 0.94));
-  border: 1px solid rgba(70, 224, 214, 0.35);
-  clip-path: polygon(var(--cut) 0, 100% 0, 100% calc(100% - var(--cut)), calc(100% - var(--cut)) 100%, 0 100%, 0 var(--cut));
-  box-shadow: inset 0 0 22px rgba(70, 224, 214, 0.12);
-  backdrop-filter: blur(14px);
+    radial-gradient(120% 70% at 0% 0%, rgba(150, 225, 255, 0.22), transparent 60%),
+    radial-gradient(90% 60% at 100% 100%, rgba(236, 188, 82, 0.12), transparent 60%),
+    linear-gradient(165deg, rgba(30, 60, 110, 0.62), rgba(6, 14, 36, 0.78));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.36),
+    inset 1px 0 0 rgba(255, 255, 255, 0.12),
+    inset 0 -1px 0 rgba(70, 224, 214, 0.28),
+    inset 0 0 26px rgba(70, 224, 214, 0.1),
+    0 12px 30px rgba(0, 0, 0, 0.4);
   user-select: text;
 }
 .card::before {
   content: "";
   position: absolute;
-  inset: 0;
+  inset: -60% -10% auto -10%;
+  height: 110%;
   pointer-events: none;
-  background: repeating-linear-gradient(180deg, transparent 0 2px, rgba(140, 235, 255, 0.035) 2px 3px);
+  background: linear-gradient(115deg, transparent 38%, rgba(255, 255, 255, 0.08) 46%, rgba(255, 255, 255, 0.015) 54%, transparent 62%);
 }
 .card::after {
   content: "";
   position: absolute;
-  inset: 0;
+  inset: 7px;
   pointer-events: none;
+  border-radius: 12px;
   background:
-    linear-gradient(135deg, transparent calc(var(--cut) - 1.5px), var(--accent) calc(var(--cut) - 1.5px) var(--cut), transparent var(--cut)) top left / calc(var(--cut) + 2px) calc(var(--cut) + 2px) no-repeat,
-    linear-gradient(-45deg, transparent calc(var(--cut) - 1.5px), var(--accent) calc(var(--cut) - 1.5px) var(--cut), transparent var(--cut)) bottom right / calc(var(--cut) + 2px) calc(var(--cut) + 2px) no-repeat;
+    linear-gradient(var(--accent), var(--accent)) left top / 14px 1.5px no-repeat,
+    linear-gradient(var(--accent), var(--accent)) left top / 1.5px 14px no-repeat,
+    linear-gradient(var(--accent), var(--accent)) right bottom / 14px 1.5px no-repeat,
+    linear-gradient(var(--accent), var(--accent)) right bottom / 1.5px 14px no-repeat;
+  opacity: 0.65;
 }
 .card[hidden] { display: none; }
+.card > * { position: relative; }
 
 .label {
   display: flex;
@@ -161,37 +168,58 @@ main {
 }
 .ask pre {
   margin: 0 0 12px;
-  padding: 6px 8px;
+  padding: 7px 9px;
+  border-radius: 10px;
   max-height: 6.5em;
   overflow: auto;
   white-space: pre-wrap;
   word-break: break-word;
   font: 10.5px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace;
   color: rgba(150, 236, 230, 0.9);
-  background: rgba(70, 224, 214, 0.06);
-  border-left: 2px solid var(--accent);
+  background: rgba(0, 8, 24, 0.45);
+  box-shadow: inset 0 0 0 1px rgba(70, 224, 214, 0.2);
 }
 .buttons { display: flex; gap: 8px; justify-content: flex-end; }
 .buttons button {
-  --c: 7px;
-  padding: 7px 14px;
+  padding: 7px 15px;
   font: 700 10.5px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
-  letter-spacing: 0.18em;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
-  color: var(--reactor);
-  background: rgba(70, 224, 214, 0.08);
+  color: var(--ink);
   border: 0;
-  /* Borders and focus rings are box-shadows: clip-path would cut off a real border or outline. */
-  box-shadow: inset 0 0 0 1px rgba(70, 224, 214, 0.55);
-  clip-path: polygon(var(--c) 0, 100% 0, 100% calc(100% - var(--c)), calc(100% - var(--c)) 100%, 0 100%, 0 var(--c));
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.04));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35), inset 0 0 0 1px rgba(70, 224, 214, 0.4);
   cursor: pointer;
 }
-.buttons button:hover { background: rgba(70, 224, 214, 0.2); }
-.buttons [data-answer="always"] { color: var(--accent); background: rgba(236, 188, 82, 0.08); box-shadow: inset 0 0 0 1px rgba(236, 188, 82, 0.6); }
-.buttons [data-answer="always"]:hover { background: rgba(236, 188, 82, 0.2); }
-.buttons .primary { color: var(--accent-ink); background: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
-.buttons .primary:hover { background: #f5d488; }
-.buttons button:focus-visible { outline: none; box-shadow: inset 0 0 0 2px #fff, 0 0 12px rgba(255, 255, 255, 0.6); }
+.buttons button:hover { background: linear-gradient(180deg, rgba(255, 255, 255, 0.24), rgba(255, 255, 255, 0.08)); }
+.buttons [data-answer="always"] { color: var(--accent); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35), inset 0 0 0 1px rgba(236, 188, 82, 0.55); }
+.buttons .primary {
+  color: var(--accent-ink);
+  background: linear-gradient(180deg, #f8dc95, var(--accent));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7), 0 0 14px rgba(236, 188, 82, 0.35);
+}
+.buttons .primary:hover { background: linear-gradient(180deg, #fff0c4, #f2c96a); }
+.buttons button:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+
+/* Stop: a small glass button with a reactor-red square, shown only while Astra is busy. */
+#stop {
+  position: absolute;
+  top: 22px;
+  left: 18px;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 50%;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.05));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4), inset 0 0 0 1px rgba(255, 120, 110, 0.55), 0 0 12px rgba(255, 90, 80, 0.3);
+  cursor: pointer;
+}
+#stop[hidden] { display: none; }
+#stop span { display: block; width: 9px; height: 9px; margin: auto; border-radius: 2px; background: #ff7a6e; box-shadow: 0 0 6px #ff5a50; }
+#stop:hover { background: linear-gradient(180deg, rgba(255, 255, 255, 0.28), rgba(255, 255, 255, 0.1)); }
+#stop:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+
 .hint {
   margin: 10px 0 0;
   font: 9.5px/1.3 ui-monospace, SFMono-Regular, Menlo, monospace;
