@@ -88,7 +88,7 @@ export async function launchCleanBrowser(
   opts: { chromeBin: string; port: number },
   runner: Runner = realRunner,
   platform = process.platform,
-): Promise<{ endpoint: string; profileDir: string; url: string }> {
+): Promise<{ cdp_endpoint: string; profileDir: string; url: string }> {
   requireMac(platform);
   const url = validateWebUrl(rawUrl);
   const profileDir = await fs.mkdtemp(path.join(os.tmpdir(), "jarvis-chrome-"));
@@ -100,5 +100,5 @@ export async function launchCleanBrowser(
     "--no-default-browser-check",
     url,
   ]);
-  return { endpoint: `http://127.0.0.1:${opts.port}`, profileDir, url };
+  return { cdp_endpoint: `http://127.0.0.1:${opts.port}`, profileDir, url };
 }

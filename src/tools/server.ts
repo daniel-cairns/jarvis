@@ -70,7 +70,7 @@ export function createJarvisServer(cfg: JarvisConfig, runner: Runner = realRunne
       ),
       tool(
         "launch_clean_browser",
-        "Start a fresh Chrome profile on a DevTools port and load a URL, so REA's browser tools can observe it. Returns the endpoint to pass to REA.",
+        "Start a fresh Chrome profile on a DevTools port and load a URL, so REA's browser tools can observe it. Returns the cdp_endpoint to pass to REA's browser tools.",
         { url: z.string().min(1) },
         (args) =>
           guarded(() => launchCleanBrowser(args.url, { chromeBin: cfg.chromeBin, port: cfg.chromeDebugPort }, runner)),

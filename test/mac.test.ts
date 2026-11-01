@@ -80,7 +80,7 @@ describe("launchCleanBrowser", () => {
   it("starts Chrome with a temp profile and loopback DevTools port", async () => {
     const { runner, calls } = fakeRunner();
     const res = await launchCleanBrowser("https://igloo.inc", { chromeBin: "/chrome", port: 9333 }, runner, "darwin");
-    expect(res.endpoint).toBe("http://127.0.0.1:9333");
+    expect(res.cdp_endpoint).toBe("http://127.0.0.1:9333");
     expect(calls[0]?.detached).toBe(true);
     expect(calls[0]?.args).toContain("--remote-debugging-port=9333");
     expect(calls[0]?.args).toContain("--remote-debugging-address=127.0.0.1");
