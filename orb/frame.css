@@ -1,0 +1,132 @@
+/*
+ * Drawer-style frames (after cratedigga's rack drawers), in Astra's lapis, turquoise and gold: a nub tab at the top
+ * left with a slanted gold edge, a mounting rail with rivets, a faceplate header (LED strip, sun-disc icon, glowing
+ * title, meta line, vents), a glow shelf, and a mirrored nub at the bottom right. Used by the detail panel, the map
+ * and (compact) the orb's cards.
+ */
+:root {
+  --gold: #ecbc52;
+  --reactor: #46e0d6;
+  --lapis: #2a4aa8;
+}
+
+/* ── Nub tabs ─────────────────────────────────────────────── */
+.nub {
+  position: relative;
+  z-index: 3;
+  flex: none;
+  width: var(--nub-w, 170px);
+  height: var(--nub-h, 22px);
+}
+.nub svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.nub .plate { fill: rgba(4, 10, 30, 0.9); }
+.nub .edge { fill: none; stroke: var(--gold); stroke-width: 1.6; filter: drop-shadow(0 0 2px rgba(236, 188, 82, 0.7)); }
+.nub .edge-inner { fill: none; stroke: var(--reactor); stroke-width: 0.7; opacity: 0.6; }
+.nub-label {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  margin: 0;
+  transform: translateY(-50%);
+  font: 600 9.5px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--reactor);
+}
+.nub-label::before { content: "◈ "; color: var(--gold); }
+/* Bottom-right nub: the same tab turned over. */
+.nub--foot { align-self: flex-end; transform: rotate(180deg); }
+.nub--foot .nub-label { transform: translateY(-50%) rotate(180deg); right: 12px; left: auto; text-align: right; }
+
+/* ── Rails with rivets ────────────────────────────────────── */
+.rail {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 6px;
+  padding: 0 10px;
+  background: linear-gradient(180deg, rgba(30, 50, 90, 0.85), rgba(4, 10, 28, 0.9));
+  border-top: 1px solid rgba(236, 188, 82, 0.35);
+}
+.rail--bot { height: 4px; background: linear-gradient(180deg, rgba(4, 10, 28, 0.9), rgba(2, 6, 18, 0.9)); border-top-color: rgba(255, 255, 255, 0.05); }
+.rail .gap { flex: 1; }
+.rail i {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #f8dc95, #8a6420);
+  box-shadow: 0 0 2px rgba(236, 188, 82, 0.6);
+}
+
+/* ── Faceplate header ─────────────────────────────────────── */
+.face {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 58px;
+  padding: 6px 14px 6px 34px;
+  background:
+    repeating-linear-gradient(90deg, transparent 0 2px, rgba(255, 255, 255, 0.012) 2px 4px),
+    linear-gradient(180deg, rgba(22, 40, 84, 0.88), rgba(4, 10, 28, 0.92));
+  box-shadow: inset 0 1px 0 rgba(120, 160, 230, 0.25), inset 0 -1px 0 rgba(0, 0, 0, 0.5);
+  cursor: grab;
+  user-select: none;
+}
+.face:active { cursor: grabbing; }
+.leds {
+  position: absolute;
+  left: 16px;
+  top: 10px;
+  bottom: 10px;
+  width: 3px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.leds i { flex: 1; max-height: 7px; border-radius: 1px; background: var(--reactor); opacity: 0.18; }
+.leds i.on { opacity: 0.9; box-shadow: 0 0 4px var(--reactor); animation: drawer-led 2s ease-in-out infinite alternate; }
+.leds i.on:nth-child(2) { animation-delay: 0.28s; }
+.leds i.on:nth-child(3) { animation-delay: 0.56s; }
+.face-icon { flex: none; width: 34px; height: 34px; }
+.face-icon circle, .face-icon path { fill: none; stroke: var(--gold); stroke-width: 1.4; }
+.face-icon .dot { fill: var(--gold); stroke: none; }
+.face .heading { flex: 1; min-width: 0; }
+.face h1 {
+  margin: 0;
+  font: 600 18px/1.15 "Avenir Next", -apple-system, sans-serif;
+  letter-spacing: 0.04em;
+  color: var(--gold);
+  text-shadow: 0 0 22px rgba(236, 188, 82, 0.45);
+  overflow-wrap: anywhere;
+}
+.face .meta {
+  margin: 3px 0 0;
+  font: 9.5px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 0.14em;
+  color: #6f8aa4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.vents { display: flex; gap: 3px; flex: none; }
+.vents i { width: 2px; height: 16px; border-radius: 1px; background: rgba(0, 0, 0, 0.55); box-shadow: 1px 0 0 rgba(255, 255, 255, 0.06); }
+
+/* ── Glow shelf ───────────────────────────────────────────── */
+.shelf {
+  position: relative;
+  z-index: 2;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--reactor) 30%, var(--gold) 70%, transparent);
+  box-shadow: 0 0 10px rgba(70, 224, 214, 0.7), 0 2px 16px rgba(70, 224, 214, 0.25);
+  opacity: 0.8;
+}
+
+@keyframes drawer-led { from { opacity: 0.45; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .leds i.on { animation: none; }
+}

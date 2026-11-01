@@ -5,6 +5,7 @@
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'">
   <title>Astra</title>
   <link rel="stylesheet" href="orb.css">
+  <link rel="stylesheet" href="frame.css">
 </head>
 <body>
   <main>
@@ -23,14 +24,16 @@
     <p id="state" class="state" aria-live="polite">Idle</p>
 
     <section id="card" class="card" hidden>
-      <p id="caption-label" class="label">Transmission</p>
+      <div class="nub" aria-hidden="true"><svg viewBox="0 0 170 22" preserveAspectRatio="none"><polygon class="plate" points="0,22 170,22 170,10 156,0 0,0"/><polyline class="edge" points="0,0.8 156,0.8 169.5,10.5"/><polyline class="edge-inner" points="0,4 154,4 165,12"/></svg><p id="caption-label" class="nub-label" aria-hidden="false">Transmission</p></div>
+      <div class="shelf" aria-hidden="true"></div>
       <p id="caption" class="caption" aria-hidden="true"></p>
       <p id="caption-spoken" class="visually-hidden" aria-live="polite"></p>
       <p id="status" class="status"></p>
     </section>
 
     <section id="ask" class="card ask" role="alertdialog" aria-labelledby="ask-q" aria-describedby="ask-d" hidden>
-      <p class="label">Authorisation required</p>
+      <div class="nub" aria-hidden="true"><svg viewBox="0 0 170 22" preserveAspectRatio="none"><polygon class="plate" points="0,22 170,22 170,10 156,0 0,0"/><polyline class="edge" points="0,0.8 156,0.8 169.5,10.5"/><polyline class="edge-inner" points="0,4 154,4 165,12"/></svg><p class="nub-label">Authorisation required</p></div>
+      <div class="shelf" aria-hidden="true"></div>
       <h2 id="ask-q"></h2>
       <pre id="ask-d"></pre>
       <div class="buttons">

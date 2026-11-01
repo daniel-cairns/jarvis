@@ -73,7 +73,7 @@ main {
   width: 100%;
   padding: 11px 15px 13px;
   color: var(--ink);
-  border-radius: 18px;
+  border-radius: 6px;
   overflow: hidden;
   /* No blur is possible behind a transparent window, so the glass is a light tint over a soft dark base for legibility. */
   background:
@@ -99,35 +99,13 @@ main {
   pointer-events: none;
   background: linear-gradient(115deg, transparent 34%, rgba(255, 255, 255, 0.14) 44%, rgba(255, 255, 255, 0.03) 52%, transparent 62%);
 }
-.card::after {
-  content: "";
-  position: absolute;
-  inset: 7px;
-  pointer-events: none;
-  border-radius: 12px;
-  background:
-    linear-gradient(var(--accent), var(--accent)) left top / 14px 1.5px no-repeat,
-    linear-gradient(var(--accent), var(--accent)) left top / 1.5px 14px no-repeat,
-    linear-gradient(var(--accent), var(--accent)) right bottom / 14px 1.5px no-repeat,
-    linear-gradient(var(--accent), var(--accent)) right bottom / 1.5px 14px no-repeat;
-  opacity: 0.65;
-}
 .card[hidden] { display: none; }
-.card > * { position: relative; }
+.card > :not(.nub):not(.shelf) { position: relative; }
 
-.label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 0 0 6px;
-  font: 600 9.5px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
-  letter-spacing: 0.24em;
-  text-transform: uppercase;
-  color: var(--reactor);
-}
-.label::before { content: "▸"; color: var(--accent); }
-.label::after { content: ""; flex: 1; height: 1px; background: linear-gradient(90deg, rgba(70, 224, 214, 0.6), transparent); }
-.card[data-role="you"] .label { color: var(--accent); }
+/* Compact drawer: the nub tab and glow shelf sit flush with the card's top edge (frame.css styles them). */
+.card .nub { --nub-w: 210px; --nub-h: 20px; margin: -11px -15px 0; }
+.card .shelf { margin: 0 -15px 9px; }
+.card[data-role="you"] .nub-label { color: var(--accent); }
 
 .caption {
   margin: 0;
