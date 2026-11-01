@@ -8,7 +8,8 @@ import {
 import type { JarvisConfig } from "./config.js";
 import { decide, describeCall, parseAnswer, spokenQuestion } from "./permissions.js";
 import { jarvisInstructions } from "./prompt.js";
-import { createJarvisServer, SERVER_NAME } from "./tools/server.js";
+import { sessionEnv } from "./tools/runner.js";
+import { createJarvisServer, SERVER_NAME, type SessionTools } from "./tools/server.js";
 import type { Position, UiAction } from "./ui/control.js";
 import type { TeardownGraph } from "./ui/graph.js";
 import type { QuestionAnswer, QuestionSpec } from "./voice/answers.js";
@@ -18,6 +19,8 @@ export type JarvisIO = {
   say(text: string): Promise<void>;
   /** Status lines that are shown but not spoken; tool calls come with their input for a short detail. */
   status(text: string, input?: Record<string, unknown>): void;
+  /** Working the user's other Claude Code sessions. */
+  sessions?: SessionTools;
   /** Works Astra's own interface (panels, minimise, stop); returns what happened. */
   ui?(action: UiAction, level?: number, position?: Position): string | Promise<string>;
   /** Asks the user a question (with options) and waits; null if they didn't answer. */
@@ -78,17 +81,17 @@ export class Jarvis {
       maxBudgetUsd: this.cfg.maxBudgetUsd,
       systemPrompt: { type: "preset", preset: "claude_code", append: jarvisInstructions(this.cfg) },
       mcpServers: {
-        [SERVER_NAME]: createJarvisServer(
-          this.cfg,
-          undefined,
-          this.io.show?.bind(this.io),
-          this.io.graph?.bind(this.io),
-          this.io.question?.bind(this.io),
-          this.io.ui?.bind(this.io),
-        ),
+        [SERVER_NAME]: createJarvisServer(this.cfg, undefined, {
+          showDetail: this.io.show?.bind(this.io),
+          showGraph: this.io.graph?.bind(this.io),
+          askQuestion: this.io.question?.bind(this.io),
+          uiControl: this.io.ui?.bind(this.io),
+          sessions: this.io.sessions,
+        }),
         rea: { type: "stdio", command: reaCmd!, args: reaArgs },
       },
       permissionMode: "default",
+      env: sessionEnv(),
       // Claude Code's question dialog has no voice or orb front end here; Astra asks out loud instead.
       disallowedTools: ["AskUserQuestion"],
       canUseTool: this.canUseTool,

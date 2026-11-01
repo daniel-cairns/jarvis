@@ -12,6 +12,12 @@ const OWN: Record<string, string> = {
   launch_clean_browser: "Opening a clean browser",
   ask_user: "Asking you",
   ui_control: "Adjusting the display",
+  sessions_list: "Checking your sessions",
+  session_read: "Reading a session",
+  session_send: "Sending to a session",
+  session_start: "Starting a session",
+  session_open: "Opening a session in the app",
+  session_stop: "Stopping a session",
 };
 
 const BUILT_IN: Record<string, string> = {
@@ -41,7 +47,10 @@ export type ActivityGlyph = "sun" | "eye" | "ankh" | "djed" | "water" | "reed";
 export function activityGlyph(toolName: string): ActivityGlyph {
   const tool = toolName.replace(/^mcp__[^_]+__/, "");
   if (toolName.startsWith("mcp__rea__")) return "eye";
-  if (["Read", "Grep", "Glob", "brain_read", "brain_search", "brain_list", "WebFetch"].includes(tool)) return "eye";
+  if (["Read", "Grep", "Glob", "brain_read", "brain_search", "brain_list", "WebFetch", "sessions_list", "session_read"].includes(tool)) return "eye";
+  if (["session_send", "session_start"].includes(tool)) return "ankh";
+  if (["session_open"].includes(tool)) return "water";
+  if (["session_stop"].includes(tool)) return "djed";
   if (["Write", "Edit", "MultiEdit", "NotebookEdit", "brain_save", "serve_app"].includes(tool)) return "ankh";
   if (["Bash", "TodoWrite", "Task", "Agent"].includes(tool)) return "djed";
   if (["WebSearch", "launch_clean_browser", "open_app", "open_path"].includes(tool)) return "water";
@@ -72,6 +81,9 @@ export function activityDetail(toolName: string, input: Record<string, unknown> 
   if (tool === "brain_save" || tool === "show_detail" || tool === "show_graph") return clip(str("title"));
   if (tool === "serve_app" || tool === "open_path") return base(str("path"));
   if (tool === "open_app") return str("name");
+  if (["session_read", "session_send", "session_open"].includes(tool)) return clip(str("session"));
+  if (tool === "session_start") return clip(str("project"));
+  if (tool === "sessions_list") return clip(str("project"));
   if (tool === "launch_clean_browser") return host(str("url"));
   if (toolName.startsWith("mcp__rea__")) return base(str("path")) || host(str("url")) || "";
   return "";

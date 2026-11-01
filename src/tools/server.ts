@@ -31,14 +31,28 @@ export type ShowGraph = (title: string, graph: TeardownGraph) => string;
 export type AskQuestion = (spec: QuestionSpec) => Promise<QuestionAnswer | null>;
 export type UiControl = (action: UiAction, level?: number, position?: Position) => string | Promise<string>;
 
-export function createJarvisServer(
-  cfg: JarvisConfig,
-  runner: Runner = realRunner,
-  showDetail?: ShowDetail,
-  showGraph?: ShowGraph,
-  askQuestion?: AskQuestion,
-  uiControl?: UiControl,
-) {
+/** Astra's other abilities, provided by whoever hosts her (the CLI with its orb); each is optional. */
+export type ServerHooks = {
+  showDetail?: ShowDetail;
+  showGraph?: ShowGraph;
+  askQuestion?: AskQuestion;
+  uiControl?: UiControl;
+  sessions?: SessionTools;
+};
+
+/** Working your other Claude Code sessions; see src/index.ts for the implementation. */
+export type SessionTools = {
+  list(project?: string, includeAstra?: boolean): Promise<unknown>;
+  read(session: string): Promise<unknown>;
+  send(session: string, prompt: string): Promise<string>;
+  start(project: string, prompt: string, where: "background" | "app"): Promise<string>;
+  open(session: string): Promise<string>;
+  stop(job: string): string;
+};
+
+export function createJarvisServer(cfg: JarvisConfig, runner: Runner = realRunner, hooks: ServerHooks = {}) {
+  const { showDetail, showGraph, askQuestion, uiControl, sessions } = hooks;
+  const noSessions = "Session control isn't available here.";
   return createSdkMcpServer({
     name: SERVER_NAME,
     version: "0.1.0",
@@ -112,6 +126,44 @@ export function createJarvisServer(
             }
             return answers;
           }),
+      ),
+      tool(
+        "sessions_list",
+        "List the user's recent Claude Code sessions (desktop app and terminal) with title, project, status (working / waiting for the user / idle), latest reply, and any sessions you're running in the background. Optionally filter by project name.",
+        { project: z.string().max(80).optional(), include_astra: z.boolean().optional() },
+        (args) => guarded(async () => (sessions ? sessions.list(args.project, args.include_astra) : noSessions)),
+        { annotations: { readOnlyHint: true } },
+      ),
+      tool(
+        "session_read",
+        "Read one Claude Code session's latest reply and last prompt. Pass its id, or a title or project fragment.",
+        { session: z.string().min(1).max(120) },
+        (args) => guarded(async () => (sessions ? sessions.read(args.session) : noSessions)),
+        { annotations: { readOnlyHint: true } },
+      ),
+      tool(
+        "session_send",
+        "Send a prompt to an existing Claude Code session (by id, title or project). It runs in the background, resumed from that session, only if the session is idle (not mid-turn). Its approval requests come to the user through you; you'll be told when it finishes.",
+        { session: z.string().min(1).max(120), prompt: z.string().min(1).max(8000) },
+        (args) => guarded(async () => (sessions ? sessions.send(args.session, args.prompt) : noSessions)),
+      ),
+      tool(
+        "session_start",
+        "Start a new Claude Code session in one of the user's projects (a folder name like 'gymclaw', or a path). where='background' runs it for the user and reports back; where='app' opens it in the Claude app with the prompt filled in, ready for them to send.",
+        { project: z.string().min(1).max(200), prompt: z.string().min(1).max(8000), where: z.enum(["background", "app"]) },
+        (args) => guarded(async () => (sessions ? sessions.start(args.project, args.prompt, args.where) : noSessions)),
+      ),
+      tool(
+        "session_open",
+        "Open a Claude Code session in the Claude app (by id, title, project, or a background run like 's1').",
+        { session: z.string().min(1).max(120) },
+        (args) => guarded(async () => (sessions ? sessions.open(args.session) : noSessions)),
+      ),
+      tool(
+        "session_stop",
+        "Stop a background session run you started (its handle, like 's1').",
+        { job: z.string().min(1).max(20) },
+        (args) => guarded(async () => (sessions ? sessions.stop(args.job) : noSessions)),
       ),
       tool(
         "ui_control",

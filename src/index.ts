@@ -1,14 +1,19 @@
 import { spawn } from "node:child_process";
 import { readdirSync } from "node:fs";
+import path from "node:path";
 import readline from "node:readline";
 import { setTimeout as sleep } from "node:timers/promises";
 import { activityGlyph, describeActivity } from "./activity.js";
-import { Jarvis } from "./agent.js";
+import { Jarvis, type Approval } from "./agent.js";
 import { loadConfig } from "./config.js";
 import { parseAnswer, type Answer } from "./permissions.js";
 import { renderDetail } from "./ui/detail.js";
 import { checkGraph, graphAsText, graphShape } from "./ui/graph.js";
 import { brainIndex, noteMap, readNote } from "./tools/brain.js";
+import { realRunner } from "./tools/mac.js";
+import { SessionRunner } from "./tools/runner.js";
+import type { SessionTools } from "./tools/server.js";
+import { appLinks, findSession, listSessions, resolveProject, type SessionSummary } from "./tools/sessions.js";
 import { z } from "zod";
 import { stopServing } from "./tools/serve.js";
 import { quickUiCommand, type UiAction, type UiCommand } from "./ui/control.js";
@@ -483,7 +488,13 @@ async function main(): Promise<void> {
   };
 
   /** Opens a dialog: registers it for interruption, and always closes it out, however it was answered. */
+  let dialogQueue: Promise<void> = Promise.resolve();
   const openDialog = async <T,>(run: (signal: AbortSignal) => Promise<T | null>): Promise<T | null> => {
+    // One dialog at a time: a background session's approval waits for the one on screen.
+    const previous = dialogQueue;
+    let release!: () => void;
+    dialogQueue = new Promise<void>((resolve) => (release = resolve));
+    await previous;
     const answered = new AbortController();
     asking = true;
     currentAsk = answered;
@@ -493,11 +504,125 @@ async function main(): Promise<void> {
       answered.abort();
       asking = false;
       currentAsk = null;
+      release();
     }
+  };
+
+  // Approvals: the orb's card (or the pop-up without it), a spoken answer, or a typed one; first answer wins. Used
+  // by Astra and by the sessions she runs in the background. If she's mid-sentence the question isn't spoken over
+  // her: the card is enough, and she listens once she's done.
+  const askApproval = async ({ spoken, detail }: Approval): Promise<string> => {
+    console.log(`\n  Approval needed: ${detail}`);
+    const answer = await openDialog<Answer>((signal) => {
+      const viaCard = orb?.alive ? orb.ask(spoken, detail, signal) : askDialog(detail, signal);
+      if (speaker.busy) console.log(`  (on screen: ${spoken})`);
+      else void say(spoken);
+      const where = orb?.alive ? "the orb" : "the pop-up";
+      const viaTyped = lines
+        .next(voiceMode ? `[say yes, always or no, click ${where}, or type y / a / n] ` : `[click ${where}, or type y / a / n] `, signal)
+        .then((line) => (line === null || !line.trim() ? null : parseAnswer(line)));
+      const viaVoice = voiceAnswer(parseVoiceApproval, "Sorry, was that yes, always, or no?", signal);
+      return firstAnswer<Answer>([viaCard, viaTyped, viaVoice]);
+    });
+    console.log(`  → ${answer ?? "no"}`);
+    return answer ?? "no";
+  };
+
+  // ── Your other Claude Code sessions: read them, start or continue them in the background, open them in the app ──
+  const sessionRunner = new SessionRunner(cfg, {
+    activity: (job, tool, input) => {
+      console.log(`  [${job.id} ${job.label}] → ${tool}`);
+      orb?.send({ type: "activity", text: `${job.label}: ${describeActivity(tool, input)}`, glyph: activityGlyph(tool) });
+    },
+    ask: (_job, approval) => askApproval(approval),
+    finished: (job) => {
+      const first = job.lastText.split(/(?<=[.!?])\s/)[0]?.slice(0, 220) ?? "";
+      const what =
+        job.status === "done"
+          ? `The ${job.label} session has finished`
+          : job.status === "stopped"
+            ? `I stopped the ${job.label} session`
+            : `The ${job.label} session ran into a problem`;
+      console.log(`\n  [${job.id} ${job.label}] ${job.status} · $${job.costUsd.toFixed(3)}\n${job.lastText}\n`);
+      void say(first ? `${what}. ${first}` : `${what}.`);
+    },
+  });
+
+  const knownFolders = async () => [...new Set((await listSessions({ limit: 200 })).map((s) => s.folder))];
+
+  /** A session by id, title or project, or one of the background runs ("s1"). */
+  const sessionRef = async (ref: string): Promise<SessionSummary> => {
+    const job = sessionRunner.get(ref);
+    if (job?.sessionId) {
+      return (
+        (await findSession(job.sessionId)) ?? {
+          id: job.sessionId,
+          title: job.prompt.slice(0, 60),
+          project: job.label,
+          folder: job.folder,
+          status: job.status === "running" ? "working" : "waiting",
+          lastActivity: job.startedAt,
+          source: "sdk-ts",
+          lastReply: job.lastText,
+        }
+      );
+    }
+    const s = await findSession(ref);
+    if (!s) throw new Error(`I couldn't find a session matching "${ref}".`);
+    return s;
+  };
+
+  const sessions: SessionTools = {
+    list: async (project, includeAstra) => ({
+      sessions: (await listSessions({ limit: 12, project, exclude: includeAstra ? [] : [cfg.workspaceDir] })).map((s) => ({
+        id: s.id,
+        title: s.title,
+        project: s.project,
+        status: s.status,
+        lastActivity: s.lastActivity,
+        inApp: s.source === "claude-desktop",
+        lastReply: s.lastReply.slice(0, 300),
+      })),
+      backgroundRuns: sessionRunner.list().map((j) => ({
+        handle: j.id,
+        project: j.label,
+        status: j.status,
+        session: j.sessionId,
+        latest: j.lastText.slice(0, 200),
+      })),
+    }),
+    read: async (ref) => {
+      const s = await sessionRef(ref);
+      return { title: s.title, project: s.project, status: s.status, lastActivity: s.lastActivity, lastReply: s.lastReply.slice(0, 6000) };
+    },
+    send: async (ref, prompt) => {
+      const s = await sessionRef(ref);
+      const mine = sessionRunner.list().find((j) => j.sessionId === s.id && j.status === "running");
+      if (s.status === "working" || mine) throw new Error(`"${s.title}" is working right now; I only send to a session when it's idle.`);
+      const job = sessionRunner.send(s.id, s.folder || cfg.workspaceDir, prompt, s.project);
+      return `Sent to "${s.title}" (${s.project}) as background run ${job.id}. You'll hear when it's done, and its approvals will come to you.`;
+    },
+    start: async (project, prompt, where) => {
+      const folder = await resolveProject(project, await knownFolders());
+      if (!folder) throw new Error(`I couldn't find a project called "${project}".`);
+      if (where === "app") {
+        await realRunner.run("open", [appLinks.newSession(folder, prompt)]);
+        return `Opened a new session in ${path.basename(folder)} in the Claude app with the prompt filled in; press Enter there to send it.`;
+      }
+      const job = sessionRunner.start(folder, prompt, path.basename(folder));
+      return `Started background run ${job.id} in ${path.basename(folder)}. You'll hear when it's done, and its approvals will come to you.`;
+    },
+    open: async (ref) => {
+      const s = await sessionRef(ref);
+      await realRunner.run("open", [appLinks.open(s)]);
+      return `Opened "${s.title}" in the Claude app.`;
+    },
+    stop: (handle) => (sessionRunner.stop(handle) ? `Stopping ${handle}.` : `There's no running background session called ${handle}.`),
   };
 
   const jarvis = new Jarvis(cfg, {
     say,
+    sessions,
     graph: (title, graph) => {
       if (orb?.alive) {
         orb.send({ type: "graph", title, graph });
@@ -521,24 +646,7 @@ async function main(): Promise<void> {
       const friendly = tool ? describeActivity(tool, input) : text === "… thinking" ? "Thinking…" : text;
       orb?.send({ type: "activity", text: friendly, glyph: tool ? activityGlyph(tool) : "sun" });
     },
-    // Approvals: the orb's card (or the pop-up without it), a spoken answer, or a typed one; first answer wins.
-    // If she's mid-sentence the question isn't spoken over her: the card is enough, and she listens once she's done.
-    ask: async ({ spoken, detail }) => {
-      console.log(`\n  Approval needed: ${detail}`);
-      const answer = await openDialog<Answer>((signal) => {
-        const viaCard = orb?.alive ? orb.ask(spoken, detail, signal) : askDialog(detail, signal);
-        if (speaker.busy) console.log(`  (on screen: ${spoken})`);
-        else void say(spoken);
-        const where = orb?.alive ? "the orb" : "the pop-up";
-        const viaTyped = lines
-          .next(voiceMode ? `[say yes, always or no, click ${where}, or type y / a / n] ` : `[click ${where}, or type y / a / n] `, signal)
-          .then((line) => (line === null || !line.trim() ? null : parseAnswer(line)));
-        const viaVoice = voiceAnswer(parseVoiceApproval, "Sorry, was that yes, always, or no?", signal);
-        return firstAnswer<Answer>([viaCard, viaTyped, viaVoice]);
-      });
-      console.log(`  → ${answer ?? "no"}`);
-      return answer ?? "no";
-    },
+    ask: (approval) => askApproval(approval),
     // ask_user: a question card with options, answerable by voice, click or typing.
     question: async (spec) => {
       console.log(`\n  Question: ${spec.question}`);

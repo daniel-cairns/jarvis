@@ -52,6 +52,10 @@ answers, then listens for your reply. Say nothing for a few seconds and it goes 
 | "Build me my own version" | Builds an original app under `workspace/` from the blueprint, tests it, opens it |
 | "Open Safari" / "Open the app you built" | Opens apps, or files Astra made |
 | "What did we learn about igloo?" | Searches the brain |
+| "What are my Claude Code sessions doing?" | Reads your other sessions (app and terminal): which are working, waiting for you, or idle, and their latest replies |
+| "Tell the gymclaw session to commit and deploy" | Sends a follow-up to that session in the background (only if it's idle); its approvals come to you, and she reports back |
+| "Start a session in cratedigga to fix the search" | Runs a new session in the background and reports back, or ("in the app") opens it in the Claude app with the prompt ready |
+| "Open the budget app session" | Opens that session in the Claude app (background runs are imported into it) |
 | "Show me a 3D map of the Notes teardown" | Opens an interactive 3D map of the app's structure: orbit, zoom, click nodes for evidence |
 
 ## Set up (macOS)
