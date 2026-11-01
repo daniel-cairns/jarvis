@@ -49,7 +49,7 @@ async function setup(answers: string[] = []) {
     say: async (t) => void said.push(t),
     status: () => {},
     ask: async (q) => {
-      asked.push(q);
+      asked.push(q.detail);
       return answers.shift() ?? "no";
     },
   };

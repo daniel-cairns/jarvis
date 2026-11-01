@@ -37,10 +37,25 @@ export function describeCall(toolName: string, input: Record<string, unknown>): 
   return `use ${name} ${json.length > 160 ? `${json.slice(0, 157)}...` : json}`;
 }
 
+/** A short question for the speech engine; the full details go on screen, never read aloud. */
+export function spokenQuestion(toolName: string, input: Record<string, unknown>): string {
+  if (toolName === "Bash") return "May I run a shell command?";
+  if (WRITE_TOOLS.has(toolName) && typeof input.file_path === "string") {
+    return `May I write ${path.basename(input.file_path)}, outside your workspace?`;
+  }
+  const mcp = toolName.match(/^mcp__([^_]+)__(.+)$/);
+  if (mcp) {
+    const owner = mcp[1] === "rea" ? "REA's" : `${mcp[1]}'s`;
+    return `May I use ${owner} ${mcp[2]!.replace(/_/g, " ")}?`;
+  }
+  return `May I use ${toolName}?`;
+}
+
 export type Answer = "yes" | "always" | "no";
 
+/** Accepts typed or transcribed answers; whisper adds punctuation like "Yes." or "Always!". */
 export function parseAnswer(raw: string): Answer {
-  const a = raw.trim().toLowerCase();
+  const a = raw.trim().toLowerCase().replace(/[.,!?]+/g, "").replace(/\s+/g, " ");
   if (["a", "always", "yes always", "always allow"].includes(a)) return "always";
   if (["y", "yes", "yeah", "yep", "ok", "okay", "go", "do it", "approve"].includes(a)) return "yes";
   return "no";

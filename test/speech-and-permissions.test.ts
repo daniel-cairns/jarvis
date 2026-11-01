@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { describe, expect, it } from "vitest";
-import { decide, describeCall, parseAnswer } from "../src/permissions.js";
+import { decide, describeCall, parseAnswer, spokenQuestion } from "../src/permissions.js";
+import { parseDialogResult } from "../src/ui/dialog.js";
 import { cleanTranscript, stopGracefully } from "../src/voice/listener.js";
 import { chunkForSpeech, toSpeakable } from "../src/voice/speechText.js";
 
@@ -92,5 +93,30 @@ describe("describeCall and parseAnswer", () => {
     expect(parseAnswer(" a ")).toBe("always");
     expect(parseAnswer("maybe later")).toBe("no");
     expect(parseAnswer("")).toBe("no");
+  });
+});
+
+describe("spokenQuestion", () => {
+  it("keeps JSON and paths out of what is read aloud", () => {
+    expect(spokenQuestion("Bash", { command: "rm -rf x" })).toBe("May I run a shell command?");
+    expect(spokenQuestion("mcp__rea__inspect_web_page", { cdp_endpoint: "http://127.0.0.1:9222" })).toBe(
+      "May I use REA's inspect web page?",
+    );
+    expect(spokenQuestion("Write", { file_path: "/Users/dan/.zshrc" })).toBe("May I write .zshrc, outside your workspace?");
+  });
+
+  it("accepts whisper's punctuated answers", () => {
+    expect(parseAnswer("Yes.")).toBe("yes");
+    expect(parseAnswer(" Always! ")).toBe("always");
+    expect(parseAnswer("No.")).toBe("no");
+  });
+});
+
+describe("parseDialogResult", () => {
+  it("maps buttons, Escape and timeouts", () => {
+    expect(parseDialogResult(0, "Always\n", "")).toBe("always");
+    expect(parseDialogResult(0, "timeout\n", "")).toBeNull();
+    expect(parseDialogResult(1, "", "execution error: User canceled. (-128)")).toBe("no");
+    expect(parseDialogResult(1, "", "some other failure")).toBeNull();
   });
 });

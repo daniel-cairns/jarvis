@@ -6,7 +6,7 @@ import {
   type SDKMessage,
 } from "@anthropic-ai/claude-agent-sdk";
 import type { JarvisConfig } from "./config.js";
-import { decide, describeCall, parseAnswer } from "./permissions.js";
+import { decide, describeCall, parseAnswer, spokenQuestion } from "./permissions.js";
 import { jarvisInstructions } from "./prompt.js";
 import { createJarvisServer, SERVER_NAME } from "./tools/server.js";
 
@@ -15,9 +15,11 @@ export type JarvisIO = {
   say(text: string): Promise<void>;
   /** Status lines that are shown but not spoken. */
   status(text: string): void;
-  /** Asks the user a yes/always/no question and returns their raw answer. */
-  ask(question: string): Promise<string>;
+  /** Asks the user a yes/always/no question (spoken briefly, detail shown) and returns their raw answer. */
+  ask(question: Approval): Promise<string>;
 };
+
+export type Approval = { spoken: string; detail: string };
 
 export type TurnResult = { ok: boolean; costUsd: number; summary: string };
 
@@ -81,7 +83,7 @@ export class Jarvis {
     if (decision === "allow") return { behavior: "allow", updatedInput: input };
 
     const answer = parseAnswer(
-      await this.io.ask(`I'd like to ${describeCall(toolName, input)}. Yes, always, or no?`),
+      await this.io.ask({ spoken: spokenQuestion(toolName, input), detail: `I'd like to ${describeCall(toolName, input)}.` }),
     );
     if (answer === "always") this.sessionAllowed.add(toolName);
     if (answer === "no") return { behavior: "deny", message: "The user declined this action." };

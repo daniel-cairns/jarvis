@@ -1,6 +1,8 @@
 import readline from "node:readline";
 import { Jarvis } from "./agent.js";
 import { loadConfig } from "./config.js";
+import { parseAnswer } from "./permissions.js";
+import { askDialog } from "./ui/dialog.js";
 import { Listener } from "./voice/listener.js";
 import { Speaker } from "./voice/speaker.js";
 
@@ -24,12 +26,26 @@ class LineReader {
     });
   }
 
-  next(prompt: string): Promise<string | null> {
+  /** Resolves with the next line, or null if stdin closes or `signal` aborts first (the line is then left for the next reader). */
+  next(prompt: string, signal?: AbortSignal): Promise<string | null> {
     process.stdout.write(prompt);
     const queued = this.queue.shift();
     if (queued !== undefined) return Promise.resolve(queued);
-    if (this.closed) return Promise.resolve(null);
-    return new Promise((resolve) => this.waiting.push(resolve));
+    if (this.closed || signal?.aborted) return Promise.resolve(null);
+    return new Promise((resolve) => {
+      const waiter = (line: string | null) => {
+        signal?.removeEventListener("abort", onAbort);
+        resolve(line);
+      };
+      const onAbort = () => {
+        const i = this.waiting.indexOf(waiter);
+        if (i >= 0) this.waiting.splice(i, 1);
+        process.stdout.write("\n");
+        resolve(null);
+      };
+      signal?.addEventListener("abort", onAbort, { once: true });
+      this.waiting.push(waiter);
+    });
   }
 }
 
@@ -64,12 +80,12 @@ async function main(): Promise<void> {
   };
 
   /** Empty Enter in voice mode means "listen"; anything typed is used as-is. */
-  const getInput = async (prompt: string): Promise<string | null> => {
-    const typed = await lines.next(prompt);
+  const getInput = async (prompt: string, signal?: AbortSignal): Promise<string | null> => {
+    const typed = await lines.next(prompt, signal);
     if (typed === null || typed.trim() || !voiceMode) return typed;
     speaker.stop();
     await listener.start();
-    const stopped = await lines.next("🎙  Listening... press Enter when you're done. ");
+    const stopped = await lines.next("🎙  Listening... press Enter when you're done. ", signal);
     const heard = await listener.stopAndTranscribe();
     if (stopped === null) return null;
     console.log(heard ? `You: ${heard}` : "(I didn't catch anything)");
@@ -79,9 +95,19 @@ async function main(): Promise<void> {
   const jarvis = new Jarvis(cfg, {
     say,
     status: (text) => console.log(`  ${text}`),
-    ask: async (question) => {
-      await say(question);
-      return (await getInput(voiceMode ? "[Enter to answer by voice, or type y / a / n] " : "[y / a / n] ")) ?? "no";
+    // The pop-up and the terminal/voice answer race; whichever comes first wins and the other is withdrawn.
+    ask: async ({ spoken, detail }) => {
+      console.log(`\n  Approval needed: ${detail}`);
+      const answered = new AbortController();
+      const viaDialog = askDialog(detail, answered.signal);
+      void say(spoken);
+      const prompt = voiceMode ? "[click the pop-up, Enter to answer by voice, or type y / a / n] " : "[click the pop-up, or type y / a / n] ";
+      const viaInput = getInput(prompt, answered.signal);
+      const answer = await Promise.race([viaDialog.then((a) => a ?? viaInput), viaInput.then((a) => a ?? viaDialog)]);
+      answered.abort();
+      speaker.stop();
+      console.log(`  → ${parseAnswer(answer ?? "no")}`);
+      return answer ?? "no";
     },
   });
   await jarvis.init();
