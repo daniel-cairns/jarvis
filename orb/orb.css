@@ -48,19 +48,21 @@ main {
 }
 #talk:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
 
+/* Stop and minimise sit in the orb display, just below each wing (wings span x 19–107 and 213–301, y ≈ 129–165). */
 #minimise {
   position: absolute;
-  top: 22px;
-  right: 18px;
-  width: 26px;
-  height: 26px;
+  top: 172px;
+  left: 243px;
+  width: 28px;
+  height: 28px;
+  border: 0;
   border-radius: 50%;
-  border: 1px solid var(--edge);
-  background: var(--panel);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.05));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4), inset 0 0 0 1px rgba(70, 224, 214, 0.55), 0 0 12px rgba(70, 224, 214, 0.25);
   color: var(--ink);
   font: 600 16px/1 -apple-system, sans-serif;
   cursor: pointer;
-  opacity: 0;
+  opacity: 0.55;
   transition: opacity 0.2s;
 }
 .orb-wrap:hover #minimise, #minimise:focus-visible { opacity: 1; }
@@ -205,8 +207,8 @@ main {
 /* Stop: a small glass button with a reactor-red square, shown only while Astra is busy. */
 #stop {
   position: absolute;
-  top: 22px;
-  left: 18px;
+  top: 172px;
+  left: 49px;
   width: 28px;
   height: 28px;
   border: 0;
