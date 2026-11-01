@@ -1,0 +1,107 @@
+import { spawn } from "node:child_process";
+import { describe, expect, it } from "vitest";
+import { parseFromOrb } from "../src/ui/orb.js";
+import { decodeWav16, encodeWav16, loudnessEnvelope } from "../src/voice/audio.js";
+import { Speaker, type Utterance } from "../src/voice/speaker.js";
+import type { Tts } from "../src/voice/tts.js";
+
+const tone = (seconds: number, rate = 8000, amp = 0.5) =>
+  Float32Array.from({ length: Math.round(seconds * rate) }, (_, i) => amp * Math.sin((2 * Math.PI * 440 * i) / rate));
+
+describe("WAV encode/decode", () => {
+  it("round-trips 16-bit mono PCM", () => {
+    const samples = tone(0.1);
+    const back = decodeWav16(encodeWav16({ samples, rate: 8000 }));
+    expect(back.rate).toBe(8000);
+    expect(back.samples.length).toBe(samples.length);
+    expect(Math.abs(back.samples[20]! - samples[20]!)).toBeLessThan(1e-3);
+  });
+
+  it("rejects files that aren't WAV", () => {
+    expect(() => decodeWav16(Buffer.from("not audio at all, definitely"))).toThrow("Not a WAV");
+  });
+});
+
+describe("loudnessEnvelope", () => {
+  it("is loud where the sound is and quiet where it isn't", () => {
+    const rate = 6000;
+    const samples = new Float32Array(rate); // 1 s: silence, then tone in the second half
+    samples.set(tone(0.5, rate), rate / 2);
+    const env = loudnessEnvelope({ samples, rate }, 100);
+    expect(env).toHaveLength(10);
+    expect(env[0]).toBe(0);
+    expect(Math.max(...env)).toBe(1);
+    expect(env[9]).toBeGreaterThan(0.9);
+  });
+
+  it("doesn't blow a near-silent clip up into a full pulse", () => {
+    const env = loudnessEnvelope({ samples: tone(0.2, 8000, 0.005), rate: 8000 }, 50);
+    expect(Math.max(...env)).toBeLessThan(0.2);
+  });
+});
+
+/** A player that "plays" by running a short-lived node process, so tests stay silent. */
+const silentPlayer = (log: string[]) => (wav: string) => {
+  log.push(wav);
+  return spawn(process.execPath, ["-e", "setTimeout(() => {}, 20)"], { stdio: "ignore" });
+};
+
+const fakeTts = (name: string, fail = false): Tts & { rendered: string[] } => ({
+  name,
+  rendered: [],
+  async warmUp() {
+    if (fail) throw new Error(`${name} missing`);
+  },
+  async render(text) {
+    if (fail) throw new Error(`${name} missing`);
+    this.rendered.push(text);
+    return { samples: tone(0.05), rate: 8000 };
+  },
+});
+
+describe("Speaker", () => {
+  it("speaks sentence by sentence and reports each one with its envelope", async () => {
+    const tts = fakeTts("primary");
+    const played: string[] = [];
+    const utterances: Utterance[] = [];
+    const states: boolean[] = [];
+    const speaker = new Speaker(tts, null, true, {
+      onUtterance: (u) => utterances.push(u),
+      onSpeaking: (on) => states.push(on),
+    }, silentPlayer(played));
+    await speaker.speak("**Done.** I saved it to your brain.");
+    expect(tts.rendered).toEqual(["Done.", "I saved it to your brain."]);
+    expect(played).toHaveLength(2);
+    expect(utterances.map((u) => u.text)).toEqual(["Done.", "I saved it to your brain."]);
+    expect(utterances[0]!.envelope.length).toBeGreaterThan(0);
+    expect(states).toEqual([true, false]);
+  });
+
+  it("falls back to the second engine when the first can't load", async () => {
+    const fallback = fakeTts("say");
+    const switched: string[] = [];
+    const speaker = new Speaker(fakeTts("kokoro", true), fallback, true, {
+      onFallback: (from, to) => switched.push(`${from}->${to}`),
+    }, silentPlayer([]));
+    await speaker.warmUp();
+    await speaker.speak("Hello.");
+    expect(switched).toEqual(["kokoro->say"]);
+    expect(fallback.rendered).toEqual(["Hello."]);
+  });
+
+  it("stays silent when disabled", async () => {
+    const tts = fakeTts("primary");
+    await new Speaker(tts, null, false, {}, silentPlayer([])).speak("Hello.");
+    expect(tts.rendered).toEqual([]);
+  });
+});
+
+describe("parseFromOrb", () => {
+  it("accepts only well-formed orb messages", () => {
+    expect(parseFromOrb('{"type":"talk"}')).toEqual({ type: "talk" });
+    expect(parseFromOrb('{"type":"answer","id":"3","answer":"always"}')).toEqual({ type: "answer", id: "3", answer: "always" });
+    expect(parseFromOrb('{"type":"answer","id":"3","answer":"sure"}')).toBeNull();
+    expect(parseFromOrb('{"type":"exec","cmd":"rm"}')).toBeNull();
+    expect(parseFromOrb("[1234:ERROR:gpu_init.cc] Chromium noise")).toBeNull();
+  });
+});

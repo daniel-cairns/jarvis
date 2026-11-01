@@ -3,8 +3,10 @@ import { Jarvis } from "./agent.js";
 import { loadConfig } from "./config.js";
 import { parseAnswer } from "./permissions.js";
 import { askDialog } from "./ui/dialog.js";
+import { Orb } from "./ui/orb.js";
 import { Listener } from "./voice/listener.js";
 import { Speaker } from "./voice/speaker.js";
+import { KokoroTts, SayTts } from "./voice/tts.js";
 
 const HELP = `Commands: /new (fresh conversation), /mute, /unmute, /help, /quit. Ctrl-C cancels the current request.`;
 
@@ -24,6 +26,13 @@ class LineReader {
       this.closed = true;
       for (const w of this.waiting.splice(0)) w(null);
     });
+  }
+
+  /** Queues a line as if it were typed; the orb uses this to stand in for pressing Enter. */
+  inject(line: string): void {
+    const next = this.waiting.shift();
+    if (next) next(line);
+    else this.queue.push(line);
   }
 
   /** Resolves with the next line, or null if stdin closes or `signal` aborts first (the line is then left for the next reader). */
@@ -59,11 +68,30 @@ async function main(): Promise<void> {
   }
   const cfg = loadConfig();
 
-  const speaker = new Speaker(cfg.voice, cfg.speechRate, !args.has("--mute") && process.platform === "darwin");
+  let orb: Orb | null = null;
+  let listening = false;
+  let speaking = false;
+  let busy = false;
+  const syncOrb = () =>
+    orb?.send({ type: "state", state: listening ? "listening" : speaking ? "speaking" : busy ? "thinking" : "idle" });
+
+  const speechEnabled = !args.has("--mute") && process.platform === "darwin";
+  const sayTts = new SayTts(cfg.sayVoice, cfg.speechRate);
+  const primaryTts = cfg.tts === "kokoro" ? new KokoroTts(cfg.voice, cfg.ttsCacheDir) : sayTts;
+  const speaker = new Speaker(primaryTts, primaryTts === sayTts ? null : sayTts, speechEnabled, {
+    onUtterance: (u) => orb?.send({ type: "utterance", ...u }),
+    onSpeaking: (on) => {
+      speaking = on;
+      syncOrb();
+    },
+    onFallback: (from, to, err) => console.log(`  (The ${from} voice isn't available: ${err.message}. Using ${to}.)`),
+  });
+  void speaker.warmUp();
   let muted = args.has("--mute");
   const listener = new Listener(cfg);
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout, terminal: true });
   const lines = new LineReader(rl);
+  if (!args.has("--no-orb") && process.platform === "darwin") orb = Orb.launch(() => lines.inject(""));
 
   let voiceMode = !textMode;
   if (voiceMode) {
@@ -76,7 +104,8 @@ async function main(): Promise<void> {
 
   const say = async (text: string) => {
     console.log(`\nJarvis: ${text}\n`);
-    if (!muted) await speaker.speak(text);
+    if (muted || !speechEnabled) orb?.send({ type: "caption", role: "jarvis", text });
+    else await speaker.speak(text);
   };
 
   /** Empty Enter in voice mode means "listen"; anything typed is used as-is. */
@@ -85,25 +114,34 @@ async function main(): Promise<void> {
     if (typed === null || typed.trim() || !voiceMode) return typed;
     speaker.stop();
     await listener.start();
-    const stopped = await lines.next("🎙  Listening... press Enter when you're done. ", signal);
+    listening = true;
+    syncOrb();
+    const stopped = await lines.next("🎙  Listening... press Enter (or click the orb) when you're done. ", signal);
+    listening = false;
+    syncOrb();
     const heard = await listener.stopAndTranscribe();
     if (stopped === null) return null;
     console.log(heard ? `You: ${heard}` : "(I didn't catch anything)");
+    orb?.send({ type: "caption", role: heard ? "you" : "status", text: heard || "I didn't catch anything" });
     return heard;
   };
 
   const jarvis = new Jarvis(cfg, {
     say,
-    status: (text) => console.log(`  ${text}`),
-    // The pop-up and the terminal/voice answer race; whichever comes first wins and the other is withdrawn.
+    status: (text) => {
+      console.log(`  ${text}`);
+      orb?.send({ type: "caption", role: "status", text: text.replace(/mcp__([^_]+)__/, "$1: ").replace(/_/g, " ") });
+    },
+    // The orb's card (or the pop-up without it) races the terminal/voice answer; first answer wins.
     ask: async ({ spoken, detail }) => {
       console.log(`\n  Approval needed: ${detail}`);
       const answered = new AbortController();
-      const viaDialog = askDialog(detail, answered.signal);
+      const viaVisual = orb?.alive ? orb.ask(spoken, detail, answered.signal) : askDialog(detail, answered.signal);
       void say(spoken);
-      const prompt = voiceMode ? "[click the pop-up, Enter to answer by voice, or type y / a / n] " : "[click the pop-up, or type y / a / n] ";
+      const where = orb?.alive ? "the orb" : "the pop-up";
+      const prompt = voiceMode ? `[click ${where}, Enter to answer by voice, or type y / a / n] ` : `[click ${where}, or type y / a / n] `;
       const viaInput = getInput(prompt, answered.signal);
-      const answer = await Promise.race([viaDialog.then((a) => a ?? viaInput), viaInput.then((a) => a ?? viaDialog)]);
+      const answer = await Promise.race([viaVisual.then((a) => a ?? viaInput), viaInput.then((a) => a ?? viaVisual)]);
       answered.abort();
       speaker.stop();
       console.log(`  → ${parseAnswer(answer ?? "no")}`);
@@ -112,7 +150,6 @@ async function main(): Promise<void> {
   });
   await jarvis.init();
 
-  let busy = false;
   rl.on("SIGINT", () => {
     speaker.stop();
     if (busy && jarvis.cancel()) {
@@ -138,6 +175,7 @@ async function main(): Promise<void> {
     if (request === "/unmute") { muted = false; continue; }
 
     busy = true;
+    syncOrb();
     try {
       const result = await jarvis.handle(request);
       console.log(`  (${result.ok ? "done" : result.summary} · $${result.costUsd.toFixed(3)})`);
@@ -145,10 +183,12 @@ async function main(): Promise<void> {
       await say(`That failed: ${(err as Error).message}`);
     } finally {
       busy = false;
+      syncOrb();
     }
   }
 
   speaker.stop();
+  orb?.close();
   rl.close();
   process.exit(0);
 }

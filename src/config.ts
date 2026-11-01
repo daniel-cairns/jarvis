@@ -9,8 +9,11 @@ export type JarvisConfig = {
   model: string;
   effort: EffortLevel;
   maxBudgetUsd: number;
+  tts: TtsEngine;
   voice: string;
+  sayVoice: string;
   speechRate: number;
+  ttsCacheDir: string;
   recorderBin: string;
   whisperBin: string;
   whisperModel: string;
@@ -18,6 +21,8 @@ export type JarvisConfig = {
   chromeBin: string;
   chromeDebugPort: number;
 };
+
+export type TtsEngine = "kokoro" | "say";
 
 const EFFORTS: readonly EffortLevel[] = ["low", "medium", "high", "xhigh", "max"];
 
@@ -40,6 +45,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): JarvisConfig {
     throw new Error(`JARVIS_EFFORT must be one of ${EFFORTS.join(", ")}, got "${effort}"`);
   }
 
+  const tts = (env.JARVIS_TTS ?? "kokoro") as TtsEngine;
+  if (tts !== "kokoro" && tts !== "say") throw new Error(`JARVIS_TTS must be kokoro or say, got "${tts}"`);
+  const sayVoice = env.JARVIS_SAY_VOICE ?? "Daniel";
+
   const reaCommand = (env.JARVIS_REA_COMMAND ?? "rea mcp").trim().split(/\s+/);
   if (reaCommand[0] === undefined || reaCommand[0] === "") {
     throw new Error("JARVIS_REA_COMMAND must not be empty");
@@ -52,7 +61,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): JarvisConfig {
     model: env.JARVIS_MODEL ?? "claude-opus-5-5",
     effort,
     maxBudgetUsd: positiveNumber(env.JARVIS_MAX_BUDGET_USD, 5, "JARVIS_MAX_BUDGET_USD"),
-    voice: env.JARVIS_VOICE ?? "Daniel",
+    tts,
+    voice: env.JARVIS_VOICE ?? (tts === "kokoro" ? "bm_fable" : sayVoice),
+    sayVoice,
+    ttsCacheDir: expandHome(env.JARVIS_TTS_CACHE_DIR ?? path.join(home, "models", "tts")),
     speechRate: positiveNumber(env.JARVIS_SPEECH_RATE, 190, "JARVIS_SPEECH_RATE"),
     recorderBin: env.JARVIS_RECORDER_BIN ?? "rec",
     whisperBin: env.JARVIS_WHISPER_BIN ?? "whisper-cli",

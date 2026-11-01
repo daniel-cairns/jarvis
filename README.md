@@ -7,8 +7,12 @@ You talk, Jarvis works: it can tear down a website or a Mac app with REA, save t
 "second brain", read it back to you section by section, build an original version of what it found,
 test it, and open it.
 
-Speech in and out runs on your machine (whisper.cpp + the built-in `say` voice). The only thing that
-leaves your Mac is the conversation with Claude.
+Speech in and out runs on your machine (whisper.cpp in, the [Kokoro](https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX)
+neural voice out, with macOS `say` as the fallback). The only thing that leaves your Mac is the conversation with Claude.
+
+Jarvis lives in a floating orb: a transparent, always-on-top window that ripples while it listens, spins while it works
+and pulses with every syllable it speaks. Click it to talk; when Jarvis needs permission, the orb shows the details with
+No / Always / Yes buttons. Drag it anywhere by its glow.
 
 ## What it can do
 
@@ -40,11 +44,13 @@ npm install -g rea-agents
 
 # 4. Jarvis
 git clone <this repo> jarvis && cd jarvis
-npm install
+npm install             # also downloads Electron for the orb
 cp .env.example .env    # optional: change the voice, model, budget, folders
 ```
 
 **Claude credentials:** log in once with Claude Code (`claude`, then `/login`), or set `ANTHROPIC_API_KEY` in `.env`.
+
+**Voice model:** the first time Jarvis speaks it downloads the Kokoro model (about 90 MB) to `~/.jarvis/models/tts`.
 
 **Microphone permission:** the first time you talk, macOS asks whether your terminal app may use the microphone. Say yes.
 
@@ -58,6 +64,7 @@ Website teardowns only need Google Chrome.
 npm start            # voice: press Enter to talk, Enter again to send
 npm run text         # typed mode
 npm start -- --mute  # voice in, text out
+npm start -- --no-orb  # terminal only (approvals then use a macOS pop-up)
 ```
 
 In either mode you can also type a request. Commands: `/new` (fresh conversation, brain kept), `/mute`,
@@ -101,8 +108,14 @@ src/
     server.ts      In-process MCP server exposing Jarvis's own tools
     brain.ts       Markdown second brain: save, search, list, read by section
     mac.ts         open apps/files, clean Chrome for REA
+  ui/
+    orb.ts         talks to the orb window over JSON lines
+    dialog.ts      macOS approval pop-up (fallback when the orb isn't running)
   voice/
     listener.ts    sox recording + whisper.cpp transcription
-    speaker.ts     macOS `say`, chunked so it can be interrupted
+    speaker.ts     speaks sentence by sentence, renders ahead, reports loudness for the orb
+    tts.ts         Kokoro (default) and `say` engines
+    audio.ts       WAV encode/decode, loudness envelope
+orb/               Electron app for the orb (plain HTML/CSS/JS, no build step)
     speechText.ts  Markdown → speakable text
 ```

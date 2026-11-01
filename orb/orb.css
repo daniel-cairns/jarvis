@@ -1,0 +1,100 @@
+:root {
+  --ink: #e8f4ff;
+  --muted: #9db4c8;
+  --panel: rgba(9, 15, 26, 0.86);
+  --edge: rgba(130, 205, 255, 0.28);
+  --accent: #7fd6ff;
+  --accent-ink: #04121c;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  background: transparent;
+  overflow: hidden;
+  font: 13px/1.45 -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
+  color: var(--ink);
+  user-select: none;
+  /* The whole window drags; anything clickable opts out below. */
+  -webkit-app-region: drag;
+}
+
+main {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  height: 100%;
+  padding: 0 12px 12px;
+  gap: 6px;
+}
+
+.orb-wrap { position: relative; width: 260px; height: 260px; flex: none; }
+#orb { width: 260px; height: 260px; display: block; }
+
+#talk {
+  -webkit-app-region: no-drag;
+  position: absolute;
+  inset: 80px;
+  border-radius: 50%;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+#talk:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
+
+.state {
+  margin: -18px 0 0;
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+  text-shadow: 0 1px 6px #000;
+}
+
+.card {
+  -webkit-app-region: no-drag;
+  width: 100%;
+  background: var(--panel);
+  border: 1px solid var(--edge);
+  border-radius: 14px;
+  padding: 10px 12px;
+  backdrop-filter: blur(14px);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.45);
+  user-select: text;
+}
+.card[hidden] { display: none; }
+
+.caption { margin: 0; max-height: 5.8em; overflow: auto; }
+.status { margin: 4px 0 0; color: var(--muted); font-size: 11px; }
+.status:empty { display: none; }
+
+.ask h2 { margin: 0 0 6px; font-size: 14px; font-weight: 600; }
+.ask pre {
+  margin: 0 0 10px;
+  max-height: 6.5em;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font: 11px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--muted);
+}
+.buttons { display: flex; gap: 8px; justify-content: flex-end; }
+.buttons button {
+  font: inherit;
+  font-weight: 600;
+  padding: 6px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--edge);
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+}
+.buttons button:hover { background: rgba(127, 214, 255, 0.12); }
+.buttons button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.buttons .primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.buttons .primary:hover { background: #a6e4ff; }
+.hint { margin: 8px 0 0; font-size: 11px; color: var(--muted); text-align: right; }

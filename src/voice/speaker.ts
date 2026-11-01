@@ -1,44 +1,123 @@
 import { spawn, type ChildProcess } from "node:child_process";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { encodeWav16, loudnessEnvelope, type Pcm } from "./audio.js";
 import { chunkForSpeech, toSpeakable } from "./speechText.js";
+import type { Tts } from "./tts.js";
 
-/** Speaks through the built-in macOS `say` command, one chunk at a time so it can be cut off. */
+export const ENVELOPE_FRAME_MS = 1000 / 60;
+
+/** One sentence as it starts playing, with its loudness per frame so a visual can pulse in step. */
+export type Utterance = { text: string; envelope: number[]; frameMs: number };
+
+export type SpeakerEvents = {
+  onUtterance?(u: Utterance): void;
+  onSpeaking?(speaking: boolean): void;
+  /** The primary engine failed and the fallback took over for the rest of the session. */
+  onFallback?(from: string, to: string, err: Error): void;
+};
+
+export type Player = (wavPath: string) => ChildProcess;
+
+const afplay: Player = (wavPath) => spawn("afplay", [wavPath], { stdio: "ignore" });
+
+/**
+ * Speaks one sentence at a time: the next sentence renders while the current one plays, and stop() cuts in
+ * between or mid-sentence.
+ */
 export class Speaker {
-  private current: ChildProcess | null = null;
+  private player: ChildProcess | null = null;
   private generation = 0;
+  private tts: Tts;
 
   constructor(
-    private readonly voice: string,
-    private readonly rate: number,
+    primary: Tts,
+    private readonly fallback: Tts | null,
     private readonly enabled: boolean = process.platform === "darwin",
-  ) {}
+    private readonly events: SpeakerEvents = {},
+    private readonly play: Player = afplay,
+  ) {
+    this.tts = primary;
+  }
+
+  /** Loads the voice ahead of the first sentence, switching to the fallback if it can't. */
+  async warmUp(): Promise<void> {
+    if (!this.enabled) return;
+    try {
+      await this.tts.warmUp();
+    } catch (err) {
+      this.switchToFallback(err as Error);
+    }
+  }
 
   async speak(markdown: string): Promise<void> {
     if (!this.enabled) return;
+    const chunks = chunkForSpeech(toSpeakable(markdown));
+    if (!chunks.length) return;
+    this.player?.kill("SIGTERM");
     const gen = ++this.generation;
-    for (const chunk of chunkForSpeech(toSpeakable(markdown))) {
-      if (gen !== this.generation) return;
-      await this.sayOnce(chunk);
+    this.events.onSpeaking?.(true);
+    try {
+      let next = this.render(chunks[0]!);
+      for (let i = 0; i < chunks.length; i++) {
+        const pcm = await next;
+        if (gen !== this.generation) return;
+        if (i + 1 < chunks.length) next = this.render(chunks[i + 1]!);
+        if (pcm) await this.playOne(chunks[i]!, pcm);
+        if (gen !== this.generation) return;
+      }
+    } finally {
+      if (gen === this.generation) this.events.onSpeaking?.(false);
     }
   }
 
   stop(): void {
     this.generation++;
-    this.current?.kill("SIGTERM");
-    this.current = null;
+    this.player?.kill("SIGTERM");
+    this.player = null;
+    this.events.onSpeaking?.(false);
   }
 
-  private sayOnce(text: string): Promise<void> {
-    return new Promise((resolve) => {
-      // A chunk starting with "-" would be parsed as a flag by `say`.
-      const safe = text.replace(/^-+\s*/, "");
-      const child = spawn("say", ["-v", this.voice, "-r", String(this.rate), safe], { stdio: "ignore" });
-      this.current = child;
-      const done = () => {
-        if (this.current === child) this.current = null;
-        resolve();
-      };
-      child.on("exit", done);
-      child.on("error", done);
-    });
+  /** Never rejects: a failed sentence is skipped rather than ending the reply. */
+  private async render(text: string): Promise<Pcm | null> {
+    try {
+      return await this.tts.render(text);
+    } catch (err) {
+      if (!this.switchToFallback(err as Error)) return null;
+      try {
+        return await this.tts.render(text);
+      } catch {
+        return null;
+      }
+    }
+  }
+
+  private switchToFallback(err: Error): boolean {
+    if (!this.fallback || this.tts === this.fallback) return false;
+    this.events.onFallback?.(this.tts.name, this.fallback.name, err);
+    this.tts = this.fallback;
+    return true;
+  }
+
+  private async playOne(text: string, pcm: Pcm): Promise<void> {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "jarvis-voice-"));
+    const wav = path.join(dir, "line.wav");
+    try {
+      await fs.writeFile(wav, encodeWav16(pcm));
+      await new Promise<void>((resolve) => {
+        const child = this.play(wav);
+        this.player = child;
+        this.events.onUtterance?.({ text, envelope: loudnessEnvelope(pcm, ENVELOPE_FRAME_MS), frameMs: ENVELOPE_FRAME_MS });
+        const done = () => {
+          if (this.player === child) this.player = null;
+          resolve();
+        };
+        child.on("exit", done);
+        child.on("error", done);
+      });
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
   }
 }

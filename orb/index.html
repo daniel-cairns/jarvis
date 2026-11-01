@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en-NZ">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'">
+  <title>Jarvis</title>
+  <link rel="stylesheet" href="orb.css">
+</head>
+<body>
+  <main>
+    <div class="orb-wrap">
+      <canvas id="orb" width="260" height="260" aria-hidden="true"></canvas>
+      <button id="talk" type="button" aria-label="Talk to Jarvis" title="Click to talk · drag the glow to move"></button>
+    </div>
+    <p id="state" class="state" aria-live="polite">Idle</p>
+
+    <section id="card" class="card" hidden>
+      <p id="caption" class="caption" aria-live="polite"></p>
+      <p id="status" class="status"></p>
+    </section>
+
+    <section id="ask" class="card ask" role="alertdialog" aria-labelledby="ask-q" aria-describedby="ask-d" hidden>
+      <h2 id="ask-q"></h2>
+      <pre id="ask-d"></pre>
+      <div class="buttons">
+        <button type="button" data-answer="no" aria-keyshortcuts="N">No</button>
+        <button type="button" data-answer="always" aria-keyshortcuts="A">Always</button>
+        <button type="button" data-answer="yes" class="primary" aria-keyshortcuts="Y">Yes</button>
+      </div>
+      <p class="hint">or say it: click the orb, then “yes”, “always” or “no”</p>
+    </section>
+  </main>
+  <script src="orb.js"></script>
+</body>
+</html>
