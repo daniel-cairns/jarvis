@@ -11,7 +11,8 @@
     title.textContent = m.title;
     document.title = `Astra · ${m.title}`;
     content.innerHTML = m.html;
-    content.scrollTop = 0;
+    // A live transcript keeps its newest line in view; anything else opens at the top.
+    content.scrollTop = m.follow ? content.scrollHeight : 0;
     stamp.textContent = new Date().toLocaleTimeString("en-NZ", { hour: "2-digit", minute: "2-digit" });
   });
 

@@ -24,7 +24,8 @@ export type ToOrb =
   | { type: "caption"; role: "jarvis" | "you" | "status"; text: string }
   | { type: "ask"; id: string; spoken: string; detail: string }
   | { type: "answered"; id: string }
-  | { type: "detail"; title: string; html: string }
+  | { type: "detail"; title: string; html: string; follow?: boolean }
+  | { type: "state-label"; text: string }
   | { type: "graph"; title: string; graph: TeardownGraph }
   | { type: "question"; id: string; question: string; options: Choice[]; multiSelect: boolean; allowOther: boolean }
   | { type: "activity"; text: string; glyph?: ActivityGlyph }

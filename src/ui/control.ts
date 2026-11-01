@@ -16,6 +16,7 @@ export const UI_ACTIONS = [
   "expand_panel",
   "show_terminal",
   "show_git",
+  "start_transcript",
 ] as const;
 export type UiAction = (typeof UI_ACTIONS)[number];
 /** Where "move" can put the orb: a spot on screen, or a nudge in one direction. */

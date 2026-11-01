@@ -362,6 +362,8 @@
       hideQuestion(m.id);
     } else if (m.type === "activity") addActivity(m.text, m.glyph);
     else if (m.type === "activity-reset") resetActivity();
+    // Transcript mode: "Recording 03:12" in place of "Listening…" until the state changes.
+    else if (m.type === "state-label") stateLabel.textContent = m.text;
     else if (m.type === "layout") document.body.classList.toggle("top", !!m.top);
     else if (m.type === "collapse") setCollapsed(!!m.collapsed);
     else if (m.type === "transform") transformTo(m.to);

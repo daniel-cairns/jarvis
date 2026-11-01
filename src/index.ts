@@ -9,7 +9,7 @@ import { loadConfig } from "./config.js";
 import { parseAnswer, type Answer } from "./permissions.js";
 import { renderDetail } from "./ui/detail.js";
 import { checkGraph, graphAsText, graphShape } from "./ui/graph.js";
-import { brainIndex, noteMap, readNote } from "./tools/brain.js";
+import { brainIndex, noteMap, readNote, saveNote } from "./tools/brain.js";
 import { realRunner } from "./tools/mac.js";
 import { fileDiff, gitRoot, repoState, type RepoState } from "./tools/git.js";
 import { WorkLog, type ToolEvent } from "./ui/worklog.js";
@@ -32,9 +32,10 @@ import {
   speakQuestion,
   type QuestionAnswer,
 } from "./voice/answers.js";
+import { clock, parseTranscriptStart, splitStop, transcriptMarkdown, wordCount, type TranscriptLine } from "./voice/transcript.js";
 import { matchWake, matchWakeAnywhere, speechHint, stripOwnSpeech } from "./voice/wake.js";
 
-const HELP = `Say "Astra" to wake her. Commands: /new (fresh conversation), /brain, /mute, /unmute, /wake on|off, /help, /quit. Ctrl-C or Esc on the orb stops her.`;
+const HELP = `Say "Astra" to wake her. Commands: /new (fresh conversation), /brain, /transcript [title] (record until "stop recording"), /mute, /unmute, /wake on|off, /help, /quit. Ctrl-C or Esc on the orb stops her.`;
 const STOP_WORDS = /^(stop|cancel|never ?mind|be quiet|quiet|shush|shut up)\b/i;
 
 /** A soft acknowledgement when the wake word is heard. */
@@ -178,10 +179,17 @@ async function main(): Promise<void> {
   // A request heard via the wake word and queued for the main loop, so it's treated as spoken.
   let wokeWith: string | null = null;
 
+  // Long transcript mode: the recording in progress, a transcript asked for mid-request (it starts when the request
+  // ends), and the last one saved, which the next request is told about so "summarise that" works.
+  let transcribing: AbortController | null = null;
+  let pendingTranscript: { title?: string } | null = null;
+  let lastTranscript: string | null = null;
+
   /** Stops speech, listening, a pending approval and the request in progress. Returns whether anything was running. */
   const interrupt = (): boolean => {
     const active = speaking || listening || busy;
     speaker.stop();
+    transcribing?.abort();
     currentListen?.abort();
     currentAsk?.abort();
     if (busy) jarvis.cancel();
@@ -484,9 +492,17 @@ async function main(): Promise<void> {
       return "Stopped.";
     }
     if (action === "show_brain") return openBrain();
+    if (action === "start_transcript") {
+      if (!busy) {
+        await runTranscript();
+        return "Transcript finished.";
+      }
+      pendingTranscript = {};
+      return "Recording starts as soon as this reply ends.";
+    }
     if (!orb?.alive) return "No orb is open.";
     orb.send({ type: "ui", action });
-    const done: Record<Exclude<UiAction, "stop" | "show_brain" | "volume_up" | "volume_down" | "set_volume" | "move" | "show_terminal" | "show_git">, string> = {
+    const done: Record<Exclude<UiAction, "stop" | "show_brain" | "start_transcript" | "volume_up" | "volume_down" | "set_volume" | "move" | "show_terminal" | "show_git">, string> = {
       minimise: "Minimised to the menu bar.",
       show: "The orb is back.",
       close_panels: "Closed the panels.",
@@ -496,6 +512,96 @@ async function main(): Promise<void> {
       show_last_map: "Re-opened the last map (if there was one).",
     };
     return done[action];
+  };
+
+  /**
+   * Long transcript mode: records until you say "stop recording" (or press Enter, click the orb or stop). Chunks end at
+   * pauses and the next starts before the last is transcribed, so nothing said in between is lost. She stays quiet
+   * while recording; the transcript shows live in the detail panel and is saved to the brain under transcripts.
+   */
+  const runTranscript = async (title = "Transcript"): Promise<void> => {
+    if (!voiceMode) return void console.log("  Transcript mode needs the microphone (voice mode).");
+    await say('Recording. Say "Astra, stop recording" when you\'re done.');
+    await speaker.whenIdle();
+    const stop = new AbortController();
+    transcribing = stop;
+    const startedAt = Date.now();
+    const found: TranscriptLine[] = [];
+    const show = (endedAt?: number) =>
+      orb?.send({ type: "detail", title, html: renderDetail(transcriptMarkdown(title, startedAt, found, endedAt)), follow: true });
+    const label = () => orb?.send({ type: "state-label", text: `Recording ${clock(Date.now() - startedAt)}` });
+    refreshHint();
+    listening = true;
+    syncOrb();
+    show();
+    label();
+    const timer = setInterval(label, 1_000);
+    console.log('  🔴 Recording. Say "Astra, stop recording", or press Enter, to finish.');
+    // Enter (or a click on the orb, which stands in for it) stops it too.
+    void lines.next("", stop.signal).then((line) => line !== null && stop.abort());
+
+    const chunk = { autoStop: true, pauseSec: cfg.pauseSec, gainDb: cfg.micGainDb, noSpeechMs: Infinity, maxMs: 60_000 };
+    const recorders: [Listener, Listener] = [new Listener(listenCfg), new Listener(listenCfg)];
+    const aborted = new Promise<void>((resolve) => stop.signal.addEventListener("abort", () => resolve(), { once: true }));
+    let saidStop = false;
+    let transcribed = Promise.resolve();
+    const transcribe = (recorder: Listener, at: number) => {
+      transcribed = transcribed.then(async () => {
+        const heard = await recorder.stopAndTranscribe().catch((err: Error) => {
+          console.log(`  (couldn't transcribe a chunk: ${err.message})`);
+          return "";
+        });
+        if (saidStop) return;
+        const { kept, stop: said } = splitStop(heard);
+        if (kept) {
+          found.push({ at, text: kept });
+          console.log(`  [${clock(at - startedAt)}] ${kept}`);
+          show();
+        }
+        if (said) {
+          saidStop = true;
+          stop.abort();
+        }
+      });
+    };
+    let turn = 0;
+    let current: Listener = recorders[0];
+    await current.start(chunk);
+    let chunkStart = Date.now();
+    while (!stop.signal.aborted) {
+      const ended = await Promise.race([current.whenDone().then(() => true), aborted.then(() => false)]);
+      if (!ended) break;
+      const done = current;
+      const at = chunkStart;
+      current = recorders[++turn % 2 as 0 | 1];
+      await current.start(chunk);
+      chunkStart = Date.now();
+      transcribe(done, at);
+    }
+    // Stopped by Enter or a click mid-sentence: keep that last sentence. Said "stop recording": nothing after it counts.
+    if (current.recording && !saidStop) transcribe(current, chunkStart);
+    else await current.cancel();
+    await transcribed;
+    await Promise.all(recorders.map((r) => (r.recording ? r.cancel() : undefined)));
+    clearInterval(timer);
+    transcribing = null;
+    listening = false;
+    syncOrb();
+
+    const endedAt = Date.now();
+    show(endedAt);
+    if (!found.length) return void (await say("I didn't catch anything, so there's nothing to save."));
+    const notePath = await saveNote(cfg.brainDir, {
+      title,
+      body: transcriptMarkdown(title, startedAt, found, endedAt).replace(/^# .*\n\n/, ""),
+      folder: "transcripts",
+      tags: ["transcript"],
+    });
+    lastTranscript = path.relative(cfg.brainDir, notePath);
+    console.log(`  Saved to ${notePath}`);
+    const minutes = Math.round((endedAt - startedAt) / 60_000);
+    const length = minutes ? `${minutes} minute${minutes === 1 ? "" : "s"}` : "under a minute";
+    await say(`Saved: ${length}, ${wordCount(found)} words. Want a summary or the action items?`);
   };
 
   /** Opens a dialog: registers it for interruption, and always closes it out, however it was answered. */
@@ -761,6 +867,12 @@ async function main(): Promise<void> {
     if (request === "/quit" || request === "/exit") break;
     if (request === "/help") { console.log(HELP); continue; }
     if (request === "/brain") { console.log(`  ${await openBrain()}`); continue; }
+    const transcript = /^\/transcript\b/.test(request) ? { title: request.slice(11).trim() || undefined } : parseTranscriptStart(request);
+    if (transcript) {
+      await runTranscript(transcript.title);
+      followUp = !muted && lastInputWasVoice;
+      continue;
+    }
     // Quick interface commands work however they arrive (wake word, follow-up listening, typed), not just via "Astra".
     const quick = quickUiCommand(request);
     if (quick) {
@@ -782,7 +894,10 @@ async function main(): Promise<void> {
     orb?.send({ type: "activity", text: "Thinking…", glyph: "sun" });
     try {
       const spoken = lastInputWasVoice;
-      const result = await jarvis.handle(request);
+      // Just after a transcript, tell her where it is, so "summarise that" or "action items" find it.
+      const context = lastTranscript ? `(I just recorded a transcript; it's in your brain at ${lastTranscript}.)\n\n` : "";
+      lastTranscript = null;
+      const result = await jarvis.handle(context + request);
       console.log(`  (${result.ok ? "done" : result.summary} · $${result.costUsd.toFixed(3)})`);
       followUp = spoken && result.ok && !muted;
     } catch (err) {
@@ -790,6 +905,11 @@ async function main(): Promise<void> {
     } finally {
       busy = false;
       syncOrb();
+    }
+    if (pendingTranscript) {
+      const { title } = pendingTranscript;
+      pendingTranscript = null;
+      await runTranscript(title);
     }
   }
 
