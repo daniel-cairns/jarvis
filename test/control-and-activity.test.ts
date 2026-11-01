@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { activityDetail, activityGlyph, describeActivity } from "../src/activity.js";
 import { clampVolume, loadSettings, saveSettings } from "../src/settings.js";
-import { quickUiCommand } from "../src/ui/control.js";
+import { quickUiCommand, localCommand, commandWords } from "../src/ui/control.js";
 import { parseFromOrb } from "../src/ui/orb.js";
 
 describe("quickUiCommand", () => {
@@ -122,5 +122,28 @@ describe("move commands", () => {
   it("leaves other 'move' requests to Claude", () => {
     expect(quickUiCommand("move the file to my desktop")).toBeNull();
     expect(quickUiCommand("move on to the next step")).toBeNull();
+  });
+});
+
+describe("localCommand", () => {
+  it("catches interface commands wrapped in polite words or misheard", () => {
+    expect(localCommand("Astra, could you please stack the windows for me?")).toEqual({ ui: { action: "stack_windows" } });
+    expect(localCommand("Hey, give me a sit rap.")).toEqual({ ui: { action: "sitrep" } });
+    expect(localCommand("Can you go into god mod please")).toEqual({ ui: { action: "god_mode_on" } });
+    expect(localCommand("okay minimise yourself thanks")).toEqual({ ui: { action: "minimise" } });
+  });
+
+  it("turns spoken versions of the slash commands into them", () => {
+    expect(localCommand("Start a new conversation, please.")).toEqual({ slash: "/new" });
+    expect(localCommand("could you mute yourself")).toEqual({ slash: "/mute" });
+    expect(localCommand("Take notes about the launch plan please")).toEqual({ slash: "/transcript the launch plan" });
+    expect(localCommand("start recording")).toEqual({ slash: "/transcript" });
+  });
+
+  it("leaves real requests for her", () => {
+    expect(localCommand("Could you stack the boxes in the warehouse app by size?")).toBeNull();
+    expect(localCommand("mute the intro video in gymclaw")).toBeNull();
+    expect(localCommand("/mute")).toBeNull();
+    expect(commandWords("Um, Astra, just stack your windows now, thanks!")).toBe("stack your windows");
   });
 });

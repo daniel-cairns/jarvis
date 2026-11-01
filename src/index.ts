@@ -19,7 +19,7 @@ import { appLinks, findSession, listSessions, resolveProject, type SessionSummar
 import { newlyWaiting, sitrep } from "./tools/sitrep.js";
 import { z } from "zod";
 import { stopServing } from "./tools/serve.js";
-import { quickUiCommand, type UiAction, type UiCommand } from "./ui/control.js";
+import { localCommand, type UiAction, type UiCommand } from "./ui/control.js";
 import { clampVolume, loadSettings, saveSettings } from "./settings.js";
 import { askDialog } from "./ui/dialog.js";
 import { Orb } from "./ui/orb.js";
@@ -33,7 +33,7 @@ import {
   speakQuestion,
   type QuestionAnswer,
 } from "./voice/answers.js";
-import { clock, parseTranscriptStart, splitStop, transcriptMarkdown, wordCount, type TranscriptLine } from "./voice/transcript.js";
+import { clock, splitStop, transcriptMarkdown, wordCount, type TranscriptLine } from "./voice/transcript.js";
 import { matchWake, matchWakeAnywhere, speechHint, stripOwnSpeech } from "./voice/wake.js";
 
 const HELP = `Say "Astra" to wake her. Commands: /new (fresh conversation), /brain, /stack (tidy her windows), /sitrep, /god on|off, /restart, /type (type only: mic off, silent), /voice, /transcript [title] (record until "stop recording"), /mute, /unmute, /wake on|off, /help, /quit. Ctrl-C or Esc on the orb stops her.`;
@@ -348,6 +348,16 @@ async function main(): Promise<void> {
     }
   };
 
+  /** Shows that a command was handled on the spot, without a round trip to Claude. */
+  const announceLocal = (cmd: UiCommand | string) => {
+    const what =
+      typeof cmd === "string"
+        ? cmd
+        : `${cmd.action.replace(/_/g, " ")}${cmd.level !== undefined ? ` ${cmd.level}` : ""}${cmd.position ? ` ${cmd.position.replace(/_/g, " ")}` : ""}`;
+    console.log(`\n  ⚡ ${what}`);
+    orb?.send({ type: "caption", role: "status", text: `⚡ ${what}` });
+  };
+
   /** "Astra …" was heard: a quick UI command, an answer to an open dialog, or a request (barging in on her). */
   const onWake = (request: string) => {
     chime();
@@ -358,15 +368,19 @@ async function main(): Promise<void> {
       }
       return;
     }
-    const quick = quickUiCommand(request);
-    if (quick && !dialogWake) {
-      console.log(`\n(${quick.action.replace(/_/g, " ")}${quick.level !== undefined ? ` ${quick.level}` : ""}${quick.position ? ` ${quick.position.replace(/_/g, " ")}` : ""})`);
-      return void runUi(quick);
+    const local = dialogWake ? null : localCommand(request);
+    if (local && "ui" in local) {
+      announceLocal(local.ui);
+      return void runUi(local.ui);
     }
     if (dialogWake) return dialogWake(request);
-    if (busy || speaking) interrupt();
-    if (request) wokeWith = request;
-    lines.inject(request);
+    // A slash command ("start a new conversation" → /new) doesn't interrupt what she's doing; a request does.
+    const line = local ? local.slash : request;
+    if (!local || local.slash === "/quit") {
+      if (busy || speaking) interrupt();
+    }
+    if (line) wokeWith = line;
+    lines.inject(line);
   };
 
   /**
@@ -1004,8 +1018,14 @@ async function main(): Promise<void> {
       await runTranscript(title);
       continue;
     }
-    const request = input.trim();
+    let request = input.trim();
     if (!request) continue;
+    // Commands are recognised here, however they arrived and however they're phrased, before anything reaches Claude.
+    const local = localCommand(request);
+    if (local && "slash" in local) {
+      announceLocal(local.slash);
+      request = local.slash;
+    }
 
     if (request === "/quit" || request === "/exit") break;
     if (request === "/help") { console.log(HELP); continue; }
@@ -1015,16 +1035,14 @@ async function main(): Promise<void> {
     if (request === "/sitrep") { console.log(`  ${await runUi("sitrep")}`); continue; }
     if (request === "/god on" || request === "/god off") { console.log(`  ${setGodMode(request === "/god on")}`); continue; }
     if (request === "/type" || request === "/voice") { console.log(`  ${setTypeOnly(request === "/type")}`); continue; }
-    const transcript = /^\/transcript\b/.test(request) ? { title: request.slice(11).trim() || undefined } : parseTranscriptStart(request);
-    if (transcript) {
-      await runTranscript(transcript.title);
+    if (/^\/transcript\b/.test(request)) {
+      await runTranscript(request.slice(11).trim() || undefined);
       followUp = !muted && lastInputWasVoice;
       continue;
     }
-    // Quick interface commands work however they arrive (wake word, follow-up listening, typed), not just via "Astra".
-    const quick = quickUiCommand(request);
-    if (quick) {
-      console.log(`  ${await runUi(quick)}`);
+    if (local && "ui" in local) {
+      announceLocal(local.ui);
+      console.log(`  ${await runUi(local.ui)}`);
       continue;
     }
     if (request === "/new") { jarvis.reset(); console.log("Fresh conversation. Your brain notes are kept."); continue; }
