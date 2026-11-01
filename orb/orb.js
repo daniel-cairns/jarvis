@@ -170,7 +170,7 @@
     if (value) answer(value);
   });
   stopButton.addEventListener("click", () => bridge.send({ type: "stop" }));
-  // The altar's columns light up under the pointer (they're drawn on the canvas; the buttons sit over them).
+  // The glyphs on the lower wings glow under the pointer (the glow is drawn on the canvas, under the buttons).
   let hovered = null;
   for (const [el, id] of [[stopButton, "stop"], [document.getElementById("minimise"), "minimise"]]) {
     el.addEventListener("pointerenter", () => (hovered = id));
@@ -264,138 +264,28 @@
   }
 
   /**
-   * The altar under the eye, drawn like the rest of the glyph: fine gold outlines over a faint fill, lapis edge lines
-   * like the wing tiers, and reactor light inside. A lotus goblet cradles the orb, with small wings spreading from it,
-   * on a stem of two papyrus columns and a stepped plinth; the left column is stop (lit red-gold while Astra is busy), the right is minimise. The DOM buttons sit over the shafts.
+   * A small pair of wings just below the eye, holding the two controls: stop (house glyph) on the left wing, minimise
+   * (water glyph) on the right. The DOM buttons sit on the wings; this draws the wings and the glow behind each glyph.
    */
-  function altar(cx, cy, t, busy, hover) {
-    const line = (alpha, width = 1.1) => {
-      ctx.strokeStyle = rgba(GOLD, alpha);
-      ctx.lineWidth = width;
-    };
-    const shape = (points) => {
-      ctx.beginPath();
-      points.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
-      ctx.closePath();
-    };
-
-    // Plinth: two outlined steps with a lapis base line.
-    for (const [x0, y0, w, h] of [[cx - 34, 236, 68, 6], [cx - 40, 242, 80, 5]]) {
-      ctx.fillStyle = rgba(GOLD, 0.1);
-      ctx.fillRect(x0, y0, w, h);
-      line(0.8);
-      ctx.strokeRect(x0 + 0.5, y0 + 0.5, w - 1, h - 1);
-    }
-    ctx.beginPath();
-    ctx.moveTo(cx - 40, 248);
-    ctx.lineTo(cx + 40, 248);
-    ctx.strokeStyle = rgba(LAPIS, 0.75);
-    ctx.lineWidth = 1.4;
-    ctx.stroke();
-
-    for (const [side, id] of [[-1, "stop"], [1, "minimise"]]) {
-      const x0 = cx + side * 14 - 10;
-      const live = id === "stop" ? busy : true;
-      const lit = (hover === id ? 1 : 0) + (id === "stop" && busy ? 0.5 + 0.3 * Math.sin(t * 4) : 0);
-      const glowColour = id === "stop" && busy ? [255, 110, 90] : colour;
-      ctx.save();
-      ctx.globalAlpha = live ? 1 : 0.4;
-      // Reactor light inside the shaft, brighter when lit.
-      const inner = ctx.createLinearGradient(x0, 0, x0 + 20, 0);
-      inner.addColorStop(0, rgba(glowColour, 0.04));
-      inner.addColorStop(0.5, rgba(glowColour, 0.12 + lit * 0.25));
-      inner.addColorStop(1, rgba(glowColour, 0.04));
-      ctx.fillStyle = inner;
-      ctx.fillRect(x0, 211, 20, 25);
-      if (lit > 0) {
-        ctx.shadowColor = rgba(glowColour, 0.9);
-        ctx.shadowBlur = 6 + lit * 6;
-      }
-      // Shaft outline, fluting, capital.
-      line(0.9 + lit * 0.1, 1.1);
-      ctx.strokeRect(x0 + 0.5, 211.5, 19, 24);
-      ctx.shadowBlur = 0;
-      line(0.35);
-      for (const fx of [3.5, 16.5]) {
-        ctx.beginPath();
-        ctx.moveTo(x0 + fx, 213);
-        ctx.lineTo(x0 + fx, 234);
-        ctx.stroke();
-      }
-      shape([[x0, 211], [x0 - 3, 206], [x0 + 23, 206], [x0 + 20, 211]]);
-      ctx.fillStyle = rgba(GOLD, 0.12);
-      ctx.fill();
-      line(0.9);
-      ctx.stroke();
-      // Papyrus ribs on the capital.
-      line(0.45, 0.8);
-      for (const rx of [5, 10, 15]) {
-        ctx.beginPath();
-        ctx.moveTo(x0 + rx, 210.5);
-        ctx.lineTo(x0 + (rx - 10) * 1.3 + 10, 206.5);
-        ctx.stroke();
-      }
-      ctx.restore();
-    }
-
-    // Altar wings: smaller feathered wings spreading low from the cup's lips, drooping slightly, like protective wings.
+  function lowerWings(cx, t, busy, hover) {
     for (const side of [1, -1]) {
       ctx.save();
-      ctx.translate(cx + side * 56, 178);
-      ctx.scale(side * 0.5, 0.5);
-      ctx.rotate(0.3);
-      wing(0.55, level * 0.5);
+      ctx.translate(cx + side * 8, 207);
+      ctx.scale(side * 0.6, 0.6);
+      ctx.rotate(0.14);
+      wing(0.6, level * 0.5);
       ctx.restore();
     }
-
-    // The goblet: its rim follows the orb's curve, so the ring and eye sit in it like a sphere in a chalice.
-    const rimR = 62;
-    const a0 = Math.PI * 0.17;
-    const a1 = Math.PI * 0.83;
-    const lip = (a) => [cx + Math.cos(a) * rimR, cy + Math.sin(a) * rimR];
-    const [rx, ry] = lip(a0);
-    const [lx, ly] = lip(a1);
-    ctx.beginPath();
-    ctx.arc(cx, cy, rimR, a0, a1); // rim, right to left through the bottom
-    ctx.lineTo(lx - 5, ly - 2); // left lip flares out
-    ctx.quadraticCurveTo(cx - 58, 200, cx - 12, 206); // left flank down to the stem
-    ctx.lineTo(cx + 12, 206);
-    ctx.quadraticCurveTo(cx + 58, 200, rx + 5, ry - 2); // right flank up to the lip
-    ctx.closePath();
-    const cup = ctx.createLinearGradient(0, ry, 0, 206);
-    cup.addColorStop(0, rgba(GOLD, 0.05));
-    cup.addColorStop(1, rgba(GOLD, 0.24));
-    ctx.fillStyle = cup;
-    ctx.fill();
-    line(0.95, 1.2);
-    ctx.stroke();
-    // Lapis band just inside the rim, like the wing tiers.
-    ctx.beginPath();
-    ctx.arc(cx, cy, rimR + 2, a0 + 0.04, a1 - 0.04);
-    ctx.strokeStyle = rgba(LAPIS, 0.85);
-    ctx.lineWidth = 1.6;
-    ctx.stroke();
-    // Lotus petals fanning from the stem up to the rim.
-    line(0.55, 0.9);
-    for (const i of [-2, -1, 0, 1, 2]) {
-      const a = Math.PI / 2 - i * 0.3;
-      const [tx, ty] = [cx + Math.cos(a) * (rimR + 4), cy + Math.sin(a) * (rimR + 4)];
-      const bx = cx + i * 4;
-      ctx.beginPath();
-      ctx.moveTo(bx, 205);
-      ctx.quadraticCurveTo((bx + tx) / 2 - 5, (205 + ty) / 2 + 2, tx, ty);
-      ctx.quadraticCurveTo((bx + tx) / 2 + 5, (205 + ty) / 2 + 2, bx, 205);
-      ctx.stroke();
+    for (const [id, x] of [["stop", cx - 36], ["minimise", cx + 36]]) {
+      const busyStop = id === "stop" && busy;
+      const lit = (hover === id ? 1 : 0) + (busyStop ? 0.55 + 0.3 * Math.sin(t * 4) : 0);
+      if (lit <= 0) continue;
+      const glow = ctx.createRadialGradient(x, 213, 0, x, 213, 16);
+      glow.addColorStop(0, rgba(busyStop ? [255, 110, 90] : GOLD, 0.45 * Math.min(1, lit)));
+      glow.addColorStop(1, rgba(busyStop ? [255, 110, 90] : GOLD, 0));
+      ctx.fillStyle = glow;
+      ctx.fillRect(x - 16, 197, 32, 32);
     }
-    // The knot where the cup meets its column stem, with a small sun disc.
-    ctx.fillStyle = rgba(GOLD, 0.16);
-    ctx.fillRect(cx - 30, 205.5, 60, 3);
-    line(0.9);
-    ctx.strokeRect(cx - 30, 205.5, 60, 3);
-    ctx.beginPath();
-    ctx.arc(cx, 207, 1.8, 0, Math.PI * 2);
-    ctx.fillStyle = rgba(GOLD, 0.95);
-    ctx.fill();
   }
 
   /** The Eye of Horus in the core; `open` 0..1 squashes it shut. */
@@ -550,7 +440,7 @@
       ctx.stroke();
     }
 
-    altar(cx, cy, t, state !== "idle", hovered);
+    lowerWings(cx, t, state !== "idle", hovered);
 
     // Core: white-hot sun disc
     const core = ctx.createRadialGradient(cx, cy, r * 0.05, cx, cy, r);
