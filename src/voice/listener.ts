@@ -22,7 +22,9 @@ export type ListenerConfig = {
 export function cleanTranscript(raw: string): string {
   return raw
     .replace(/\[[^\]]*\]/g, " ")
-    .replace(/\((?:music|silence|inaudible|blank audio)[^)]*\)/gi, " ")
+    // Sound tags whisper writes for non-speech: "(coughing)", "(indistinct chatter)", "*sighs*".
+    .replace(/\([a-z][a-z ,'-]*\)/gi, " ")
+    .replace(/\*[a-z][a-z ,'-]*\*/gi, " ")
     .replace(/\s+/g, " ")
     .trim();
 }

@@ -36,6 +36,9 @@ describe("cleanTranscript", () => {
   it("drops whisper's non-speech markers", () => {
     expect(cleanTranscript(" [BLANK_AUDIO] ")).toBe("");
     expect(cleanTranscript("(music) Jarvis, open Notes.\n")).toBe("Jarvis, open Notes.");
+    expect(cleanTranscript(" (coughing) ")).toBe("");
+    expect(cleanTranscript("(indistinct chatter) (indistinct chatter)")).toBe("");
+    expect(cleanTranscript("*sighs* Astra, sit rep")).toBe("Astra, sit rep");
   });
 });
 

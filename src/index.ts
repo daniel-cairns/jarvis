@@ -650,7 +650,8 @@ async function main(): Promise<void> {
     console.log(`  Saved to ${notePath}`);
     const minutes = Math.round((endedAt - startedAt) / 60_000);
     const length = minutes ? `${minutes} minute${minutes === 1 ? "" : "s"}` : "under a minute";
-    await say(`Saved: ${length}, ${wordCount(found)} words. Want a summary or the action items?`);
+    const words = wordCount(found);
+    await say(`Saved: ${length}, ${words} word${words === 1 ? "" : "s"}. Want a summary or the action items?`);
   };
 
   /**

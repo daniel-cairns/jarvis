@@ -58,7 +58,8 @@ export async function saveNote(
   const dir = path.join(brainDir, folder);
   await fs.mkdir(dir, { recursive: true });
 
-  const date = now.toISOString().slice(0, 10);
+  // The local date (en-CA formats as YYYY-MM-DD): in New Zealand the UTC date is often still yesterday.
+  const date = now.toLocaleDateString("en-CA");
   const base = `${date}-${slugify(note.title)}`;
   const tags = (note.tags ?? []).map((t) => slugify(t));
   const content = [
