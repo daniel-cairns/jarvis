@@ -224,6 +224,13 @@ async function main(): Promise<void> {
       onVolume: (msg) => void setVolume(msg.level ?? settings.volume + (msg.delta ?? 0)),
       onRecord: () => onRecord(),
       onTypeOnly: (on) => console.log(`\n  ${setTypeOnly(on)}`),
+      // Same as typing in the terminal: a request at the prompt, or an answer to an open approval or question.
+      onTyped: (text) => {
+        console.log(text);
+        orb?.send({ type: "caption", role: "you", text });
+        if (busy && !asking) orb?.send({ type: "caption", role: "status", text: "Queued: I'll do that next" });
+        lines.inject(text);
+      },
       onStop: () => {
         if (interrupt()) {
           console.log("\n(stopped)");

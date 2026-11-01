@@ -40,6 +40,13 @@
       <ul id="activity" class="activity" aria-live="polite" aria-label="What Astra is doing"></ul>
     </section>
 
+    <!-- Type-only mode: her microphone is off, so requests (and answers to her questions) are typed here. -->
+    <form id="type-box" class="card typebox other" hidden>
+      <label class="visually-hidden" for="type-text">Type to Astra</label>
+      <input id="type-text" type="text" placeholder="Type to Astra…" autocomplete="off" maxlength="2000">
+      <button type="submit">Send</button>
+    </form>
+
     <section id="ask" class="card ask" role="alertdialog" aria-labelledby="ask-q" aria-describedby="ask-d" hidden>
       <div class="nub" aria-hidden="true"><svg viewBox="0 0 170 22" preserveAspectRatio="none"><polygon class="plate" points="0,22 170,22 170,10 156,0 0,0"/><polyline class="edge" points="0,0.8 156,0.8 169.5,10.5"/><polyline class="edge-inner" points="0,4 154,4 165,12"/></svg><p class="nub-label">Authorisation required</p></div>
       <div class="shelf" aria-hidden="true"></div>

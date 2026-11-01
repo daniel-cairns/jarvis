@@ -9,6 +9,8 @@
   const stopButton = document.getElementById("stop");
   const recordButton = document.getElementById("record");
   const typeOnlyButton = document.getElementById("type-only");
+  const typeBox = document.getElementById("type-box");
+  const typeText = document.getElementById("type-text");
   const stateLabel = document.getElementById("state");
   const card = document.getElementById("card");
   const caption = document.getElementById("caption");
@@ -370,6 +372,8 @@
       const on = !!m.typeOnly;
       document.body.classList.toggle("type-only", on);
       typeOnlyButton.setAttribute("aria-pressed", String(on));
+      typeBox.hidden = !on;
+      if (on) typeText.focus();
       typeOnlyButton.setAttribute("aria-label", on ? "Back to voice: microphone and speech on" : "Type only: microphone off and silent");
       document.body.classList.toggle("god-mode", !!m.god);
       LABELS.idle = on ? "Type only" : m.god ? "God mode" : "Idle";
@@ -461,7 +465,20 @@
     el.addEventListener("blur", () => (hovered = null));
   }
 
+  typeBox.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const text = typeText.value.trim();
+    if (!text) return;
+    bridge.send({ type: "typed", text });
+    typeText.value = "";
+  });
+
   window.addEventListener("keydown", (e) => {
+    // Typing to her: letters and digits are text, not answer shortcuts; Esc still stops her.
+    if (e.target === typeText) {
+      if (e.key === "Escape") bridge.send({ type: "stop" });
+      return;
+    }
     if (questionId && e.target !== questionText) {
       if (/^[1-9]$/.test(e.key)) return pickOption(Number(e.key) - 1);
       if (e.key === "Enter" && questionMulti && picked.size) return document.getElementById("question-done").click();

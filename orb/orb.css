@@ -273,6 +273,8 @@ body.type-only.god-mode #orb { filter: saturate(0.55) brightness(0.85) drop-shad
   color: var(--accent-ink); background: linear-gradient(180deg, #f8dc95, var(--accent));
 }
 .question[hidden], #question-done-row[hidden] { display: none; }
+.typebox { padding: 9px 10px; margin-bottom: 0; }
+.typebox[hidden] { display: none; }
 
 /* Layout: in the lower half of the screen the cards sit above the orb; in the upper half (body.top), below it. */
 .card, .question { order: -1; }

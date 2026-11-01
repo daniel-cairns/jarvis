@@ -13,6 +13,7 @@ function fromPage(m) {
   if (!m || typeof m !== "object") return null;
   if (m.type === "talk" || m.type === "stop" || m.type === "record") return { type: m.type };
   if (m.type === "type-only" && typeof m.on === "boolean") return { type: "type-only", on: m.on };
+  if (m.type === "typed" && typeof m.text === "string" && m.text.trim() && m.text.length <= 2000) return { type: "typed", text: m.text };
   if (m.type === "answer" && typeof m.id === "string" && ANSWERS.has(m.answer)) {
     return { type: "answer", id: m.id, answer: m.answer };
   }

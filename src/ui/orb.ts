@@ -47,6 +47,7 @@ export type FromOrb =
   | { type: "stop" }
   | { type: "record" }
   | { type: "type-only"; on: boolean }
+  | { type: "typed"; text: string }
   | { type: "quit" }
   | { type: "answer"; id: string; answer: Answer }
   | { type: "question-answer"; id: string; answer: QuestionAnswer }
@@ -62,6 +63,8 @@ export type OrbHandlers = {
   onRecord?(): void;
   /** The mouth glyph: type-only mode (mic off, silent) on or off. */
   onTypeOnly?(on: boolean): void;
+  /** A line typed in the orb's type box: handled exactly like one typed in the terminal. */
+  onTyped?(text: string): void;
   onQuit(): void;
   /** The brain browser asked for its note list, one note, or a note's map. */
   onBrain?(msg: Extract<FromOrb, { type: "brain-request" | "brain-open" | "brain-map" }>): void;
@@ -87,6 +90,7 @@ export function parseFromOrb(line: string): FromOrb | null {
     return { type: msg.type };
   }
   if (msg.type === "type-only" && typeof msg.on === "boolean") return { type: "type-only", on: msg.on };
+  if (msg.type === "typed" && typeof msg.text === "string" && msg.text.trim() && msg.text.length <= 2000) return { type: "typed", text: msg.text };
   if ((msg.type === "brain-open" || msg.type === "brain-map") && typeof msg.path === "string" && msg.path.length <= 300) {
     return { type: msg.type, path: msg.path };
   }
@@ -190,6 +194,7 @@ export class Orb {
     else if (msg?.type === "stop") this.handlers.onStop();
     else if (msg?.type === "record") this.handlers.onRecord?.();
     else if (msg?.type === "type-only") this.handlers.onTypeOnly?.(msg.on);
+    else if (msg?.type === "typed") this.handlers.onTyped?.(msg.text);
     else if (msg?.type === "quit") this.handlers.onQuit();
     else if (msg?.type === "brain-request" || msg?.type === "brain-open" || msg?.type === "brain-map") this.handlers.onBrain?.(msg);
     else if (msg?.type === "volume") this.handlers.onVolume?.(msg);
