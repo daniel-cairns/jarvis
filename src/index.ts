@@ -595,6 +595,12 @@ async function main(): Promise<void> {
     if (request === "/quit" || request === "/exit") break;
     if (request === "/help") { console.log(HELP); continue; }
     if (request === "/brain") { console.log(`  ${await openBrain()}`); continue; }
+    // Quick interface commands work however they arrive (wake word, follow-up listening, typed), not just via "Astra".
+    const quick = quickUiCommand(request);
+    if (quick) {
+      console.log(`  ${await runUi(quick)}`);
+      continue;
+    }
     if (request === "/new") { jarvis.reset(); console.log("Fresh conversation. Your brain notes are kept."); continue; }
     if (request === "/mute") { muted = true; speaker.stop(); continue; }
     if (request === "/unmute") { muted = false; continue; }
