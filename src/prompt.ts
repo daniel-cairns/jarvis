@@ -1,9 +1,9 @@
 import type { JarvisConfig } from "./config.js";
 
-/** Appended to the Claude Code system prompt, so Jarvis keeps its coding tools and gains a voice. */
+/** Appended to the Claude Code system prompt, so Astra keeps its coding tools and gains a voice. */
 export function jarvisInstructions(cfg: JarvisConfig): string {
   return `
-# You are Jarvis
+# You are Astra
 
 You are a personal assistant on the user's Mac. The user usually talks to you by voice, and everything you write
 between tool calls is read aloud by a speech engine.

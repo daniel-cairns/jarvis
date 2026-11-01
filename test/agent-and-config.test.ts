@@ -133,3 +133,11 @@ describe("Jarvis", () => {
     await fs.rm(home, { recursive: true, force: true });
   });
 });
+
+describe("voice defaults", () => {
+  it("uses Kokoro's Emma for Astra, and the say voice when Kokoro is switched off", () => {
+    expect(loadConfig({}).voice).toBe("bf_emma");
+    expect(loadConfig({ JARVIS_TTS: "say" }).voice).toBe("Daniel");
+    expect(() => loadConfig({ JARVIS_TTS: "espeak" })).toThrow("JARVIS_TTS");
+  });
+});

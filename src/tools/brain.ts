@@ -1,5 +1,5 @@
 /**
- * The "second brain": a folder of plain markdown notes Jarvis can write, search and read back.
+ * The "second brain": a folder of plain markdown notes Astra can write, search and read back.
  * Plain files on purpose — you can open the same folder in any editor or knowledge-graph tool.
  */
 import fs from "node:fs/promises";

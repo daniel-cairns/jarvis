@@ -1,4 +1,4 @@
-// The page gets exactly two capabilities: hear Jarvis's messages, and send one back.
+// The page gets exactly two capabilities: hear Astra's messages, and send one back.
 const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("jarvis", {

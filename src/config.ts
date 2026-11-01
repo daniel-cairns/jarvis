@@ -62,7 +62,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): JarvisConfig {
     effort,
     maxBudgetUsd: positiveNumber(env.JARVIS_MAX_BUDGET_USD, 5, "JARVIS_MAX_BUDGET_USD"),
     tts,
-    voice: env.JARVIS_VOICE ?? (tts === "kokoro" ? "bm_fable" : sayVoice),
+    voice: env.JARVIS_VOICE ?? (tts === "kokoro" ? "bf_emma" : sayVoice),
     sayVoice,
     ttsCacheDir: expandHome(env.JARVIS_TTS_CACHE_DIR ?? path.join(home, "models", "tts")),
     speechRate: positiveNumber(env.JARVIS_SPEECH_RATE, 190, "JARVIS_SPEECH_RATE"),

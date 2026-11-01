@@ -34,7 +34,7 @@ export function askDialog(
 ): Promise<Answer | null> {
   if ((opts.platform ?? process.platform) !== "darwin" || signal.aborted) return Promise.resolve(null);
   const args = SCRIPT.flatMap((line) => ["-e", line]);
-  args.push(opts.title ?? "Jarvis wants to…", detail, String(opts.timeoutSec ?? 600));
+  args.push(opts.title ?? "Astra wants to…", detail, String(opts.timeoutSec ?? 600));
   return new Promise((resolve) => {
     const child = spawn("osascript", args, { stdio: ["ignore", "pipe", "pipe"] });
     let stdout = "";

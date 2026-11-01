@@ -1,6 +1,6 @@
 /**
- * Jarvis's orb: a frameless, transparent, always-on-top window. Jarvis drives it with JSON lines on stdin and
- * hears back on stdout. Run by Electron as a child of the Jarvis CLI; quits when Jarvis closes stdin.
+ * Astra's orb: a frameless, transparent, always-on-top window. Astra drives it with JSON lines on stdin and
+ * hears back on stdout. Run by Electron as a child of the Astra CLI; quits when Astra closes stdin.
  */
 const { app, BrowserWindow, Menu, Tray, ipcMain, nativeImage, screen } = require("electron");
 const path = require("node:path");
@@ -8,7 +8,7 @@ const readline = require("node:readline");
 
 const ANSWERS = new Set(["yes", "always", "no"]);
 
-/** Only well-formed messages from the page reach Jarvis. */
+/** Only well-formed messages from the page reach Astra. */
 function fromPage(m) {
   if (!m || typeof m !== "object") return null;
   if (m.type === "talk") return { type: "talk" };
@@ -89,14 +89,14 @@ app.whenReady().then(() => {
     win.moveTop();
   };
   const tray = new Tray(trayIcon());
-  tray.setToolTip("Jarvis");
+  tray.setToolTip("Astra");
   // One click on the menu-bar icon brings the orb back (or tucks it away); right-click shows the same as a menu.
   const toggle = () => (win.isVisible() ? win.hide() : show());
   tray.on("click", toggle);
   tray.on("right-click", () =>
     tray.popUpContextMenu(
       Menu.buildFromTemplate([
-        win.isVisible() ? { label: "Hide Jarvis", click: () => win.hide() } : { label: "Show Jarvis", click: show },
+        win.isVisible() ? { label: "Hide Astra", click: () => win.hide() } : { label: "Show Astra", click: show },
       ]),
     ),
   );

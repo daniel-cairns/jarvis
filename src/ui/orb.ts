@@ -1,6 +1,6 @@
 /**
  * Talks to the orb window (orb/main.cjs, run by Electron) over JSON lines on stdin/stdout.
- * If Electron can't start, `alive` stays false and Jarvis falls back to the terminal and the pop-up.
+ * If Electron can't start, `alive` stays false and Astra falls back to the terminal and the pop-up.
  */
 import { spawn, type ChildProcess } from "node:child_process";
 import { createRequire } from "node:module";

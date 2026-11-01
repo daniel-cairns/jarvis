@@ -1,5 +1,5 @@
 /**
- * macOS actions: open apps, open files Jarvis built, and start a throwaway Chrome for REA to observe.
+ * macOS actions: open apps, open files Astra built, and start a throwaway Chrome for REA to observe.
  * Every command goes through execFile/spawn with an argument array — never a shell string.
  */
 import { execFile, spawn } from "node:child_process";
@@ -51,7 +51,7 @@ export async function openApp(name: string, runner: Runner = realRunner, platfor
   return `Opened ${app}`;
 }
 
-/** Opens a file or folder, but only inside Jarvis's own folders. */
+/** Opens a file or folder, but only inside Astra's own folders. */
 export async function openPath(
   target: string,
   allowedRoots: string[],

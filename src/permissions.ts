@@ -1,5 +1,5 @@
 /**
- * Who decides what Jarvis may do without asking.
+ * Who decides what Astra may do without asking.
  * Reading, memory and opening things are free. Writing is free only inside the workspace.
  * Shell commands, REA's tools and anything else ask you first, once per tool per session if you say "always".
  */

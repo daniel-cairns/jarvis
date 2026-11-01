@@ -1,21 +1,21 @@
-# Jarvis
+# Astra
 
 A local voice assistant for your Mac, built on the [Claude Agent SDK](https://code.claude.com/docs/en/agent-sdk),
 with [REA (Reverse Engineer Anything)](https://github.com/morluto/rea) as its x-ray vision.
 
-You talk, Jarvis works: it can tear down a website or a Mac app with REA, save the report to a markdown
+You talk, Astra works: it can tear down a website or a Mac app with REA, save the report to a markdown
 "second brain", read it back to you section by section, build an original version of what it found,
 test it, and open it.
 
 Speech in and out runs on your machine (whisper.cpp in, the [Kokoro](https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX)
 neural voice out, with macOS `say` as the fallback). The only thing that leaves your Mac is the conversation with Claude.
 
-Jarvis lives in a floating orb, an arc reactor crossed with a winged sun: it opens its eye and ripples while it listens,
+Astra lives in a floating orb, an arc reactor crossed with a winged sun: it opens its eye and ripples while it listens,
 spins its rings while it works, and spreads its wings and pulses with every syllable it speaks. Drag it anywhere.
 Hover and press **–** to minimise it; click the sun icon in the menu bar to bring it back. It comes back by itself when
 it needs your permission, showing the details with No / Always / Yes buttons.
 
-**Talking is a conversation:** click the core of the orb (or press Enter) and speak. Jarvis notices when you pause,
+**Talking is a conversation:** click the core of the orb (or press Enter) and speak. Astra notices when you pause,
 answers, then listens for your reply. Say nothing for a few seconds and it goes back to sleep.
 
 ## What it can do
@@ -26,7 +26,7 @@ answers, then listens for your reply. Say nothing for a few seconds and it goes 
 | "Read me that teardown" | Reads the report aloud one section at a time, asking before each next section |
 | "Reverse engineer the Notes app" | Runs REA's desktop/app analysis on `/System/Applications/Notes.app` |
 | "Build me my own version" | Builds an original app under `workspace/` from the blueprint, tests it, opens it |
-| "Open Safari" / "Open the app you built" | Opens apps, or files Jarvis made |
+| "Open Safari" / "Open the app you built" | Opens apps, or files Astra made |
 | "What did we learn about igloo?" | Searches the brain |
 
 ## Set up (macOS)
@@ -46,7 +46,7 @@ curl -L -o ~/.jarvis/models/ggml-base.en.bin \
 # 3. REA
 npm install -g rea-agents
 
-# 4. Jarvis
+# 4. Astra
 git clone <this repo> jarvis && cd jarvis
 npm install             # also downloads Electron for the orb
 cp .env.example .env    # optional: change the voice, model, budget, folders
@@ -54,7 +54,7 @@ cp .env.example .env    # optional: change the voice, model, budget, folders
 
 **Claude credentials:** log in once with Claude Code (`claude`, then `/login`), or set `ANTHROPIC_API_KEY` in `.env`.
 
-**Voice model:** the first time Jarvis speaks it downloads the Kokoro model (about 90 MB) to `~/.jarvis/models/tts`.
+**Voice model:** the first time Astra speaks it downloads the Kokoro model (about 90 MB) to `~/.jarvis/models/tts`.
 
 **Microphone permission:** the first time you talk, macOS asks whether your terminal app may use the microphone. Say yes.
 
@@ -74,7 +74,7 @@ npm start -- --no-orb  # terminal only (approvals then use a macOS pop-up)
 In either mode you can also type a request. Commands: `/new` (fresh conversation, brain kept), `/mute`,
 `/unmute`, `/help`, `/quit`. **Ctrl-C** cancels the request in progress; press it again when idle to quit.
 
-## What Jarvis may do without asking
+## What Astra may do without asking
 
 | Allowed automatically | Asks you first |
 |-----------------------|----------------|
@@ -87,7 +87,7 @@ Each request also has a spending cap (`JARVIS_MAX_BUDGET_USD`, default $5).
 
 ## Responsible use
 
-REA is for learning, interoperability and software you're allowed to analyse. Jarvis builds **original**
+REA is for learning, interoperability and software you're allowed to analyse. Astra builds **original**
 versions from a teardown's blueprint. It never copies code, assets or branding, and won't touch licensing,
 DRM or copy protection. Read the license and terms of anything you point it at.
 See REA's [DISCLAIMER](https://github.com/morluto/rea/blob/main/DISCLAIMER.md).
@@ -105,11 +105,11 @@ Layout:
 src/
   index.ts         CLI: push-to-talk loop, typed mode, approvals
   agent.ts         Claude Agent SDK session: options, permissions, spoken output
-  prompt.ts        Jarvis's instructions (appended to the Claude Code system prompt)
+  prompt.ts        Astra's instructions (appended to the Claude Code system prompt)
   permissions.ts   What runs without asking
   config.ts        Environment variables → config
   tools/
-    server.ts      In-process MCP server exposing Jarvis's own tools
+    server.ts      In-process MCP server exposing Astra's own tools
     brain.ts       Markdown second brain: save, search, list, read by section
     mac.ts         open apps/files, clean Chrome for REA
   ui/

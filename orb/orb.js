@@ -1,4 +1,4 @@
-// Draws the orb and handles Jarvis's messages. States: idle, listening, thinking, speaking.
+// Draws the orb and handles Astra's messages. States: idle, listening, thinking, speaking.
 (() => {
   const canvas = document.getElementById("orb");
   const ctx = canvas.getContext("2d");
@@ -58,7 +58,7 @@
     if (!COLOURS[next]) return;
     state = next;
     stateLabel.textContent = LABELS[next];
-    talk.setAttribute("aria-label", TALK_LABELS[next] ?? "Talk to Jarvis");
+    talk.setAttribute("aria-label", TALK_LABELS[next] ?? "Talk to Astra");
   }
 
   let typing = 0;

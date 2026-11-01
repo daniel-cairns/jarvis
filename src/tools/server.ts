@@ -64,7 +64,7 @@ export function createJarvisServer(cfg: JarvisConfig, runner: Runner = realRunne
       ),
       tool(
         "open_path",
-        "Open a file or folder Jarvis made (inside the workspace or brain) with its default macOS app, e.g. an index.html in a browser window.",
+        "Open a file or folder Astra made (inside the workspace or brain) with its default macOS app, e.g. an index.html in a browser window.",
         { path: z.string().min(1) },
         (args) => guarded(() => openPath(args.path, [cfg.workspaceDir, cfg.brainDir], runner)),
       ),

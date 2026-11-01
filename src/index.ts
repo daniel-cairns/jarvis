@@ -103,7 +103,7 @@ async function main(): Promise<void> {
   }
 
   const say = async (text: string) => {
-    console.log(`\nJarvis: ${text}\n`);
+    console.log(`\nAstra: ${text}\n`);
     if (muted || !speechEnabled) orb?.send({ type: "caption", role: "jarvis", text });
     else await speaker.speak(text);
   };
@@ -114,7 +114,7 @@ async function main(): Promise<void> {
   /**
    * Empty Enter (or an orb click) in voice mode means "listen"; anything typed is used as-is.
    * Listening ends when you pause, or early on another Enter/click. With listenNow it skips the Enter: that's how
-   * Jarvis waits for your reply in a conversation, giving up quietly after a few seconds of silence.
+   * Astra waits for your reply in a conversation, giving up quietly after a few seconds of silence.
    */
   const getInput = async (prompt: string, signal?: AbortSignal, listenNow = false): Promise<string | null> => {
     lastInputWasVoice = false;
@@ -180,10 +180,10 @@ async function main(): Promise<void> {
     rl.close();
   });
 
-  console.log(`Jarvis is ready. ${voiceMode ? "Press Enter to talk, or type a request." : "Type a request."}`);
+  console.log(`Astra is ready. ${voiceMode ? "Press Enter to talk, or type a request." : "Type a request."}`);
   console.log(HELP);
 
-  // After a spoken exchange Jarvis listens for your reply straight away, like a conversation.
+  // After a spoken exchange Astra listens for your reply straight away, like a conversation.
   let followUp = false;
   for (;;) {
     const input = await getInput(voiceMode ? "\n[Enter to talk] > " : "\n> ", undefined, followUp);

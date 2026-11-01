@@ -116,7 +116,7 @@ export class Jarvis {
       return undefined;
     }
 
-    // Subagent output (parent_tool_use_id set) stays silent; only Jarvis's own voice is spoken.
+    // Subagent output (parent_tool_use_id set) stays silent; only Astra's own voice is spoken.
     if (msg.type === "assistant" && msg.parent_tool_use_id === null) {
       for (const block of msg.message.content) {
         if (block.type === "text" && block.text.trim()) await this.io.say(block.text);
