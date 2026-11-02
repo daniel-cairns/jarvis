@@ -1,3 +1,4 @@
+import { isShowSessions } from "./sessionsPanel.js";
 /** Astra working her own interface: the actions ui_control takes, and the quick spoken ones that skip Claude. */
 import { parseTranscriptStart } from "../voice/transcript.js";
 
@@ -27,6 +28,7 @@ export const UI_ACTIONS = [
   "stack_windows",
   "reopen_windows",
   "continue_session",
+  "show_sessions",
 ] as const;
 export type UiAction = (typeof UI_ACTIONS)[number];
 /** Where "move" can put the orb: a spot on screen, or a nudge in one direction. */
@@ -95,6 +97,7 @@ export function quickUiCommand(request: string): UiCommand | null {
     return { action: "stack_windows" };
   }
   if (/^(go |switch to |turn on )?(type|typing|text) (only )?mode( on)?( please)?$|^type only( please)?$/.test(s)) return { action: "type_only" };
+  if (isShowSessions(s)) return { action: "show_sessions" };
   if (/^(give me |get me |what s the |what is the )?(a |the |your )?(sit ?rep|situation report|status report)( please)?$|^what (s|is) everyone (doing|up to)$/.test(s)) return { action: "sitrep" };
   if (/^(go into |enter |switch to |turn on |activate )?god mode( on)?( please)?$/.test(s)) return { action: "god_mode_on" };
   if (/^(leave |exit |turn off |deactivate |end )god mode|^god mode off$/.test(s)) return { action: "god_mode_off" };
@@ -154,4 +157,13 @@ export function localCommand(request: string): LocalCommand | null {
   if (transcript) return { slash: `/transcript${transcript.title ? ` ${transcript.title}` : ""}` };
   for (const [pattern, slash] of SLASH) if (pattern.test(words)) return { slash };
   return null;
+}
+
+/**
+ * "Stop", "cancel that", "be quiet": halt whatever she's doing. Only the bare command counts, so "stop s4" or "stop
+ * coffee mode" still reach her as requests (they used to be swallowed as a plain stop).
+ */
+export function isStopCommand(request: string): boolean {
+  const s = request.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, " ").replace(/\s+/g, " ").trim();
+  return /^(stop|cancel|never ?mind|be quiet|quiet|shush|shut up|hush)( (it|that|this|talking|speaking|now|please|everything|there|right there|all of it))*$/.test(s);
 }

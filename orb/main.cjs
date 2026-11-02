@@ -23,6 +23,13 @@ function fromPage(m) {
   if ((m.type === "brain-open" || m.type === "brain-map") && typeof m.path === "string" && m.path.length <= 300) {
     return { type: m.type, path: m.path };
   }
+  // The sessions panel's buttons (Astra checks them again before acting).
+  if (m.type === "session-action" && ["open", "message", "stop", "transcript"].includes(m.action) && typeof m.ref === "string" && m.ref.length < 200) {
+    const out = { type: "session-action", action: m.action, ref: m.ref };
+    if (typeof m.run === "string" && /^s\d{1,4}$/.test(m.run)) out.run = m.run;
+    if (typeof m.text === "string" && m.text.trim() && m.text.length <= 4000) out.text = m.text;
+    return out;
+  }
   if (m.type === "question-answer" && typeof m.id === "string") {
     const a = m.answer;
     if (Array.isArray(a) && a.length <= 8 && a.every((x) => typeof x === "string" && x.length <= 200)) {
@@ -197,6 +204,8 @@ app.whenReady().then(() => {
     git: { file: "git.html", width: 600, height: 420, win: null, last: null, place: "above-terminal" },
     // Narrow: a background run's live transcript.
     transcript: { file: "transcript.html", width: 380, height: 560, win: null, last: null },
+    // Dan's open sessions: only ever opened on request; while open it keeps itself up to date.
+    sessions: { file: "sessions.html", width: 440, height: 520, win: null, last: null },
   };
   /**
    * Panels Dan closed (✕, or "close your panels"). They stay closed: updates only refresh the dropdown, and only an
@@ -238,6 +247,8 @@ app.whenReady().then(() => {
     const slab = slabs[kind];
     if (!slab?.last) return;
     closed.delete(kind);
+    // Reopened from the dropdown: Astra starts refreshing it again.
+    if (kind === "sessions") send({ type: "panel-opened", kind });
     if (slab.win && !slab.win.isDestroyed()) {
       slab.owner = "user";
       if (slab.collapsed) slab.win.webContents.send("jarvis", { type: "slab-expand" });
@@ -308,6 +319,8 @@ app.whenReady().then(() => {
       slab.collapsed = false;
       slab.pinned = false;
       slab.placed = false;
+      // Astra stops refreshing a panel no one can see.
+      if (kind === "sessions") send({ type: "panel-closed", kind });
       sendPanels();
       scheduleLayout();
     });
@@ -619,6 +632,16 @@ app.whenReady().then(() => {
       else if (m.type === "quit") {
         foldingToQuit = true;
         void (win.isVisible() ? transform("close") : Promise.resolve()).then(() => app.quit());
+      }
+      // The sessions panel opens only when asked for (owner "user"); its live updates never reopen it.
+      else if (m.type === "sessions") {
+        if (m.owner === "user") {
+          closed.delete("sessions");
+          openSlab("sessions", m, "user");
+        } else {
+          slabs.sessions.last = m;
+          if (slabs.sessions.win && !slabs.sessions.win.isDestroyed()) slabs.sessions.win.webContents.send("jarvis", m);
+        }
       }
       // A background run's transcript updates by itself (no owner); a closed one only refreshes the dropdown.
       else if (m.type === "transcript" && m.owner !== "user" && closed.has("transcript")) {

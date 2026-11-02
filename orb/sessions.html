@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en-NZ">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'none'">
+  <title>Astra · Sessions</title>
+  <link rel="stylesheet" href="panel.css">
+  <link rel="stylesheet" href="frame.css">
+  <link rel="stylesheet" href="work.css">
+  <link rel="stylesheet" href="glyph.css">
+</head>
+<body>
+  <div class="slab">
+    <div class="nub" aria-hidden="true"><svg viewBox="0 0 170 22" preserveAspectRatio="none"><polygon class="plate" points="0,22 170,22 170,10 156,0 0,0"/><polyline class="edge" points="0,0.8 156,0.8 169.5,10.5"/><polyline class="edge-inner" points="0,4 154,4 165,12"/></svg><p class="nub-label">Sessions</p></div>
+    <div class="rail" aria-hidden="true"><i></i><i></i><i></i><span class="gap"></span><i></i><i></i><i></i></div>
+    <header id="bar" class="face" title="Drag to move">
+      <span class="leds" aria-hidden="true"><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i></span>
+      <svg class="face-icon" viewBox="0 0 34 34" aria-hidden="true"><path d="M7 9h20M7 17h20M7 25h20M7 9v0M7 17v0"/></svg>
+      <div class="heading">
+        <h1 id="title">Open sessions</h1>
+        <button id="collapse" class="meta fold-line" type="button" aria-expanded="true" aria-controls="list" title="Collapse"><span class="visually-hidden">Sessions summary: </span><span id="meta">NONE OPEN</span></button>
+      </div>
+      <button id="close" type="button" aria-label="Close sessions (Esc)" title="Close (Esc)">×</button>
+    </header>
+    <div class="rail rail--bot" aria-hidden="true"></div>
+    <div class="shelf" aria-hidden="true"></div>
+    <main id="list" class="work-body sessions" tabindex="-1" aria-label="Your Claude Code sessions">
+      <p class="empty">Looking for your sessions…</p>
+    </main>
+    <p id="announce" class="visually-hidden" role="status" aria-live="polite"></p>
+    <footer class="nub nub--foot"><svg viewBox="0 0 170 22" preserveAspectRatio="none" aria-hidden="true"><polygon class="plate" points="0,22 170,22 170,10 156,0 0,0"/><polyline class="edge" points="0,0.8 156,0.8 169.5,10.5"/><polyline class="edge-inner" points="0,4 154,4 165,12"/></svg><p class="nub-label"><span id="stamp"></span></p></footer>
+  </div>
+  <script src="drag.js"></script>
+  <script src="slab.js"></script>
+  <script src="glyphs.js"></script>
+  <script src="runes.js"></script>
+  <script src="sessions.js"></script>
+</body>
+</html>

@@ -14,6 +14,8 @@ import { brainIndex, noteMap, readNote, saveNote } from "./tools/brain.js";
 import { openApp, realRunner } from "./tools/mac.js";
 import { ComputerControl, nativeHelper } from "./control/computer.js";
 import { CoffeeMode } from "./power/coffee.js";
+import { buildSessionsView } from "./ui/sessionsPanel.js";
+import type { SessionAction } from "./ui/orb.js";
 import type { RunPhase } from "./ui/orb.js";
 import { fileDiff, gitRoot, repoState, type RepoState } from "./tools/git.js";
 import { WorkLog, type ToolEvent } from "./ui/worklog.js";
@@ -24,7 +26,7 @@ import { newlyWaiting, sitrep } from "./tools/sitrep.js";
 import { pickLastSession, saveLastSession } from "./tools/lastSession.js";
 import { z } from "zod";
 import { stopServing } from "./tools/serve.js";
-import { localCommand, type UiAction, type UiCommand } from "./ui/control.js";
+import { isStopCommand, localCommand, type UiAction, type UiCommand } from "./ui/control.js";
 import { WindowHistory, type WindowKind } from "./ui/windows.js";
 import { clampVolume, loadSettings, saveSettings } from "./settings.js";
 import { askDialog } from "./ui/dialog.js";
@@ -49,7 +51,6 @@ const GOD_MODE =
   "check sessions_list, send a clear, self-contained instruction to the right idle session with session_send, or start one " +
   "in the right project with session_start (background). Tell the user who you gave what. For \"sit rep\" use ui_control " +
   "sitrep. Only do quick things yourself.)\n\n";
-const STOP_WORDS = /^(stop|cancel|never ?mind|be quiet|quiet|shush|shut up)\b/i;
 
 /** A soft acknowledgement when the wake word is heard. */
 const chime = () => spawn("afplay", ["/System/Library/Sounds/Tink.aiff"], { stdio: "ignore" }).on("error", () => {});
@@ -255,6 +256,16 @@ async function main(): Promise<void> {
       },
       onBrain: (msg) => void onBrain(msg),
       onGitDiff: (msg) => void onGitDiff(msg),
+      onPanelClosed: (kind) => {
+        if (kind === "sessions") sessionsPanelOpen = false;
+      },
+      onSessionAction: (msg) => void onSessionAction(msg),
+      onPanelOpened: (kind) => {
+        if (kind === "sessions") {
+          sessionsPanelOpen = true;
+          void refreshSessions();
+        }
+      },
       onVolume: (msg) => void setVolume(msg.level ?? settings.volume + (msg.delta ?? 0)),
       onRecord: () => onRecord(),
       // "Continue last session" from the menu bar.
@@ -432,7 +443,7 @@ async function main(): Promise<void> {
   /** "Astra …" was heard: a quick UI command, an answer to an open dialog, or a request (barging in on her). */
   const onWake = (request: string) => {
     chime();
-    if (STOP_WORDS.test(request)) {
+    if (isStopCommand(request)) {
       if (interrupt()) {
         console.log("\n(stopped)");
         orb?.send({ type: "caption", role: "status", text: "Stopped" });
@@ -663,9 +674,14 @@ async function main(): Promise<void> {
       pendingTranscript = {};
       return "Recording starts as soon as this reply ends.";
     }
+    if (action === "show_sessions") {
+      if (!orb?.alive) return "No orb is open.";
+      await refreshSessions("user");
+      return "Showing your open sessions. It keeps itself up to date while it's open.";
+    }
     if (!orb?.alive) return "No orb is open.";
     orb.send({ type: "ui", action });
-    const done: Record<Exclude<UiAction, "continue_session" | "reopen_windows" | "stop" | "show_brain" | "start_transcript" | "restart" | "type_only" | "voice_mode" | "sitrep" | "god_mode_on" | "god_mode_off" | "volume_up" | "volume_down" | "set_volume" | "move" | "show_terminal" | "show_git">, string> = {
+    const done: Record<Exclude<UiAction, "show_sessions" | "continue_session" | "reopen_windows" | "stop" | "show_brain" | "start_transcript" | "restart" | "type_only" | "voice_mode" | "sitrep" | "god_mode_on" | "god_mode_off" | "volume_up" | "volume_down" | "set_volume" | "move" | "show_terminal" | "show_git">, string> = {
       minimise: "Minimised to the menu bar.",
       show: "The orb is back.",
       close_panels: "Closed the panels.",
@@ -994,6 +1010,7 @@ async function main(): Promise<void> {
     const send = () => {
       transcriptTimers.delete(job.id);
       const lines = transcripts.get(job.id) ?? [];
+      sessionsChanged();
       const state: RunPhase = job.status === "running" ? (runPhases.get(job.id) ?? { phase: "thinking" }) : { phase: job.status };
       orb?.send({ type: "transcript", job: { id: job.id, label: job.label, status: job.status }, lines, state, ...(owner ? { owner } : {}) });
     };
@@ -1094,6 +1111,53 @@ async function main(): Promise<void> {
     if (orb?.alive) showPanel({ type: "detail", title: "Sit rep", html: renderDetail(report.markdown) });
     else console.log(`\n${report.markdown}\n`);
     return report.spoken;
+  };
+
+  // ── The open sessions panel: live while it's open, refreshed by run events (and gently every 20 s for app sessions) ──
+  let sessionsPanelOpen = false;
+  let sessionsTimer: NodeJS.Timeout | undefined;
+  let sessionsSoon: NodeJS.Timeout | undefined;
+  /** Sends the panel a fresh list. `owner: "user"` opens it (an explicit show); otherwise it only updates an open one. */
+  const refreshSessions = async (owner?: "user", note?: string) => {
+    if (owner) sessionsPanelOpen = true;
+    if (!sessionsPanelOpen || !orb?.alive) return;
+    const list = await liveSessions({ limit: 30, exclude: [cfg.workspaceDir] }).catch(() => [] as SessionSummary[]);
+    const view = buildSessionsView(list, sessionRunner.list(), Date.now(), runPhases);
+    orb.send({ type: "sessions", ...view, ...(owner ? { owner } : {}), ...(note ? { note } : {}) });
+    clearInterval(sessionsTimer);
+    sessionsTimer = setInterval(() => void refreshSessions(), 20_000);
+    sessionsTimer.unref();
+  };
+  /** A run did something: refresh once things settle, at most once a second. */
+  const sessionsChanged = () => {
+    if (!sessionsPanelOpen || sessionsSoon) return;
+    sessionsSoon = setTimeout(() => {
+      sessionsSoon = undefined;
+      void refreshSessions();
+    }, 1000);
+  };
+  /** A button in the panel: the same session tools (and checks) as asking by voice. */
+  const onSessionAction = async ({ action, ref, run, text }: { action: SessionAction; ref: string; run?: string; text?: string }) => {
+    let note: string;
+    try {
+      if (action === "open") note = await sessions.open(ref);
+      else if (action === "message") note = text ? await sessions.send(ref, text) : "Type a message first.";
+      else if (action === "transcript") {
+        const job = run ? sessionRunner.list().find((j) => j.id === run) : undefined;
+        if (job) showTranscript(job as Job, "user");
+        note = job ? `Showing ${job.id}'s transcript.` : "That run's transcript isn't here any more.";
+      } else {
+        if (!run) return;
+        const answer = orb?.alive
+          ? await orb.question({ question: `Stop background run ${run}?`, options: [{ label: "Stop it" }, { label: "Keep it running" }], multiSelect: false, allowOther: false }, new AbortController().signal)
+          : null;
+        note = (Array.isArray(answer) ? answer[0] : answer) === "Stop it" ? sessions.stop(run) : `Left ${run} running.`;
+      }
+    } catch (err) {
+      note = (err as Error).message;
+    }
+    console.log(`  [sessions] ${note}`);
+    await refreshSessions(undefined, note);
   };
 
   // God mode: she commands your sessions (see GOD_MODE) and every 30 s checks which have finished a turn.

@@ -107,3 +107,25 @@
 .runes .glyph { flex: 0 0 auto; transition: opacity 120ms; }
 .runes .glyph.dim { opacity: 0.35; }
 @media (prefers-reduced-motion: reduce) { .runes .glyph { transition: none; } }
+
+/* The open sessions panel (sessions.js). */
+.sessions .s-h { font-size: 0.72em; letter-spacing: 0.14em; text-transform: uppercase; color: var(--gold); margin: 4px 0 6px; font-weight: 500; }
+.s-list { list-style: none; margin: 0 0 10px; padding: 0; display: grid; gap: 4px; }
+.s-row { border-left: 2px solid rgba(236, 188, 82, 0.18); background: rgba(255, 255, 255, 0.025); border-radius: 0 4px 4px 0; }
+.s-row.s-waiting { border-left-color: var(--gold); }
+.s-row.s-working { border-left-color: rgba(236, 188, 82, 0.6); }
+.s-head { all: unset; box-sizing: border-box; display: flex; gap: 8px; width: 100%; padding: 6px 8px; cursor: pointer; align-items: flex-start; }
+.s-head:focus-visible, .s-act:focus-visible, .s-msg textarea:focus-visible, .s-recent summary:focus-visible { outline: 1px solid var(--gold); outline-offset: 1px; }
+.s-head .runes { flex: 0 0 auto; margin-top: 2px; }
+.s-text { display: grid; gap: 1px; min-width: 0; }
+.s-title { color: #f1e7cf; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.s-sub { font-size: 0.78em; color: rgba(233, 226, 207, 0.62); }
+.s-now { font-size: 0.82em; color: rgba(233, 226, 207, 0.8); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.s-more { padding: 0 8px 8px 30px; display: grid; gap: 6px; }
+.s-reply { margin: 0; font-size: 0.82em; white-space: pre-wrap; max-height: 9em; overflow: auto; color: rgba(233, 226, 207, 0.85); }
+.s-acts { display: flex; gap: 6px; flex-wrap: wrap; }
+.s-act { font: inherit; font-size: 0.78em; color: var(--gold); background: rgba(236, 188, 82, 0.08); border: 1px solid rgba(236, 188, 82, 0.35); border-radius: 3px; padding: 2px 8px; cursor: pointer; }
+.s-act:disabled { opacity: 0.45; cursor: not-allowed; }
+.s-msg { display: flex; gap: 6px; align-items: flex-end; }
+.s-msg textarea { flex: 1; font: inherit; font-size: 0.82em; color: #f1e7cf; background: rgba(0, 0, 0, 0.3); border: 1px solid rgba(236, 188, 82, 0.25); border-radius: 3px; resize: vertical; }
+.s-recent summary { cursor: pointer; font-size: 0.72em; letter-spacing: 0.14em; text-transform: uppercase; color: var(--gold); margin: 4px 0 6px; }

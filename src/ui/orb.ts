@@ -1,3 +1,4 @@
+import type { SessionsView } from "./sessionsPanel.js";
 /**
  * Talks to the orb window (orb/main.cjs, run by Electron) over JSON lines on stdin/stdout.
  * If Electron can't start, `alive` stays false and Astra falls back to the terminal and the pop-up.
@@ -15,6 +16,10 @@ import type { RepoState } from "../tools/git.js";
 import type { TermEntry } from "./worklog.js";
 import type { Position, UiAction } from "./control.js";
 import type { TeardownGraph } from "./graph.js";
+
+/** What the sessions panel can do with a row. */
+export const SESSION_ACTIONS = ["open", "message", "stop", "transcript"] as const;
+export type SessionAction = (typeof SESSION_ACTIONS)[number];
 
 /** A background run's state, shown as a row of ring glyphs in its transcript (orb/runes.js). */
 export type RunPhase =
@@ -57,6 +62,7 @@ export type ToOrb =
   | { type: "git"; repos: RepoState[]; force?: boolean; owner?: "user" }
   | { type: "git-diff-result"; root: string; path: string; diff: string }
   | { type: "coffee"; on: boolean; until: number | null }
+  | ({ type: "sessions"; owner?: "user"; note?: string } & SessionsView)
   | { type: "brain-note"; path: string; title: string; html: string; hasMap: boolean }
   | { type: "quit" };
 
@@ -75,7 +81,9 @@ export type FromOrb =
   | { type: "brain-request" }
   | { type: "brain-open" | "brain-map"; path: string }
   | { type: "volume"; delta?: number; level?: number }
-  | { type: "git-diff"; root: string; path: string };
+  | { type: "git-diff"; root: string; path: string }
+  | { type: "panel-closed" | "panel-opened"; kind: string }
+  | { type: "session-action"; action: SessionAction; ref: string; run?: string; text?: string };
 
 export type OrbHandlers = {
   onTalk(): void;
@@ -95,6 +103,9 @@ export type OrbHandlers = {
   onBrain?(msg: Extract<FromOrb, { type: "brain-request" | "brain-open" | "brain-map" }>): void;
   /** The git panel asked for one file's diff. */
   onGitDiff?(msg: { root: string; path: string }): void;
+  onPanelClosed?(kind: string): void;
+  onPanelOpened?(kind: string): void;
+  onSessionAction?(msg: { action: SessionAction; ref: string; run?: string; text?: string }): void;
   /** Scroll on the orb (delta) or the menu-bar volume menu (level), both 0..1 scale. */
   onVolume?(msg: { delta?: number; level?: number }): void;
 };
@@ -118,6 +129,20 @@ export function parseFromOrb(line: string): FromOrb | null {
   if (msg.type === "typed" && typeof msg.text === "string" && msg.text.trim() && msg.text.length <= 2000) return { type: "typed", text: msg.text };
   if ((msg.type === "brain-open" || msg.type === "brain-map") && typeof msg.path === "string" && msg.path.length <= 300) {
     return { type: msg.type, path: msg.path };
+  }
+  if ((msg.type === "panel-closed" || msg.type === "panel-opened") && typeof msg.kind === "string" && msg.kind.length < 40) {
+    return { type: msg.type, kind: msg.kind };
+  }
+  if (
+    msg.type === "session-action" &&
+    typeof msg.action === "string" &&
+    (SESSION_ACTIONS as readonly string[]).includes(msg.action) &&
+    typeof msg.ref === "string" &&
+    msg.ref.length < 200 &&
+    (msg.run === undefined || (typeof msg.run === "string" && /^s\d{1,4}$/.test(msg.run))) &&
+    (msg.text === undefined || (typeof msg.text === "string" && msg.text.trim().length > 0 && msg.text.length <= 4000))
+  ) {
+    return { type: "session-action", action: msg.action as SessionAction, ref: msg.ref, run: msg.run as string | undefined, text: msg.text as string | undefined };
   }
   if (msg.type === "git-diff" && typeof msg.root === "string" && typeof msg.path === "string" && msg.root.length < 500 && msg.path.length < 500) {
     return { type: "git-diff", root: msg.root, path: msg.path };
@@ -226,6 +251,9 @@ export class Orb {
     else if (msg?.type === "brain-request" || msg?.type === "brain-open" || msg?.type === "brain-map") this.handlers.onBrain?.(msg);
     else if (msg?.type === "volume") this.handlers.onVolume?.(msg);
     else if (msg?.type === "git-diff") this.handlers.onGitDiff?.(msg);
+    else if (msg?.type === "panel-closed") this.handlers.onPanelClosed?.(msg.kind);
+    else if (msg?.type === "panel-opened") this.handlers.onPanelOpened?.(msg.kind);
+    else if (msg?.type === "session-action") this.handlers.onSessionAction?.(msg);
     else if (msg?.type === "answer" || msg?.type === "question-answer") {
       const resolve = this.pending.get(msg.id);
       this.pending.delete(msg.id);
