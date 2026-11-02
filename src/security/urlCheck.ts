@@ -97,9 +97,10 @@ async function quad9(host: string, deps: IndexDeps): Promise<boolean> {
 }
 
 async function safeBrowsing(bareUrl: string, key: string, deps: IndexDeps): Promise<string | null> {
-  const res = await (deps.fetch ?? fetch)(`https://safebrowsing.googleapis.com/v4/threatMatches:find?key=${encodeURIComponent(key)}`, {
+  // The key goes in the x-goog-api-key header, as Google recommends, not the URL, where proxies and logs record it.
+  const res = await (deps.fetch ?? fetch)("https://safebrowsing.googleapis.com/v4/threatMatches:find", {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", "x-goog-api-key": key },
     body: JSON.stringify({
       client: { clientId: "astra", clientVersion: "0.1.0" },
       threatInfo: {

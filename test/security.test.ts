@@ -70,6 +70,20 @@ describe("checkUrl", () => {
   });
 });
 
+describe("Google Safe Browsing key", () => {
+  it("goes in the x-goog-api-key header, never the URL", async () => {
+    const seen: { url: string; headers: Record<string, string> }[] = [];
+    const fetch = (async (url: string, init?: RequestInit) => {
+      seen.push({ url, headers: init?.headers as Record<string, string> });
+      return new Response(JSON.stringify({}));
+    }) as typeof globalThis.fetch;
+    await indexFindings("https://example.com/", { safeBrowsing: "test-key-123" }, { ...clean, fetch });
+    const call = seen.find((c) => c.url.includes("safebrowsing"))!;
+    expect(call.url).not.toContain("test-key-123");
+    expect(call.headers["x-goog-api-key"]).toBe("test-key-123");
+  });
+});
+
 describe("checkUrl when an index doesn't answer", () => {
   it("asks rather than passing a site Quad9 couldn't check, and doesn't cache it", async () => {
     clearUrlCheckCache();
