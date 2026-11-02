@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en-NZ">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'none'">
+  <title>Astra · Transcript</title>
+  <link rel="stylesheet" href="panel.css">
+  <link rel="stylesheet" href="frame.css">
+  <link rel="stylesheet" href="work.css">
+</head>
+<body>
+  <div class="slab">
+    <div class="nub" aria-hidden="true"><svg viewBox="0 0 170 22" preserveAspectRatio="none"><polygon class="plate" points="0,22 170,22 170,10 156,0 0,0"/><polyline class="edge" points="0,0.8 156,0.8 169.5,10.5"/><polyline class="edge-inner" points="0,4 154,4 165,12"/></svg><p class="nub-label">Transcript</p></div>
+    <div class="rail" aria-hidden="true"><i></i><i></i><i></i><span class="gap"></span><i></i><i></i><i></i></div>
+    <header id="bar" class="face" title="Drag to move">
+      <span class="leds" aria-hidden="true"><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i></span>
+      <svg class="face-icon" viewBox="0 0 34 34" aria-hidden="true"><path d="M8 9h18M8 15h18M8 21h12M8 27h8"/></svg>
+      <div class="heading">
+        <h1 id="title">Transcript</h1>
+        <p class="meta" aria-hidden="true" id="meta">RUN | IDLE</p>
+      </div>
+      <button id="collapse" type="button" aria-expanded="true" aria-label="Collapse or expand this panel" title="Collapse">▾</button>
+      <button id="close" type="button" aria-label="Close transcript (Esc)" title="Close (Esc)">×</button>
+    </header>
+    <div class="rail rail--bot" aria-hidden="true"></div>
+    <div class="shelf" aria-hidden="true"></div>
+    <main id="log" class="work-body log transcript" role="log" aria-live="polite" aria-label="What the background session is doing" tabindex="0">
+      <p class="empty">No background run yet.</p>
+    </main>
+    <footer class="nub nub--foot"><svg viewBox="0 0 170 22" preserveAspectRatio="none" aria-hidden="true"><polygon class="plate" points="0,22 170,22 170,10 156,0 0,0"/><polyline class="edge" points="0,0.8 156,0.8 169.5,10.5"/><polyline class="edge-inner" points="0,4 154,4 165,12"/></svg><p class="nub-label"><span id="stamp"></span></p></footer>
+  </div>
+  <script src="drag.js"></script>
+  <script src="slab.js"></script>
+  <script src="transcript.js"></script>
+</body>
+</html>

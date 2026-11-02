@@ -14,7 +14,7 @@ import { brainIndex, noteMap, readNote, saveNote } from "./tools/brain.js";
 import { realRunner } from "./tools/mac.js";
 import { fileDiff, gitRoot, repoState, type RepoState } from "./tools/git.js";
 import { WorkLog, type ToolEvent } from "./ui/worklog.js";
-import { SessionRunner } from "./tools/runner.js";
+import { SessionRunner, type Job } from "./tools/runner.js";
 import type { SessionTools, WindowTools } from "./tools/server.js";
 import { appLinks, findSession, listSessions, resolveProject, type SessionSummary } from "./tools/sessions.js";
 import { newlyWaiting, sitrep } from "./tools/sitrep.js";
@@ -865,12 +865,42 @@ async function main(): Promise<void> {
     orb?.send({ type: "git-diff-result", root, path: file, diff });
   };
 
+  // The live transcript panel for background runs: what each run says and does, newest at the bottom.
+  type TranscriptKind = "prompt" | "text" | "tool" | "end";
+  const transcripts = new Map<string, { kind: TranscriptKind; text: string }[]>();
+  const transcriptTimers = new Map<string, NodeJS.Timeout>();
+  /** Shows a run's transcript (now, or within 250 ms so a burst of steps is one update). */
+  const showTranscript = (job: Job, owner?: "user") => {
+    const send = () => {
+      transcriptTimers.delete(job.id);
+      const lines = transcripts.get(job.id) ?? [];
+      orb?.send({ type: "transcript", job: { id: job.id, label: job.label, status: job.status }, lines, ...(owner ? { owner } : {}) });
+    };
+    if (owner) return send();
+    if (!transcriptTimers.has(job.id)) transcriptTimers.set(job.id, setTimeout(send, 250));
+  };
+  const addLine = (job: Job, kind: TranscriptKind, text: string) => {
+    const lines = transcripts.get(job.id) ?? [];
+    lines.push({ kind, text: text.length > 2000 ? `${text.slice(0, 1999)}…` : text });
+    if (lines.length > 300) lines.splice(0, lines.length - 300);
+    transcripts.set(job.id, lines);
+    showTranscript(job);
+  };
+  /** A background run began: its transcript opens straight away and is remembered for show_window. */
+  const startTranscript = (job: Job) => {
+    transcripts.set(job.id, [{ kind: "prompt", text: job.prompt }]);
+    showTranscript(job);
+    remember("transcript", `Transcript: ${job.label} (${job.id})`, () => showTranscript(job, "user"), `transcript:${job.id}`);
+  };
+
   // ── Your other Claude Code sessions: read them, start or continue them in the background, open them in the app ──
   const sessionRunner = new SessionRunner(cfg, {
     activity: (job, tool, input) => {
       console.log(`  [${job.id} ${job.label}] → ${tool}`);
       orb?.send({ type: "activity", text: `${job.label}: ${describeActivity(tool, input)}`, glyph: activityGlyph(tool) });
+      addLine(job, "tool", describeActivity(tool, input));
     },
+    said: (job, text) => addLine(job, "text", text),
     ask: (_job, approval) => askApproval(approval),
     toolEvent: (job, e) => onToolEvent(job.label, job.folder, e),
     guard: (_job, phase) => onGuard(phase),
@@ -879,6 +909,7 @@ async function main(): Promise<void> {
       orb?.send({ type: "activity", text: `${job.label}: ${text}`, glyph: "eye" });
     },
     finished: (job) => {
+      addLine(job, "end", job.status === "done" ? "Finished." : job.status === "stopped" ? "Stopped." : `Failed${job.lastText ? `: ${job.lastText.slice(0, 300)}` : "."}`);
       const first = job.lastText.split(/(?<=[.!?])\s/)[0]?.slice(0, 220) ?? "";
       const what =
         job.status === "done"
@@ -990,6 +1021,7 @@ async function main(): Promise<void> {
       const mine = sessionRunner.list().find((j) => j.sessionId === s.id && j.status === "running");
       if (s.status === "working" || mine) throw new Error(`"${s.title}" is working right now; I only send to a session when it's idle.`);
       const job = sessionRunner.send(s.id, s.folder || cfg.workspaceDir, prompt, s.project);
+      startTranscript(job);
       return `Sent to "${s.title}" (${s.project}) as background run ${job.id}. You'll hear when it's done, and its approvals will come to you.`;
     },
     start: async (project, prompt, where) => {
@@ -1000,6 +1032,7 @@ async function main(): Promise<void> {
         return `Opened a new session in ${path.basename(folder)} in the Claude app with the prompt filled in; press Enter there to send it.`;
       }
       const job = sessionRunner.start(folder, prompt, path.basename(folder));
+      startTranscript(job);
       return `Started background run ${job.id} in ${path.basename(folder)}. You'll hear when it's done, and its approvals will come to you.`;
     },
     open: async (ref) => {

@@ -72,6 +72,17 @@ send({
 await wait(1500);
 send({ type: "git-diff-result", root: "/w/app", path: "src/a.ts", diff: "@@ -1 +1 @@\n-old\n+new" });
 await wait(3000);
+send({
+  type: "transcript",
+  job: { id: "s1", label: "super-potato", status: "running" },
+  lines: [
+    { kind: "prompt", text: "Continue Satsuma." },
+    { kind: "text", text: "Picking up after 167ced1." },
+    { kind: "tool", text: "Running a command: npm test" },
+    { kind: "end", text: "Finished." },
+  ],
+});
+await wait(800);
 send({ type: "request-done" });
 send({ type: "ui", action: "stack_windows" });
 await wait(800);
@@ -85,4 +96,4 @@ if (errors.length) {
   console.error(`Orb check failed:\n${errors.slice(0, 10).join("\n")}`);
   process.exit(1);
 }
-console.log("Orb check passed: no renderer errors in the orb, detail panel, map, brain browser, terminal or git panel.");
+console.log("Orb check passed: no renderer errors in the orb, detail panel, map, brain browser, terminal, git or transcript panel.");

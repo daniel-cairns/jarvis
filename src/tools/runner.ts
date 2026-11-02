@@ -32,6 +32,8 @@ export type RunnerEvents = {
   activity(job: Job, toolName: string, input: Record<string, unknown>): void;
   /** A background session needs permission; resolves with the raw answer (yes / always / no). */
   ask(job: Job, approval: Approval): Promise<string>;
+  /** Something the session said (top-level text), for the live transcript panel. */
+  said?(job: Job, text: string): void;
   /** A run ended (done, failed or stopped). */
   finished(job: Job): void;
   /** Each tool call and its result in a background session, for the terminal and git panels. */
@@ -160,7 +162,10 @@ export class SessionRunner {
     if (msg.type === "system" && msg.subtype === "init") job.sessionId = msg.session_id;
     if (msg.type === "assistant" && msg.parent_tool_use_id === null) {
       for (const block of msg.message.content) {
-        if (block.type === "text" && block.text.trim()) job.lastText = block.text.trim();
+        if (block.type === "text" && block.text.trim()) {
+          job.lastText = block.text.trim();
+          this.events.said?.(job, job.lastText);
+        }
         if (block.type === "tool_use") this.events.activity(job, block.name, block.input as Record<string, unknown>);
       }
     }

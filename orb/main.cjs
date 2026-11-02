@@ -194,6 +194,8 @@ app.whenReady().then(() => {
     // The work panels stack at the bottom-left of the orb: the terminal at the bottom, git changes above it.
     terminal: { file: "terminal.html", width: 600, height: 330, win: null, last: null, place: "bottom" },
     git: { file: "git.html", width: 600, height: 420, win: null, last: null, place: "above-terminal" },
+    // Narrow: a background run's live transcript.
+    transcript: { file: "transcript.html", width: 380, height: 560, win: null, last: null },
   };
   const dismissed = new Set();
 
@@ -471,7 +473,9 @@ app.whenReady().then(() => {
         foldingToQuit = true;
         void (win.isVisible() ? transform("close") : Promise.resolve()).then(() => app.quit());
       }
-      else if (m.type === "detail" || m.type === "graph" || m.type === "brain") openSlab(m.type, m, m.owner === "user" ? "user" : "astra");
+      else if (m.type === "detail" || m.type === "graph" || m.type === "brain" || m.type === "transcript") {
+        openSlab(m.type, m, m.owner === "user" ? "user" : "astra");
+      }
       // Work panels open by themselves when there's something new, unless closed during this request (or asked for).
       else if (m.type === "terminal" || m.type === "git") {
         const slab = slabs[m.type];

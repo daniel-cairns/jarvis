@@ -30,6 +30,8 @@ describe("WindowHistory", () => {
     expect(h.find("the igloo teardown")?.kind).toBe("graph");
     expect(h.find("show me again")).toBeUndefined();
     expect(h.find("gymclaw")).toBeUndefined();
+    h.record(entry("transcript", "Transcript: super-potato (s1)", 3, now, []));
+    expect(h.find("show me the transcript")?.kind).toBe("transcript");
   });
 
   it("knows which windows came from the latest request", () => {

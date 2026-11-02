@@ -31,6 +31,12 @@ export type ToOrb =
   | { type: "mode"; typeOnly: boolean; god: boolean }
   | { type: "transfer"; dir: "up" | "down" | null }
   | { type: "guard"; state: "checking" | "blocked" | null }
+  | {
+      type: "transcript";
+      job: { id: string; label: string; status: string };
+      lines: { kind: "prompt" | "text" | "tool" | "end"; text: string }[];
+      owner?: "user";
+    }
   | { type: "graph"; title: string; graph: TeardownGraph; owner?: "user" }
   | { type: "question"; id: string; question: string; options: Choice[]; multiSelect: boolean; allowOther: boolean }
   | { type: "activity"; text: string; glyph?: ActivityGlyph }

@@ -80,3 +80,12 @@
 .counts .del, .diff .del { color: #ff8a7a; }
 .diff { margin: 4px 0 8px 24px; padding: 8px 10px; border-radius: 8px; background: rgba(0, 8, 24, 0.55); box-shadow: inset 0 0 0 1px rgba(70, 224, 214, 0.18); max-height: 26em; overflow: auto; color: rgba(205, 225, 240, 0.8); }
 .diff .hunk { color: var(--gold); }
+
+/* Transcript panel: the session's words in light text, its steps smaller and dimmer, the outcome in gold. */
+.transcript p { margin: 0 0 8px; white-space: pre-wrap; word-break: break-word; }
+.transcript .t-text { color: #e8f6ff; font: 13px/1.45 "Avenir Next", -apple-system, sans-serif; }
+.transcript .t-tool { color: rgba(205, 225, 240, 0.85); font-size: 11px; padding-left: 8px; border-left: 2px solid rgba(70, 224, 214, 0.35); }
+.transcript .t-tool::before { content: "→ "; color: var(--reactor); }
+.transcript .t-end { color: var(--gold); font-weight: 600; }
+.transcript .t-prompt { color: #fff1c9; font-style: italic; }
+.transcript .t-prompt::before { content: "Asked: "; color: var(--gold); font-style: normal; }
