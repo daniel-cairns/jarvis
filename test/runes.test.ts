@@ -67,3 +67,18 @@ describe("coffee mode indicator", () => {
     expect(glyphs.names).toContain("aten");
   });
 });
+
+describe("sessions panel glyphs", () => {
+  const g = glyphs as unknown as { STATUS: Record<string, string>; MODE: Record<string, string> };
+  it("gives every status a glyph from the set, with distinct shapes for working, waiting, rest and trouble", () => {
+    for (const status of ["working", "waiting", "idle", "done", "failed", "stopped"]) expect(glyphs.names).toContain(g.STATUS[status]);
+    expect(new Set([g.STATUS.working, g.STATUS.waiting, g.STATUS.idle, g.STATUS.failed]).size).toBe(4);
+    for (const m of Object.values(g.MODE)) expect(glyphs.names).toContain(m);
+  });
+
+  it("labels the mode in text and only animates working rows", () => {
+    const panel = readFileSync(new URL("../orb/sessions.js", import.meta.url), "utf8");
+    expect(panel).toMatch(/"visually-hidden", "Mode: "/);
+    expect(panel).toMatch(/row\.status === "working" \? "is-live" : ""/);
+  });
+});

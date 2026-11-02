@@ -129,3 +129,12 @@
 .s-msg { display: flex; gap: 6px; align-items: flex-end; }
 .s-msg textarea { flex: 1; font: inherit; font-size: 0.82em; color: #f1e7cf; background: rgba(0, 0, 0, 0.3); border: 1px solid rgba(236, 188, 82, 0.25); border-radius: 3px; resize: vertical; }
 .s-recent summary { cursor: pointer; font-size: 0.72em; letter-spacing: 0.14em; text-transform: uppercase; color: var(--gold); margin: 4px 0 6px; }
+
+/* Sessions panel glyphs (glyphs.js STATUS / MODE): the shape carries the meaning alongside the text. */
+.s-glyph { flex: 0 0 auto; font-size: 1.25em; color: var(--gold); margin-top: 1px; }
+.s-idle .s-glyph, .s-done .s-glyph { opacity: 0.6; }
+.s-failed .s-glyph, .s-stopped .s-glyph { color: #d98a6a; }
+.s-title-line { display: flex; gap: 6px; align-items: baseline; min-width: 0; }
+.s-astra { flex: 0 0 auto; display: inline-flex; gap: 3px; align-items: center; font-size: 0.7em; letter-spacing: 0.08em; text-transform: uppercase; color: #7fe3da; border: 1px solid rgba(127, 227, 218, 0.4); border-radius: 3px; padding: 0 4px; }
+.s-mode { display: inline-flex; gap: 3px; align-items: center; color: var(--gold); }
+.s-mode-bypassPermissions { color: #d98a6a; }

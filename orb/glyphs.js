@@ -26,7 +26,21 @@
     '<circle cx="12" cy="12" r="3.6"/><circle cx="12" cy="12" r=".9"/>' +
     '<g class="g-rays"><path d="M12 3.6v2.4M12 18v2.4M3.6 12h2.4M18 12h2.4M6.1 6.1l1.7 1.7M16.2 16.2l1.7 1.7M6.1 17.9l1.7-1.7M16.2 7.8l1.7-1.7"/></g>';
 
-  const ALL = { ...RING, clepsydra: CLEPSYDRA, aten: ATEN };
+  /** The shen ring (eternity, rest): a loop of rope tied at its base. For a session at rest: idle or done. */
+  const SHEN = '<circle cx="12" cy="10" r="5.4"/><path d="M6.8 17.6h10.4M10 15.2v2.4M14 15.2v2.4"/>';
+
+  /** A djed pillar knocked askew, with a crack: something failed or was stopped. */
+  const BROKEN =
+    '<path d="M11.4 4.2 12.6 11M8.2 6.4l6.8-1.2M8.6 9l6.8-1.2"/>' +
+    '<path d="M10.6 12.6 12 13.4 13.4 12.6"/>' +
+    '<path d="M12 15v5M8.8 20h6.4M9.2 16.6h5.6"/>';
+
+  /** A papyrus scroll: plans written out before acting. For plan mode. */
+  const SCROLL =
+    '<path d="M8 6.5h9.5v11H8"/><path d="M8 6.5a1.6 1.6 0 0 0 0 3.2h1.2M17.5 14.3a1.6 1.6 0 0 1 0 3.2"/>' +
+    '<path d="M10.6 11.4h4.6M10.6 14h3.4"/>';
+
+  const ALL = { ...RING, clepsydra: CLEPSYDRA, aten: ATEN, shen: SHEN, broken: BROKEN, scroll: SCROLL };
 
   /** An inline SVG for a glyph (aria-hidden: the meaning is always given in text alongside). */
   function svg(name, extraClass = "") {
@@ -34,7 +48,12 @@
     return `<svg class="glyph g-${name} ${extraClass}" viewBox="0 0 24 24" aria-hidden="true" focusable="false">${body}</svg>`;
   }
 
-  const api = { RING_NAMES: Object.keys(RING), names: Object.keys(ALL), svg };
+  /** Which glyph shows a session's status (sessions panel). Shapes differ, so colour is never the only signal. */
+  const STATUS = { working: "aten", waiting: "reed", idle: "shen", done: "shen", failed: "broken", stopped: "broken" };
+  /** Which glyph shows a permission mode, where one reads well; the others are text only. */
+  const MODE = { auto: "water", plan: "scroll", acceptEdits: "ankh" };
+
+  const api = { RING_NAMES: Object.keys(RING), names: Object.keys(ALL), svg, STATUS, MODE };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else window.astraGlyphs = api;
 })();

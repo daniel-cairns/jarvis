@@ -1115,6 +1115,7 @@ async function main(): Promise<void> {
 
   // ── The open sessions panel: live while it's open, refreshed by run events (and gently every 20 s for app sessions) ──
   let sessionsPanelOpen = false;
+  let sessionsOrder: string[] = [];
   let sessionsTimer: NodeJS.Timeout | undefined;
   let sessionsSoon: NodeJS.Timeout | undefined;
   /** Sends the panel a fresh list. `owner: "user"` opens it (an explicit show); otherwise it only updates an open one. */
@@ -1122,7 +1123,9 @@ async function main(): Promise<void> {
     if (owner) sessionsPanelOpen = true;
     if (!sessionsPanelOpen || !orb?.alive) return;
     const list = await liveSessions({ limit: 30, exclude: [cfg.workspaceDir] }).catch(() => [] as SessionSummary[]);
-    const view = buildSessionsView(list, sessionRunner.list(), Date.now(), runPhases);
+    // An explicit show starts a fresh order; refreshes keep rows where they were (see orderRows).
+    const view = buildSessionsView(list, sessionRunner.list(), Date.now(), runPhases, owner ? [] : sessionsOrder);
+    sessionsOrder = [...view.open, ...view.recent].map((r) => r.key);
     orb.send({ type: "sessions", ...view, ...(owner ? { owner } : {}), ...(note ? { note } : {}) });
     clearInterval(sessionsTimer);
     sessionsTimer = setInterval(() => void refreshSessions(), 20_000);
@@ -1205,6 +1208,7 @@ async function main(): Promise<void> {
         status: s.status,
         lastActivity: s.lastActivity,
         inApp: s.source === "claude-desktop",
+        ...(s.permissionMode ? { mode: s.permissionMode } : {}),
         lastReply: s.lastReply.slice(0, 300),
       })),
       backgroundRuns: sessionRunner.list().map((j) => ({
@@ -1213,6 +1217,7 @@ async function main(): Promise<void> {
         status: j.status,
         session: j.sessionId,
         latest: j.lastText.slice(0, 200),
+        mode: j.permissionMode,
       })),
     }),
     read: async (ref) => {

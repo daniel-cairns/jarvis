@@ -3,20 +3,16 @@
 // them again before acting. Text only (textContent) for anything from a session.
 (() => {
   const { bridge, onMessage } = window.slab;
-  const { svg } = window.astraGlyphs;
-  const { frame, TICK } = window.astraRunes;
+  const { svg, STATUS, MODE } = window.astraGlyphs;
   const list = document.getElementById("list");
   const meta = document.getElementById("meta");
   const stamp = document.getElementById("stamp");
   const announce = document.getElementById("announce");
-  const reduced = matchMedia("(prefers-reduced-motion: reduce)");
 
   const expanded = new Set();
   const drafts = new Map();
   let recentOpen = false;
   let lastStatus = new Map();
-  /** Rows on screen with their glyph holder, for the animation loop. */
-  let live = [];
 
   const el = (tag, cls, text) => {
     const e = document.createElement(tag);
@@ -54,12 +50,30 @@
     head.type = "button";
     head.dataset.role = "head";
     head.setAttribute("aria-expanded", String(expanded.has(row.key)));
-    const glyphs = el("span", "runes");
-    glyphs.setAttribute("aria-hidden", "true");
+    // Status glyph: decoration (the status is in the text below). Only working rows move: the sun's rays turn.
+    const glyph = el("span", "s-glyph");
+    glyph.setAttribute("aria-hidden", "true");
+    glyph.innerHTML = svg(STATUS[row.status] ?? "shen", row.status === "working" ? "is-live" : "");
     const text = el("span", "s-text");
-    text.append(el("span", "s-title", row.title), el("span", "s-sub", `${row.statusText} · ${row.project} · ${row.where} · ${ago(row.at)}`));
+    const titleLine = el("span", "s-title-line");
+    titleLine.append(el("span", "s-title", row.title));
+    // Astra's own runs carry her eye and say so; Dan's sessions don't.
+    if (row.astra) {
+      const badge = el("span", "s-astra");
+      badge.innerHTML = svg("eye");
+      badge.append(el("span", "", "Astra"));
+      titleLine.append(badge);
+    }
+    const sub = el("span", "s-sub", `${row.statusText} · ${row.project} · ${row.where} · ${ago(row.at)}`);
+    if (row.mode) {
+      const mode = el("span", `s-mode s-mode-${row.mode.key}`);
+      if (MODE[row.mode.key]) mode.innerHTML = svg(MODE[row.mode.key]);
+      mode.append(el("span", "visually-hidden", "Mode: "), el("span", "", row.mode.label));
+      sub.append(" · ", mode);
+    }
+    text.append(titleLine, sub);
     if (row.now) text.append(el("span", "s-now", row.now));
-    head.append(glyphs, text);
+    head.append(glyph, text);
     head.addEventListener("click", () => {
       if (expanded.has(row.key)) expanded.delete(row.key);
       else expanded.add(row.key);
@@ -105,7 +119,6 @@
       more.append(form);
       li.append(more);
     }
-    live.push({ row, glyphs, tick: 0, last: 0 });
     return li;
   }
 
@@ -125,30 +138,13 @@
     // Keep whatever had focus (a row, or the message being typed) where it was.
     const active = document.activeElement;
     const keep = active && list.contains(active) ? { key: active.closest("[data-key]")?.dataset.key, role: active.dataset.role } : null;
-    live = [];
     const recent = el("details", "s-recent");
     recent.open = recentOpen;
     recent.addEventListener("toggle", () => (recentOpen = recent.open));
     recent.append(el("summary", "", `Recent (${view.recent.length})`), section("Recent sessions", view.recent, "Nothing else in the last day."));
     list.replaceChildren(el("h2", "s-h", "Open"), section("Open sessions", view.open, "No sessions open right now."), recent);
     if (keep?.key && keep.role) focusKey(keep.key, keep.role);
-    drawGlyphs(performance.now(), true);
   }
-
-  function drawGlyphs(now, force = false) {
-    for (const r of live) {
-      const every = TICK[r.row.state.phase] ?? 0;
-      if (!force && (!every || reduced.matches || now - r.last < every)) continue;
-      if (!force) r.tick++;
-      r.last = now;
-      r.glyphs.innerHTML = frame(r.row.state, r.tick).map((g) => svg(g.name, g.dim ? "dim" : "")).join("");
-    }
-  }
-  const loop = (now) => {
-    if (!reduced.matches) drawGlyphs(now);
-    requestAnimationFrame(loop);
-  };
-  requestAnimationFrame(loop);
 
   /** Says what changed, politely and only on a change (not every refresh). */
   function announceChanges(view, note) {

@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en-NZ">
+<head>
+  <meta charset="utf-8">
+  <title>Astra · Sessions panel glyphs</title>
+  <link rel="stylesheet" href="../panel.css">
+  <link rel="stylesheet" href="../work.css">
+  <link rel="stylesheet" href="../glyph.css">
+  <link rel="stylesheet" href="preview.css">
+</head>
+<body>
+  <main>
+    <h1>Sessions panel: status and mode glyphs</h1>
+    <p class="lede">Same gold line art as the coffee-mode water clock. Every glyph sits beside its meaning in text; only a working session moves (the sun's rays turn), and it stays still with reduce motion on.</p>
+
+    <section aria-labelledby="legend-h">
+      <h2 id="legend-h">The glyphs</h2>
+      <ul class="legend" id="legend"></ul>
+    </section>
+
+    <section class="context" aria-labelledby="panel-h">
+      <h2 id="panel-h">In the panel (the real panel code, sample sessions)</h2>
+      <div class="panel-sample">
+        <p class="sample-meta"><span id="meta"></span> · <span id="stamp"></span></p>
+        <div id="list" class="work-body sessions"></div>
+        <p id="announce" class="visually-hidden" role="status" aria-live="polite"></p>
+      </div>
+    </section>
+  </main>
+  <script src="../glyphs.js"></script>
+  <script src="session-glyphs.js"></script>
+  <script src="../sessions.js"></script>
+</body>
+</html>

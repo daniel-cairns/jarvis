@@ -21,7 +21,12 @@ export type SessionSummary = {
   /** The last thing a person (or Astra) asked it: a real prompt, not tool results or system injections. */
   lastPrompt: string;
   costUsd?: number;
+  /** Claude Code's permission mode at its latest prompt (auto, plan, acceptEdits, default…); absent when not recorded. */
+  permissionMode?: string;
 };
+
+/** The permission modes Claude Code records; anything else is ignored rather than shown. */
+const MODES = new Set(["auto", "plan", "acceptEdits", "default", "bypassPermissions", "dontAsk"]);
 
 /**
  * A session's status, corrected by Astra's own background runs, which she knows better than the transcript does:
@@ -126,6 +131,9 @@ export function summarise(id: string, head: Entry[], tail: Entry[], mtime: Date,
   const midTurn = last?.type === "user" || (last?.type === "assistant" && stopReason !== "end_turn");
   const status: SessionStatus = recent && midTurn ? "working" : stopReason === "end_turn" && now - mtime.getTime() < 6 * 3600_000 ? "waiting" : "idle";
   const cost = lastOf("cost-state")?.totalCostUSD;
+  // Claude Code writes the mode on each prompt record (verified in the JSONL), so the newest one is the current mode.
+  const hasMode = (e: Entry) => typeof e.permissionMode === "string" && MODES.has(e.permissionMode);
+  const permissionMode = ([...tail].reverse().find(hasMode) ?? [...head].reverse().find(hasMode))?.permissionMode as string | undefined;
   return {
     id,
     title: title.trim() || "Untitled session",
@@ -137,6 +145,7 @@ export function summarise(id: string, head: Entry[], tail: Entry[], mtime: Date,
     lastReply: textOf((lastAssistant?.message as { content?: unknown } | undefined)?.content).trim(),
     lastPrompt,
     ...(typeof cost === "number" ? { costUsd: Math.round(cost * 100) / 100 } : {}),
+    ...(permissionMode ? { permissionMode } : {}),
   };
 }
 

@@ -13,6 +13,17 @@ const assistant = (text: string, stop: string) => ({ type: "assistant", message:
 
 describe("summarise", () => {
   const head = [{ type: "user", cwd: "/w/gymclaw", entrypoint: "claude-desktop", message: { content: "fix the login" } }];
+  it("reads the permission mode from the newest prompt that records one, and nothing when none does", () => {
+    const prompts = [
+      { type: "user", permissionMode: "default", message: { content: "plan it" } },
+      { type: "user", permissionMode: "plan", message: { content: "now do it" } },
+      assistant("Here's the plan.", "end_turn"),
+    ];
+    expect(summarise(ID(1), head, prompts, new Date()).permissionMode).toBe("plan");
+    expect(summarise(ID(1), head, [assistant("Hi.", "end_turn")], new Date()).permissionMode).toBeUndefined();
+    // Not a mode Claude Code writes: shown as nothing rather than guessed at.
+    expect(summarise(ID(1), head, [{ type: "user", permissionMode: "yolo", message: { content: "x" } }], new Date()).permissionMode).toBeUndefined();
+  });
   it("reads title, project, latest reply and status", () => {
     const tail = [{ type: "custom-title", customTitle: "Login fixes" }, assistant("Done: tests pass.", "end_turn")];
     const s = summarise(ID(1), head, tail, new Date(Date.now() - 60_000));

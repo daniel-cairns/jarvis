@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { SessionSummary } from "../src/tools/sessions.js";
-import { buildSessionsView, isShowSessions, messageRule, phaseFor, whereLabel, type RunView } from "../src/ui/sessionsPanel.js";
+import { buildSessionsView, isShowSessions, messageRule, modeFor, phaseFor, whereLabel, type RunView } from "../src/ui/sessionsPanel.js";
 import { isStopCommand, localCommand } from "../src/ui/control.js";
 import { parseFromOrb } from "../src/ui/orb.js";
 
@@ -28,9 +28,42 @@ const run = (id: string, status: RunView["status"], extra: Partial<RunView> = {}
 });
 
 describe("sessions panel rows", () => {
-  it("sorts waiting on Dan first, then working, then idle", () => {
-    const { open } = buildSessionsView([session("a", "idle", 5), session("b", "working", 1), session("c", "waiting", 20)], [], NOW);
-    expect(open.map((r) => r.status)).toEqual(["waiting", "working", "idle"]);
+  it("puts active sessions and running runs first, then waiting on Dan, then idle, newest first in each", () => {
+    const { open } = buildSessionsView(
+      [session("a", "idle", 5), session("b", "working", 3), session("c", "waiting", 20), session("d", "waiting", 2)],
+      [run("s1", "running")],
+      NOW,
+    );
+    expect(open.map((r) => r.run ?? r.ref)).toEqual(["b", "s1", "d", "c", "a"]);
+  });
+
+  it("keeps rows where they were on a refresh, so nothing jumps while Dan reads", () => {
+    const first = buildSessionsView([session("x", "working", 9), session("y", "working", 1)], [], NOW);
+    expect(first.open.map((r) => r.ref)).toEqual(["y", "x"]);
+    // x becomes the most recent, but stays put; a newcomer goes to the top of its group.
+    const order = first.open.map((r) => r.key);
+    const again = buildSessionsView([session("x", "working", 0), session("y", "working", 1), session("z", "working", 5)], [], NOW, new Map(), order);
+    expect(again.open.map((r) => r.ref)).toEqual(["z", "y", "x"]);
+    // Changing group still moves a row.
+    const moved = buildSessionsView([session("x", "working", 0), session("y", "waiting", 1)], [], NOW, new Map(), order);
+    expect(moved.open.map((r) => r.ref)).toEqual(["x", "y"]);
+  });
+
+  it("shows each session's mode, a run's starting mode, and nothing when it isn't known", () => {
+    const view = buildSessionsView(
+      [session("a", "working", 1, { permissionMode: "acceptEdits" }), session("b", "idle", 1)],
+      [run("s1", "running", { permissionMode: "auto" })],
+      NOW,
+    );
+    const byRef = Object.fromEntries(view.open.map((r) => [r.run ?? r.ref, r.mode]));
+    expect(byRef).toEqual({ a: { key: "acceptEdits", label: "Accept edits" }, s1: { key: "auto", label: "Auto" }, b: undefined });
+    expect(modeFor("default")).toEqual({ key: "default", label: "Ask" });
+    expect(modeFor("nonsense")).toBeUndefined();
+  });
+
+  it("marks Astra's background runs apart from Dan's own sessions", () => {
+    const view = buildSessionsView([session("a", "waiting", 1)], [run("s1", "running")], NOW);
+    expect(view.open.map((r) => [r.run ?? r.ref, r.astra])).toEqual([["s1", true], ["a", false]]);
   });
 
   it("moves sessions idle for over half an hour to Recent, and drops them after a day", () => {
