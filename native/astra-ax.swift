@@ -104,7 +104,39 @@ func describe(_ el: AXUIElement) -> [String: Any] {
 
 func appElement(_ pid: pid_t?) -> (AXUIElement, pid_t) {
   let p = pid ?? NSWorkspace.shared.frontmostApplication?.processIdentifier ?? 0
-  return (AXUIElementCreateApplication(p), p)
+  let app = AXUIElementCreateApplication(p)
+  exposeChromiumTree(app)
+  return (app, p)
+}
+
+/// Electron and Chromium apps (the Claude app, VS Code, Slack…) only build their accessibility tree for screen
+/// readers; to everyone else it's a few empty AXGroups. Setting AXManualAccessibility on the app asks for the full
+/// tree. (AXEnhancedUserInterface does too, but it's known to break window animations and positioning.)
+/// The flag always reads back as false, so it can't say whether it's already on: it's set on every read (cheap and
+/// harmless; native apps don't have it and refuse) and the wait happens only while the window's tree is still
+/// sparse. Chromium keeps the tree for the life of the process, so in effect only an app's first read waits.
+/// Measured on the Claude app: 14 elements before, 1,204 a few seconds after.
+let manualAccessibility = "AXManualAccessibility" as CFString
+
+func exposeChromiumTree(_ app: AXUIElement) {
+  guard AXUIElementSetAttributeValue(app, manualAccessibility, kCFBooleanTrue) == .success else { return }
+  let deadline = Date().addingTimeInterval(5)
+  repeat {
+    guard let w = attr(app, kAXFocusedWindowAttribute) ?? attr(app, kAXMainWindowAttribute) else { return }
+    if countNodes(w as! AXUIElement, limit: 40) >= 40 { return }
+    usleep(150_000)
+  } while Date() < deadline
+}
+
+/// Counts elements under `el`, stopping at `limit`.
+func countNodes(_ el: AXUIElement, limit: Int) -> Int {
+  var n = 0
+  var queue = [el]
+  while let next = queue.popLast(), n < limit {
+    n += 1
+    queue.append(contentsOf: children(next))
+  }
+  return n
 }
 
 /** The root a ref's path starts from: the app's focused window ("w") or the app itself ("a"). */
@@ -297,8 +329,18 @@ case "focus":
   guard let ref = input["ref"] as? String else { fail("focus needs ref") }
   let el = resolve(ref)
   if isSecure(el) { fail("that's a password field; Astra doesn't touch those", code: "secure_field") }
+  // Typing goes to the frontmost app, so bring the element's app and window forward first; focusing inside an app
+  // that's in the background moved its focus but sent the keystrokes elsewhere (to the orb, in testing).
+  NSRunningApplication(processIdentifier: pidOf(el))?.activate()
+  if let window = attr(el, kAXWindowAttribute) { AXUIElementPerformAction(window as! AXUIElement, kAXRaiseAction as CFString) }
+  usleep(250_000)
   AXUIElementSetAttributeValue(el, kAXFocusedAttribute as CFString, kCFBooleanTrue)
-  emit(["focused": ref])
+  usleep(100_000)
+  // Chromium sometimes ignores the AX focus request; a click in the middle of the element focuses it reliably.
+  if (attr(el, kAXFocusedAttribute) as? Bool) != true, let f = frame(el) {
+    click(x: f["x"]! + f["w"]! / 2, y: f["y"]! + f["h"]! / 2, count: 1, right: false)
+  }
+  emit(["focused": ref, "app": NSRunningApplication(processIdentifier: pidOf(el))?.localizedName ?? "?"])
 
 case "click":
   guard let x = num("x"), let y = num("y") else { fail("click needs x and y") }
