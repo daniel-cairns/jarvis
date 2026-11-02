@@ -99,9 +99,11 @@ Website teardowns only need Google Chrome.
 
 ## Run it
 
-Without typing a command: run `sh scripts/make-app.sh` once to build `Astra.app` in this folder, then double-click it
-(or drag it to your Dock). It opens a Terminal window that starts her, or tells you she's already running. To
-restart her, use **Restart Astra** in her menu-bar menu or say "Astra, restart".
+Without typing a command: run `sh scripts/make-app.sh` once to build `Astra.app` in this folder (it also refreshes
+`/Applications/Astra.app` if you've copied it there), then open it like any app. She starts in the background, with
+no Terminal window, just her orb and menu-bar icon; her output goes to `~/.jarvis/logs/astra.log`. If she's already
+running you get a notification instead. The first time, macOS asks to let Astra use the microphone: allow it, or she
+hears nothing. To restart her, use **Restart Astra** in her menu-bar menu or say "Astra, restart".
 
 ```bash
 npm start            # voice: press Enter to talk, Enter again to send

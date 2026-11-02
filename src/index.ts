@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { readdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import readline from "node:readline";
+import { PassThrough } from "node:stream";
 import { setTimeout as sleep } from "node:timers/promises";
 import { activityGlyph, describeActivity, transferKind, type Transfer } from "./activity.js";
 import { Jarvis, type Approval } from "./agent.js";
@@ -176,7 +177,10 @@ async function main(): Promise<void> {
   const listener = new Listener(listenCfg);
   const wakeListener = new Listener(listenCfg);
   let wakeOn = cfg.wakeWord;
-  const rl = readline.createInterface({ input: process.stdin, output: process.stdout, terminal: true });
+  // Started from Astra.app there's no Terminal: stdin is empty and would end at once, quitting her main loop. Then
+  // she reads from a stream that never ends instead, and typing comes in through the orb's type box.
+  const interactive = process.stdin.isTTY === true;
+  const rl = readline.createInterface({ input: interactive ? process.stdin : new PassThrough(), output: process.stdout, terminal: interactive });
   const lines = new LineReader(rl);
   let asking = false;
   let currentAsk: AbortController | null = null;
