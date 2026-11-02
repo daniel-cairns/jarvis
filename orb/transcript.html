@@ -17,9 +17,9 @@
       <svg class="face-icon" viewBox="0 0 34 34" aria-hidden="true"><path d="M8 9h18M8 15h18M8 21h12M8 27h8"/></svg>
       <div class="heading">
         <h1 id="title">Transcript</h1>
-        <p class="meta" aria-hidden="true" id="meta">RUN | IDLE</p>
+        <!-- The status line is the panel's only fold control (slab.js); there's no separate fold button. -->
+        <button id="collapse" class="meta fold-line" type="button" aria-expanded="true" aria-controls="log" title="Collapse"><span class="visually-hidden">Transcript status: </span><span id="meta">RUN | IDLE</span></button>
       </div>
-      <button id="collapse" type="button" aria-expanded="true" aria-label="Collapse or expand this panel" title="Collapse">▾</button>
       <button id="close" type="button" aria-label="Close transcript (Esc)" title="Close (Esc)">×</button>
     </header>
     <div class="rail rail--bot" aria-hidden="true"></div>

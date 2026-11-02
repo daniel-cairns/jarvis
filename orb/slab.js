@@ -1,4 +1,4 @@
-// Shared chrome for the work panels (terminal, git): drag by the faceplate, close, and collapse to the header.
+// Shared chrome for the work panels (terminal, git, transcript): drag by the faceplate, close, and fold to the header.
 // Each page's own script reads window.slab.bridge and window.slab.onMessage.
 (() => {
   const bridge = window.jarvis ?? { onMessage() {}, send() {} };
@@ -11,7 +11,8 @@
   function setCollapsed(collapsed) {
     slab.classList.toggle("collapsed", collapsed);
     collapse.setAttribute("aria-expanded", String(!collapsed));
-    collapse.textContent = collapsed ? "▸" : "▾";
+    // A status line that doubles as the toggle (transcript) keeps its text; the round fold button shows an arrow.
+    if (!collapse.classList.contains("fold-line")) collapse.textContent = collapsed ? "▸" : "▾";
     collapse.title = collapsed ? "Expand" : "Collapse";
     const header = document.querySelector(".shelf").getBoundingClientRect().bottom;
     bridge.send({ type: "slab-collapse", collapsed, height: Math.ceil(header + 10) });

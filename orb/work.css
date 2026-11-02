@@ -14,6 +14,29 @@
   cursor: pointer;
 }
 #collapse:focus-visible { outline: 2px solid var(--reactor); outline-offset: 2px; }
+/* The transcript's status line is its fold toggle: it keeps the faceplate's .meta look, with a hover cue. */
+#collapse.fold-line {
+  display: block;
+  width: auto;
+  max-width: 100%;
+  height: auto;
+  padding: 1px 4px;
+  margin-left: -4px;
+  border-radius: 3px;
+  background: none;
+  box-shadow: none;
+  text-align: left;
+  color: #6f8aa4;
+  font: 9.5px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace;
+  transition: color 0.15s, background-color 0.15s;
+}
+/* A small arrow, shown on hover or focus and while folded; empty alt text so screen readers skip it. */
+#collapse.fold-line::after { content: " \25BE" / ""; opacity: 0; transition: opacity 0.15s; }
+.slab.collapsed #collapse.fold-line::after { content: " \25B8" / ""; opacity: 0.6; }
+#collapse.fold-line:hover, #collapse.fold-line:focus-visible { color: var(--gold); background: rgba(255, 255, 255, 0.06); }
+#collapse.fold-line:hover::after, #collapse.fold-line:focus-visible::after { opacity: 0.8; }
+#collapse.fold-line:focus-visible { outline-offset: 0; }
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .slab.collapsed .work-body, .slab.collapsed footer { display: none; }
 
 .work-body {
