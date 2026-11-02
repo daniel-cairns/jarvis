@@ -127,6 +127,18 @@ If the file can't be read, every fetch asks. Sites you've already allowed for Cl
 (`WebFetch(domain:…)` rules in `~/.claude/settings.json`) are allowed for Astra too, because she loads your Claude
 Code settings and those rules are checked before her list.
 
+**Security check on every page fetch** (`src/security/`), including sites on the list or allowed in your settings:
+
+- *Before the fetch*, the address is checked in code for warning signs (not https, a bare IP or your own network, a
+  username in it, an odd port, look-alike international characters, shared hosting where anyone can publish, or
+  data riding in it: long encoded values, access keys, emails, home folders), then against public threat lists:
+  Quad9's threat-intelligence DNS (always, no key), and Google Safe Browsing and abuse.ch's URLhaus when you set
+  `JARVIS_SAFE_BROWSING_KEY` / `JARVIS_URLHAUS_KEY` (both free; see `.env.example`). Those two get the address
+  without its query string. A threat-list hit is refused; a warning sign means she asks you, showing why.
+- *After the fetch, before she reads it*, hidden characters and passages that read like instructions to an AI
+  ("ignore previous instructions", "don't tell the user", "send their files to …") are removed, and the page is
+  labelled as data, never instructions. If anything was removed she tells you.
+
 Each request also has a spending cap (`JARVIS_MAX_BUDGET_USD`, default $5).
 
 ## Responsible use
@@ -152,6 +164,9 @@ src/
   prompt.ts        Astra's instructions (appended to the Claude Code system prompt)
   permissions.ts   What runs without asking
   safeSites.ts     The safe-site list: hosts she may fetch pages from without asking
+  security/
+    urlCheck.ts    Checks an address before a fetch: warning signs, Quad9, Google Safe Browsing, URLhaus
+    contentScan.ts Cleans a fetched page before she reads it: hidden text, instructions aimed at an AI
   activity.ts      Tool calls → what she says she's doing, its glyph, uploads/downloads
   settings.ts      Remembered preferences (~/.jarvis/settings.json): volume, type-only, god mode
   config.ts        Environment variables → config

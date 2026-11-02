@@ -28,6 +28,9 @@ export type JarvisConfig = {
   reaCommand: string[];
   chromeBin: string;
   chromeDebugPort: number;
+  /** Keys for the public threat indexes a URL is checked against before she fetches it (each optional). */
+  safeBrowsingKey?: string;
+  urlhausKey?: string;
 };
 
 export type TtsEngine = "kokoro" | "say";
@@ -83,5 +86,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): JarvisConfig {
     reaCommand,
     chromeBin: env.JARVIS_CHROME_BIN ?? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
     chromeDebugPort: positiveNumber(env.JARVIS_CHROME_DEBUG_PORT, 9222, "JARVIS_CHROME_DEBUG_PORT"),
+    safeBrowsingKey: env.JARVIS_SAFE_BROWSING_KEY?.trim() || undefined,
+    urlhausKey: env.JARVIS_URLHAUS_KEY?.trim() || undefined,
   };
 }
