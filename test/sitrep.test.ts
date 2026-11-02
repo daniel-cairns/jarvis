@@ -13,6 +13,7 @@ const session = (id: string, title: string, status: SessionSummary["status"], mi
   lastActivity: at(minsAgo),
   source: "claude-desktop",
   lastReply,
+  lastPrompt: "",
 });
 
 describe("sitrep", () => {

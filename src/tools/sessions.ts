@@ -18,8 +18,33 @@ export type SessionSummary = {
   lastActivity: string;
   source: string;
   lastReply: string;
+  /** The last thing a person (or Astra) asked it: a real prompt, not tool results or system injections. */
+  lastPrompt: string;
   costUsd?: number;
 };
+
+/**
+ * A session's status, corrected by Astra's own background runs, which she knows better than the transcript does:
+ * a run still going is "working" even through a long quiet step, and once her run has ended (finished, failed, or
+ * stopped by her) it's never "working", even though a stopped run leaves the transcript looking mid-turn.
+ * Sessions she isn't running keep the transcript's reading, where "working" lapses after ACTIVE_MS without a write
+ * (which also covers a run killed or crashed elsewhere).
+ */
+export function liveStatus(s: SessionSummary, runs: readonly { sessionId?: string; status: string }[]): SessionStatus {
+  const run = runs.filter((r) => r.sessionId === s.id).at(-1);
+  if (!run) return s.status;
+  if (run.status === "running") return "working";
+  return s.status === "working" ? "idle" : s.status;
+}
+
+/** Whether a user entry is a real prompt: text someone typed, not a tool result, a meta entry or an injected tag. */
+function isPrompt(e: Entry): boolean {
+  if (e.type !== "user" || e.isMeta === true) return false;
+  const content = (e.message as { content?: unknown } | undefined)?.content;
+  if (Array.isArray(content) && content.some((c) => (c as { type?: string })?.type === "tool_result")) return false;
+  const text = textOf(content).trim();
+  return text !== "" && !/^<(?:system-reminder|command-|local-command|bash-|user-memory|task-notification)/.test(text);
+}
 
 export const SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const HEAD_BYTES = 64 * 1024;
@@ -91,6 +116,10 @@ export function summarise(id: string, head: Entry[], tail: Entry[], mtime: Date,
   const source = (all.find((e) => typeof e.entrypoint === "string")?.entrypoint as string | undefined) ?? "unknown";
   const turns = tail.filter((e) => e.type === "assistant" || e.type === "user");
   const last = turns.at(-1);
+  const prompt = [...tail].reverse().find(isPrompt) ?? [...head].reverse().find(isPrompt);
+  const lastPrompt =
+    textOf((prompt?.message as { content?: unknown } | undefined)?.content).trim() ||
+    ((lastOf("last-prompt")?.lastPrompt as string | undefined) ?? "").trim();
   const lastAssistant = [...tail].reverse().find((e) => e.type === "assistant" && textOf((e.message as { content?: unknown })?.content).trim());
   const stopReason = (([...tail].reverse().find((e) => e.type === "assistant")?.message ?? {}) as { stop_reason?: string }).stop_reason;
   const recent = now - mtime.getTime() < ACTIVE_MS;
@@ -106,6 +135,7 @@ export function summarise(id: string, head: Entry[], tail: Entry[], mtime: Date,
     lastActivity: mtime.toISOString(),
     source,
     lastReply: textOf((lastAssistant?.message as { content?: unknown } | undefined)?.content).trim(),
+    lastPrompt,
     ...(typeof cost === "number" ? { costUsd: Math.round(cost * 100) / 100 } : {}),
   };
 }

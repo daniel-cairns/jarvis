@@ -16,7 +16,7 @@ import { fileDiff, gitRoot, repoState, type RepoState } from "./tools/git.js";
 import { WorkLog, type ToolEvent } from "./ui/worklog.js";
 import { SessionRunner, type Job } from "./tools/runner.js";
 import type { SessionTools, WindowTools } from "./tools/server.js";
-import { appLinks, findSession, listSessions, resolveProject, type SessionSummary } from "./tools/sessions.js";
+import { appLinks, findSession, listSessions, liveStatus, resolveProject, type SessionSummary } from "./tools/sessions.js";
 import { newlyWaiting, sitrep } from "./tools/sitrep.js";
 import { z } from "zod";
 import { stopServing } from "./tools/serve.js";
@@ -924,6 +924,10 @@ async function main(): Promise<void> {
     },
   });
 
+  /** A session with its status corrected by her own runs (see liveStatus). */
+  const live = (s: SessionSummary): SessionSummary => ({ ...s, status: liveStatus(s, sessionRunner.list()) });
+  const liveSessions = async (opts: Parameters<typeof listSessions>[0]) => (await listSessions(opts)).map(live);
+
   const knownFolders = async () => [...new Set((await listSessions({ limit: 200 })).map((s) => s.folder))];
 
   /** A session by id, title or project, or one of the background runs ("s1"). */
@@ -940,6 +944,7 @@ async function main(): Promise<void> {
           lastActivity: job.startedAt,
           source: "sdk-ts",
           lastReply: job.lastText,
+          lastPrompt: job.prompt,
         }
       );
     }
@@ -951,7 +956,7 @@ async function main(): Promise<void> {
   /** The sit rep: every recent session and background run, on screen; returns the short spoken version. */
   const showSitrep = async (): Promise<string> => {
     const runs = sessionRunner.list().map((j) => ({ handle: j.id, label: j.label, status: j.status, latest: j.lastText }));
-    const report = sitrep(await listSessions({ limit: 30, exclude: [cfg.workspaceDir] }), runs);
+    const report = sitrep(await liveSessions({ limit: 30, exclude: [cfg.workspaceDir] }), runs);
     if (orb?.alive) showPanel({ type: "detail", title: "Sit rep", html: renderDetail(report.markdown) });
     else console.log(`\n${report.markdown}\n`);
     return report.spoken;
@@ -961,7 +966,7 @@ async function main(): Promise<void> {
   const seen = new Map<string, SessionSummary["status"]>();
   let godTimer: NodeJS.Timeout | null = null;
   const watchSessions = async () => {
-    const now = await listSessions({ limit: 30, exclude: [cfg.workspaceDir] }).catch(() => [] as SessionSummary[]);
+    const now = await liveSessions({ limit: 30, exclude: [cfg.workspaceDir] }).catch(() => [] as SessionSummary[]);
     const first = seen.size === 0;
     const finished = first ? [] : newlyWaiting(seen, now);
     seen.clear();
@@ -995,7 +1000,7 @@ async function main(): Promise<void> {
 
   const sessions: SessionTools = {
     list: async (project, includeAstra) => ({
-      sessions: (await listSessions({ limit: 12, project, exclude: includeAstra ? [] : [cfg.workspaceDir] })).map((s) => ({
+      sessions: (await liveSessions({ limit: 12, project, exclude: includeAstra ? [] : [cfg.workspaceDir] })).map((s) => ({
         id: s.id,
         title: s.title,
         project: s.project,
@@ -1013,13 +1018,19 @@ async function main(): Promise<void> {
       })),
     }),
     read: async (ref) => {
-      const s = await sessionRef(ref);
-      return { title: s.title, project: s.project, status: s.status, lastActivity: s.lastActivity, lastReply: s.lastReply.slice(0, 6000) };
+      const s = live(await sessionRef(ref));
+      return {
+        title: s.title,
+        project: s.project,
+        status: s.status,
+        lastActivity: s.lastActivity,
+        lastPrompt: s.lastPrompt.slice(0, 6000),
+        lastReply: s.lastReply.slice(0, 6000),
+      };
     },
     send: async (ref, prompt) => {
-      const s = await sessionRef(ref);
-      const mine = sessionRunner.list().find((j) => j.sessionId === s.id && j.status === "running");
-      if (s.status === "working" || mine) throw new Error(`"${s.title}" is working right now; I only send to a session when it's idle.`);
+      const s = live(await sessionRef(ref));
+      if (s.status === "working") throw new Error(`"${s.title}" is working right now; I only send to a session when it's idle.`);
       const job = sessionRunner.send(s.id, s.folder || cfg.workspaceDir, prompt, s.project);
       startTranscript(job);
       return `Sent to "${s.title}" (${s.project}) as background run ${job.id}. You'll hear when it's done, and its approvals will come to you.`;
