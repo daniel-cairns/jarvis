@@ -4,6 +4,7 @@
   "description": "A local voice assistant for macOS, built on the Claude Agent SDK, with REA for reverse-engineering teardowns.",
   "scripts": {
     "start": "sh scripts/astra.sh",
+    "build:ax": "mkdir -p ${JARVIS_HOME:-$HOME/.jarvis}/bin && swiftc -O -swift-version 5 native/astra-ax.swift -o ${JARVIS_HOME:-$HOME/.jarvis}/bin/astra-ax",
     "text": "tsx src/index.ts --text",
     "pretext": "npm run -s build:orb",
     "build:orb": "esbuild orb/graph/graph-src.js --bundle --format=iife --minify --outfile=orb/build/graph.js --log-level=warning",

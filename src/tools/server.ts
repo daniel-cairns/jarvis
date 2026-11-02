@@ -7,6 +7,7 @@ import { serveApp } from "./serve.js";
 import { checkGraph, graphShape, type TeardownGraph } from "../ui/graph.js";
 import type { QuestionAnswer, QuestionSpec } from "../voice/answers.js";
 import { POSITIONS, UI_ACTIONS, type Position, type UiAction } from "../ui/control.js";
+import type { ComputerControl } from "../control/computer.js";
 
 export const SERVER_NAME = "jarvis";
 
@@ -39,6 +40,7 @@ export type ServerHooks = {
   uiControl?: UiControl;
   sessions?: SessionTools;
   windows?: WindowTools;
+  computer?: ComputerControl;
 };
 
 /** Bringing back windows she showed recently; see src/index.ts. */
@@ -217,6 +219,7 @@ export function createJarvisServer(cfg: JarvisConfig, runner: Runner = realRunne
             return `Serving at ${url} and opened it in the browser.`;
           }),
       ),
+      ...(hooks.computer ? computerTools(hooks.computer) : []),
       tool(
         "launch_clean_browser",
         "Start a fresh Chrome profile on a DevTools port and load a URL, so REA's browser tools can observe it. Returns the cdp_endpoint to pass to REA's browser tools.",
@@ -226,4 +229,56 @@ export function createJarvisServer(cfg: JarvisConfig, runner: Runner = realRunne
       ),
     ],
   });
+}
+
+/**
+ * Operating Mac apps (src/control/): read the Accessibility tree first, act on what it returns by ref, and fall
+ * back to screenshots and coordinates only when the tree doesn't show what's needed.
+ */
+function computerTools(computer: ComputerControl) {
+  const point = { x: z.number(), y: z.number() };
+  return [
+    tool("computer_permissions", "Check that Astra may control the Mac (Accessibility) and see the screen (Screen Recording). If either is missing, opens the right System Settings pane and says what Dan needs to turn on.", {}, () =>
+      guarded(async () => (await computer.permissions("both", true)).message),
+    ),
+    tool("computer_windows", "List on-screen windows: app, pid, windowId, title, frame.", {}, () => guarded(() => computer.windows())),
+    tool(
+      "computer_read_ui",
+      "Read an app's UI as an Accessibility tree (roles, titles, labels, values, frames, actions), each element with a ref to act on. Defaults to the frontmost app's focused window. Prefer this to screenshots. Password fields show as secure, without their value.",
+      { app: z.string().optional(), scope: z.enum(["window", "app"]).optional(), depth: z.number().int().min(1).max(40).optional(), max: z.number().int().min(10).max(2000).optional() },
+      (a) => guarded(() => computer.readUi(a)),
+    ),
+    tool(
+      "computer_screenshot",
+      "Screenshot the whole screen, a region (points), or one window (windowId from computer_windows). Use when the UI tree doesn't show what you need.",
+      { x: z.number().optional(), y: z.number().optional(), width: z.number().optional(), height: z.number().optional(), windowId: z.number().int().optional() },
+      async (a) => {
+        try {
+          const region = a.x !== undefined && a.y !== undefined && a.width && a.height ? { x: a.x, y: a.y, width: a.width, height: a.height } : undefined;
+          const shot = await computer.screenshot({ region, windowId: a.windowId });
+          if (typeof shot === "string") return ok(shot);
+          return { content: [{ type: "image" as const, data: shot.png.toString("base64"), mimeType: "image/png" }] };
+        } catch (err) {
+          return { content: [{ type: "text" as const, text: `Error: ${(err as Error).message}` }], isError: true };
+        }
+      },
+    ),
+    tool("computer_press", "Press (click) an element by its ref from computer_read_ui. Asks Dan first if it looks like it sends, buys, deletes or submits.", { ref: z.string() }, (a) =>
+      guarded(() => computer.press(a.ref)),
+    ),
+    tool("computer_click", "Click at screen coordinates (points, top-left origin). count 2 for a double-click; right for a right-click. Prefer computer_press with a ref.", { ...point, count: z.number().int().min(1).max(3).optional(), right: z.boolean().optional() }, (a) =>
+      guarded(() => computer.click(a.x, a.y, a.count, a.right)),
+    ),
+    tool("computer_focus", "Move keyboard focus to an element by its ref (e.g. a text field before typing).", { ref: z.string() }, (a) => guarded(() => computer.focus(a.ref))),
+    tool("computer_type", "Type text into the focused element. Never works in password fields. A newline presses Return.", { text: z.string().min(1).max(5000) }, (a) =>
+      guarded(() => computer.type(a.text)),
+    ),
+    tool("computer_key", 'Press a key or combo, e.g. "cmd+a", "cmd+b", "return", "shift+tab", "escape", "down".', { combo: z.string().min(1) }, (a) =>
+      guarded(() => computer.key(a.combo)),
+    ),
+    tool("computer_scroll", "Scroll by lines: negative dy scrolls down. Optionally at a point.", { dy: z.number().int(), dx: z.number().int().optional(), x: z.number().optional(), y: z.number().optional() }, (a) =>
+      guarded(() => computer.scroll(a.dy, a.dx, a.x !== undefined && a.y !== undefined ? { x: a.x, y: a.y } : undefined)),
+    ),
+    tool("computer_open_app", "Open an app (launching it if needed) and bring it to the front.", { name: z.string().min(1) }, (a) => guarded(() => computer.openApp(a.name))),
+  ];
 }

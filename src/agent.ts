@@ -11,6 +11,7 @@ import { loadSafeSites } from "./safeSites.js";
 import { createFetchGuard, type FetchGuard } from "./security/fetchGuard.js";
 import { jarvisInstructions } from "./prompt.js";
 import { sessionEnv } from "./tools/runner.js";
+import type { ComputerControl } from "./control/computer.js";
 import { createJarvisServer, SERVER_NAME, type SessionTools, type WindowTools } from "./tools/server.js";
 import type { Position, UiAction } from "./ui/control.js";
 import { toolEvents, type ToolEvent } from "./ui/worklog.js";
@@ -27,6 +28,7 @@ export type JarvisIO = {
   /** Working the user's other Claude Code sessions. */
   sessions?: SessionTools;
   windows?: WindowTools;
+  computer?: ComputerControl;
   /** Each tool call and its result, for the terminal and git panels. */
   toolEvent?(e: ToolEvent): void;
   /** Works Astra's own interface (panels, minimise, stop); returns what happened. */
@@ -116,6 +118,7 @@ export class Jarvis {
           uiControl: this.io.ui?.bind(this.io),
           sessions: this.io.sessions,
           windows: this.io.windows,
+          computer: this.io.computer,
         }),
         rea: { type: "stdio", command: reaCmd!, args: reaArgs },
       },

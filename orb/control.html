@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'">
+  <title>Astra is controlling your Mac</title>
+  <style>
+    /* Shown over the whole screen while Astra operates apps: a glowing edge and a label. Clicks pass through. */
+    html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; }
+    .edge { position: fixed; inset: 0; border: 3px solid rgba(255, 176, 64, 0.9); box-shadow: inset 0 0 28px rgba(255, 150, 40, 0.55); animation: pulse 1.6s ease-in-out infinite; }
+    .label { position: fixed; top: 10px; left: 50%; transform: translateX(-50%); padding: 6px 14px; border-radius: 999px; background: rgba(20, 14, 6, 0.86); color: #ffd28a; font: 600 12.5px/1.2 -apple-system, sans-serif; letter-spacing: 0.02em; box-shadow: 0 0 0 1px rgba(255, 176, 64, 0.6); }
+    @keyframes pulse { 50% { border-color: rgba(255, 176, 64, 0.45); } }
+    @media (prefers-reduced-motion: reduce) { .edge { animation: none; } }
+  </style>
+</head>
+<body>
+  <div class="edge" aria-hidden="true"></div>
+  <p class="label" role="status">Astra is controlling your Mac · say “stop” or press ⌃⌥⎋ to halt</p>
+</body>
+</html>

@@ -11,7 +11,8 @@ import { parseAnswer, type Answer } from "./permissions.js";
 import { renderDetail } from "./ui/detail.js";
 import { checkGraph, graphAsText, graphShape } from "./ui/graph.js";
 import { brainIndex, noteMap, readNote, saveNote } from "./tools/brain.js";
-import { realRunner } from "./tools/mac.js";
+import { openApp, realRunner } from "./tools/mac.js";
+import { ComputerControl, nativeHelper } from "./control/computer.js";
 import { fileDiff, gitRoot, repoState, type RepoState } from "./tools/git.js";
 import { WorkLog, type ToolEvent } from "./ui/worklog.js";
 import { SessionRunner, type Job } from "./tools/runner.js";
@@ -201,9 +202,31 @@ async function main(): Promise<void> {
   // Asked to restart while working or running background sessions: she restarts once all of that has finished.
   let pendingRestart = false;
 
-  /** Stops speech, listening, a pending approval and the request in progress. Returns whether anything was running. */
+  // Operating Mac apps (src/control/): every action logged, risky ones confirmed on a card, all halted by "stop".
+  const computer = new ComputerControl(nativeHelper(path.join(cfg.home, "bin")), {
+    confirm: async (question) => {
+      if (!orb?.alive) return false;
+      const asked = new AbortController();
+      computer.stopper.signal.addEventListener("abort", () => asked.abort(), { once: true });
+      const yes = "Yes, go ahead";
+      const answer = await orb.question({ question, options: [{ label: yes }, { label: "No" }], multiSelect: false, allowOther: false }, asked.signal);
+      return (Array.isArray(answer) ? answer[0] : answer) === yes;
+    },
+    log: (line) => {
+      console.log(`[control] ${line}`);
+      orb?.send({ type: "caption", role: "status", text: line });
+    },
+    indicator: (on) => orb?.send({ type: "control", on }),
+    open: async (target) => {
+      if (/^(x-apple\.systempreferences|https?):/.test(target)) await realRunner.run("open", [target]);
+      else await openApp(target);
+    },
+  });
+
+  /** Stops speech, listening, a pending approval, control of the Mac and the request in progress. Returns whether anything was running. */
   const interrupt = (): boolean => {
     const active = speaking || listening || busy;
+    computer.stop();
     speaker.stop();
     transcribing?.abort();
     currentListen?.abort();
@@ -746,6 +769,7 @@ async function main(): Promise<void> {
     const fresh = jarvis.session;
     jarvis.resumeFrom(pick.id);
     busy = true;
+    computer.resume();
     syncOrb();
     orb?.send({ type: "activity-reset" });
     orb?.send({ type: "activity", text: "Picking up where we left off…", glyph: "water" });
@@ -1138,6 +1162,7 @@ async function main(): Promise<void> {
     say,
     sessions,
     windows: windowTools,
+    computer,
     toolEvent: (e) => onToolEvent("Astra", cfg.workspaceDir, e),
     graph: (title, graph) => {
       if (orb?.alive) {
@@ -1258,6 +1283,7 @@ async function main(): Promise<void> {
     }
 
     busy = true;
+    computer.resume();
     requestCount++;
     syncOrb();
     orb?.send({ type: "activity-reset" });

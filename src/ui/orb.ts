@@ -22,6 +22,8 @@ export type ToOrb =
   | { type: "state"; state: OrbState }
   | { type: "utterance"; text: string; envelope: number[]; frameMs: number }
   | { type: "caption"; role: "jarvis" | "you" | "status"; text: string }
+  /** The "Astra is controlling your Mac" indicator (src/control/computer.ts). */
+  | { type: "control"; on: boolean }
   | { type: "ask"; id: string; spoken: string; detail: string }
   | { type: "answered"; id: string }
   | { type: "detail"; title: string; html: string; follow?: boolean; owner?: "user" }

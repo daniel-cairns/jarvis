@@ -109,6 +109,15 @@ no Terminal window, just her orb and menu-bar icon; her output goes to `~/.jarvi
 running you get a notification instead. The first time, macOS asks to let Astra use the microphone: allow it, or she
 hears nothing. To restart her, use **Restart Astra** in her menu-bar menu or say "Astra, restart".
 
+**Operating Mac apps.** Astra can use any app the way you would (the `computer_*` tools): she reads its Accessibility
+tree, falling back to screenshots, and clicks, types, presses keys and scrolls through a small Swift helper
+(`native/astra-ax.swift`, built into `~/.jarvis/bin` on first use, or with `npm run build:ax`). She never reads or
+types into password fields, asks on a card before anything that sends, buys, deletes, submits or changes system
+settings, logs every action, and shows an orange edge round the screen while she's in control. Say "stop" or press
+Control-Option-Escape to halt her. She needs **Accessibility** and, for screenshots, **Screen Recording** in System
+Settings → Privacy & Security, for Astra (or Terminal, if you start her there); she opens the right pane if either is
+missing.
+
 `Astra.app` has this folder's path baked in. To move the repo, use `scripts/relocate.sh` (it quits her, moves the
 folder, rebuilds both copies of the app, runs the checks and relaunches her; `--dry-run` to preview, `--rollback` to
 undo). Set `RELOCATE_TO` for somewhere other than `~/Workspace/jarvis`.

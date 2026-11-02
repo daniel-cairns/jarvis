@@ -2,7 +2,7 @@
  * Astra's orb: a frameless, transparent, always-on-top window. Astra drives it with JSON lines on stdin and
  * hears back on stdout. Run by Electron as a child of the Astra CLI; quits when Astra closes stdin.
  */
-const { app, BrowserWindow, Menu, Tray, ipcMain, nativeImage, screen, shell } = require("electron");
+const { app, BrowserWindow, Menu, Tray, globalShortcut, ipcMain, nativeImage, screen, shell } = require("electron");
 const path = require("node:path");
 const readline = require("node:readline");
 const { layoutPanels, minFor } = require("./layout.cjs");
@@ -542,6 +542,29 @@ app.whenReady().then(() => {
     if (safe) send(safe);
   });
 
+  // While Astra operates apps: a click-through glow round the screen she's working on, and a hotkey to stop her.
+  let controlWin = null;
+  const controlIndicator = (on) => {
+    if (!on) return void controlWin?.hide();
+    const { bounds } = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
+    if (!controlWin || controlWin.isDestroyed()) {
+      controlWin = new BrowserWindow({
+        ...bounds, frame: false, transparent: true, hasShadow: false, focusable: false, resizable: false, movable: false,
+        skipTaskbar: true, show: false, webPreferences: { sandbox: true, contextIsolation: true },
+      });
+      controlWin.setIgnoreMouseEvents(true);
+      controlWin.setAlwaysOnTop(true, "screen-saver");
+      controlWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+      harden(controlWin);
+      controlWin.loadFile(path.join(__dirname, "control.html"));
+    }
+    controlWin.setBounds(bounds);
+    controlWin.showInactive();
+  };
+  // Control+Option+Escape: stop whatever she's doing, from any app.
+  globalShortcut.register("Control+Alt+Escape", () => send({ type: "stop" }));
+  app.on("will-quit", () => globalShortcut.unregisterAll());
+
   readline
     .createInterface({ input: process.stdin })
     .on("line", (line) => {
@@ -551,8 +574,9 @@ app.whenReady().then(() => {
       } catch {
         return;
       }
+      if (m.type === "control") controlIndicator(!!m.on);
       // Quitting folds her away first (she's gone either way within 1.6 s).
-      if (m.type === "quit") {
+      else if (m.type === "quit") {
         foldingToQuit = true;
         void (win.isVisible() ? transform("close") : Promise.resolve()).then(() => app.quit());
       }
