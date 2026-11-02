@@ -110,7 +110,6 @@ export class Jarvis {
       model: this.cfg.model,
       effort: this.cfg.effort,
       thinking: { type: "adaptive" },
-      maxBudgetUsd: this.cfg.maxBudgetUsd,
       systemPrompt: { type: "preset", preset: "claude_code", append: jarvisInstructions(this.cfg) },
       mcpServers: {
         [SERVER_NAME]: createJarvisServer(this.cfg, undefined, {
@@ -210,7 +209,7 @@ export class Jarvis {
       }
       const why: Record<typeof msg.subtype, string> = {
         error_max_turns: "I hit my step limit for one request.",
-        error_max_budget_usd: `I hit the $${this.cfg.maxBudgetUsd} spending cap for one request.`,
+        error_max_budget_usd: "I hit a spending cap for one request.",
         error_during_execution: "Something went wrong while I was working.",
         error_max_structured_output_retries: "I couldn't produce the structured output.",
       };

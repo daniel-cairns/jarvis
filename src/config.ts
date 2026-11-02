@@ -8,7 +8,6 @@ export type JarvisConfig = {
   workspaceDir: string;
   model: string;
   effort: EffortLevel;
-  maxBudgetUsd: number;
   tts: TtsEngine;
   voice: string;
   sayVoice: string;
@@ -75,7 +74,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): JarvisConfig {
     workspaceDir: expandHome(env.JARVIS_WORKSPACE_DIR ?? path.join(home, "workspace")),
     model: env.JARVIS_MODEL ?? "claude-opus-5-5",
     effort,
-    maxBudgetUsd: positiveNumber(env.JARVIS_MAX_BUDGET_USD, 5, "JARVIS_MAX_BUDGET_USD"),
     tts,
     voice: env.JARVIS_VOICE ?? (tts === "kokoro" ? "bf_emma" : sayVoice),
     sayVoice,

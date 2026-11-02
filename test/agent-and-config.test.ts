@@ -22,7 +22,6 @@ describe("loadConfig", () => {
       "mcp",
     ]);
     expect(() => loadConfig({ JARVIS_EFFORT: "turbo" })).toThrow(/JARVIS_EFFORT/);
-    expect(() => loadConfig({ JARVIS_MAX_BUDGET_USD: "-1" })).toThrow(/positive/);
     expect(() => loadConfig({ JARVIS_REA_COMMAND: "  " })).toThrow(/empty/);
   });
 });
@@ -129,7 +128,7 @@ describe("Jarvis", () => {
     );
     const r = await jarvis.handle("build everything");
     expect(r.ok).toBe(false);
-    expect(said[0]).toContain("$5 spending cap");
+    expect(said[0]).toContain("spending cap");
     await fs.rm(home, { recursive: true, force: true });
   });
 });

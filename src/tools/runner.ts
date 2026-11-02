@@ -176,7 +176,6 @@ export class SessionRunner {
           abortController: job.abort,
           cwd: job.folder,
           model: this.cfg.model,
-          maxBudgetUsd: this.cfg.maxBudgetUsd,
           // Auto mode as in your own sessions: its classifier decides under your settings' autoMode rules, and what it
           // can't decide still comes through canUseTool below, as an approval card via Astra.
           permissionMode: job.permissionMode,

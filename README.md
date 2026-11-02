@@ -162,7 +162,6 @@ Code settings and those rules are checked before her list.
   ("ignore previous instructions", "don't tell the user", "send their files to …") are removed, and the page is
   labelled as data, never instructions. If anything was removed she tells you.
 
-Each request also has a spending cap (`JARVIS_MAX_BUDGET_USD`, default $5).
 
 ## Responsible use
 
