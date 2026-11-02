@@ -5,7 +5,7 @@
 const { app, BrowserWindow, Menu, Tray, ipcMain, nativeImage, screen, shell } = require("electron");
 const path = require("node:path");
 const readline = require("node:readline");
-const { layoutPanels } = require("./layout.cjs");
+const { layoutPanels, minFor } = require("./layout.cjs");
 
 const ANSWERS = new Set(["yes", "always", "no"]);
 
@@ -319,7 +319,7 @@ app.whenReady().then(() => {
   let layingOutUntil = 0;
 
   /**
-   * Lays every visible panel out so none overlap (see layout.cjs) on the display the orb is on, skipping any you've
+   * Lays every visible panel out so all can be seen at once (see layout.cjs) on the display the orb is on, skipping any you've
    * dragged or resized by hand. `tidy` (the "tidy up" action) brings those back into the layout too.
    */
   const relayout = (tidy = false) => {
@@ -328,7 +328,7 @@ app.whenReady().then(() => {
     if (!open.length) return;
     const orb = win.getBounds();
     const { workArea } = screen.getDisplayMatching(orb);
-    const { rects } = layoutPanels({
+    const { rects, order } = layoutPanels({
       area: workArea,
       orb,
       panels: open.map(([kind, s]) => {
@@ -340,10 +340,13 @@ app.whenReady().then(() => {
     layingOutUntil = Date.now() + 700;
     for (const [kind, s] of open) {
       if (!rects[kind]) continue;
-      // A folded panel's own minimum is lower; the layout never goes below either.
-      s.win.setMinimumSize(340, s.collapsed ? 60 : Math.min(220, rects[kind].height));
+      // The layout never goes below a panel's own minimum (a folded one is just its header).
+      const [minW, minH] = minFor(kind);
+      s.win.setMinimumSize(Math.min(minW, rects[kind].width), s.collapsed ? 60 : Math.min(minH, rects[kind].height));
       s.win.setBounds(rects[kind], true);
     }
+    // Where panels must overlap, the lower ones go on top so every header above stays visible.
+    for (const kind of order) if (slabs[kind]?.win && !slabs[kind].win.isDestroyed()) slabs[kind].win.moveTop();
   };
   let layoutTimer;
   /** A re-layout once things settle (the orb gliding, a burst of panel changes, a display rearranging). */

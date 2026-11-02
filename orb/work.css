@@ -1,21 +1,11 @@
 /* The terminal and git panels, on the drawer frame (frame.css) and glass slab (panel.css). */
-#collapse {
+#collapse:focus-visible { outline: 2px solid var(--reactor); outline-offset: 0; }
+/* Each work panel's status line is its fold toggle: it keeps the faceplate's .meta look, with a hover cue. */
+#collapse.fold-line {
   position: relative;
   z-index: 2;
-  flex: none;
-  width: 30px;
-  height: 30px;
   border: 0;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.08);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3), inset 0 0 0 1px rgba(255, 255, 255, 0.12);
-  color: var(--gold);
-  font: 600 13px/1 -apple-system, sans-serif;
   cursor: pointer;
-}
-#collapse:focus-visible { outline: 2px solid var(--reactor); outline-offset: 2px; }
-/* The transcript's status line is its fold toggle: it keeps the faceplate's .meta look, with a hover cue. */
-#collapse.fold-line {
   display: block;
   width: auto;
   max-width: 100%;
@@ -35,7 +25,6 @@
 .slab.collapsed #collapse.fold-line::after { content: " \25B8" / ""; opacity: 0.6; }
 #collapse.fold-line:hover, #collapse.fold-line:focus-visible { color: var(--gold); background: rgba(255, 255, 255, 0.06); }
 #collapse.fold-line:hover::after, #collapse.fold-line:focus-visible::after { opacity: 0.8; }
-#collapse.fold-line:focus-visible { outline-offset: 0; }
 .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .slab.collapsed .work-body, .slab.collapsed footer { display: none; }
 

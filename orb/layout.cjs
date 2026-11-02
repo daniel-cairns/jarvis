@@ -1,147 +1,306 @@
-// Where Astra's panels go, so they never overlap: pure layout maths (no Electron), applied by main.cjs whenever a
-// panel opens, closes, folds or resizes, the orb moves, or a display changes.
+// Where Astra's panels go, so you can see every open one at once: pure layout maths (no Electron), applied by
+// main.cjs whenever a panel opens, closes, folds or resizes, the orb moves, or a display changes.
 //
-// The orb stays put. Panels go on whichever side of it has more room: a column right beside the orb for the narrow
-// "work" panels (transcript, terminal, git), and the rest of that side for the big ones (detail, map, brain): one
-// fills it, two split it, three or more tile. Short of room, panels shrink to their minimum size, then the least
-// recently used ones cascade inside the area. Every rect stays inside the work area, so nothing is unreachable.
+// The whole work area is used, with the orb as a fixed obstacle. The space around the orb is split into regions
+// (left and right of it full height with strips above and below it, or above and below it full width with strips
+// beside it; whichever works better), the panels are shared between the regions, and each region is tiled into
+// columns of stacked panels. Panels shrink towards content-aware minimums before anything overlaps. Only when even
+// the minimums can't fit do panels in a column overlap, by as little as possible, and never so far that a panel's
+// header (its title and close button) is covered. Every rect stays inside the work area and clear of the orb.
 
 const GAP = 10;
 const MARGIN = 12;
-const MIN_WIDTH = 340;
-const MIN_HEIGHT = 220;
-const CASCADE_STEP = 28;
-const SIDE_KINDS = new Set(["transcript", "terminal", "git"]);
+/** The height of a panel's header strip (title, status line, close): never covered by another panel. */
+const HEADER = 64;
+/** The smallest each panel can usefully be, by kind: enough for its content to still read. */
+const MINS = {
+  transcript: [300, 200],
+  terminal: [360, 180],
+  git: [340, 200],
+  detail: [360, 240],
+  graph: [420, 300],
+  brain: [440, 320],
+};
+const DEFAULT_MIN = [320, 200];
+// Kept for main.cjs and older callers: the smallest minimums of all.
+const MIN_WIDTH = Math.min(...Object.values(MINS).map((m) => m[0]));
+const MIN_HEIGHT = Math.min(...Object.values(MINS).map((m) => m[1]));
+const INFEASIBLE = 1e15;
 
 /**
  * @typedef {{ x: number, y: number, width: number, height: number }} Rect
- * @typedef {{ kind: string, width: number, height: number, folded?: boolean, lastUsed?: number }} Panel
- *   width/height: the size it wants; folded: only its header shows, so its height is fixed; lastUsed: newest = largest.
- * @param {{ area: Rect, orb: Rect, panels: Panel[] }} input
- * @returns {{ rects: Record<string, Rect>, cascaded: string[] }}
+ * @typedef {{ kind: string, width: number, height: number, folded?: boolean, lastUsed?: number,
+ *   minWidth?: number, minHeight?: number }} Panel
+ *   width/height: the size it wants; folded: only its header shows, so its height is fixed.
+ * @param {{ area: Rect, orb: Rect, panels: Panel[], exhaustive?: boolean }} input
+ *   exhaustive: try every way of sharing the panels between regions (slow; tests use it to check the search).
+ * @returns {{ rects: Record<string, Rect>, order: string[], overlap: number }}
+ *   order: the stacking order to apply, bottom first; overlap: total overlapping area in px².
  */
-function layoutPanels({ area, orb, panels }) {
-  const rects = {};
-  const cascaded = [];
-  if (!panels.length) return { rects, cascaded };
-
-  // The side of the orb with more room (the whole area if neither side can take a panel).
-  const top = area.y + MARGIN;
-  const height = area.height - 2 * MARGIN;
-  const roomLeft = orb.x - GAP - (area.x + MARGIN);
-  const roomRight = area.x + area.width - MARGIN - (orb.x + orb.width + GAP);
-  const toLeft = roomLeft >= roomRight;
-  let region = toLeft ? { x: area.x + MARGIN, y: top, width: roomLeft, height } : { x: orb.x + orb.width + GAP, y: top, width: roomRight, height };
-  if (region.width < MIN_WIDTH) region = { x: area.x + MARGIN, y: top, width: area.width - 2 * MARGIN, height };
-
-  const byRecent = (a, b) => (b.lastUsed ?? 0) - (a.lastUsed ?? 0);
-  const side = panels.filter((p) => SIDE_KINDS.has(p.kind)).sort(byRecent);
-  const main = panels.filter((p) => !SIDE_KINDS.has(p.kind)).sort(byRecent);
-
-  // Column width for the work panels; if the big panels then wouldn't fit beside it, everything shares one column.
-  const wantColumn = side.length ? Math.max(MIN_WIDTH, ...side.map((p) => Math.min(p.width, 600))) : 0;
-  const column = main.length ? Math.min(wantColumn, Math.floor(region.width * 0.45)) : Math.min(wantColumn, region.width);
-  const twoColumns = side.length > 0 && main.length > 0 && column >= MIN_WIDTH && region.width - column - GAP >= MIN_WIDTH;
-
-  const overflow = [];
-  if (!twoColumns) {
-    overflow.push(...stack({ x: region.x, y: region.y, width: region.width, height: region.height }, [...side, ...main], rects, toLeft));
-  } else {
-    // The work column sits next to the orb; the big panels take the rest.
-    const colX = toLeft ? region.x + region.width - column : region.x;
-    const mainX = toLeft ? region.x : region.x + column + GAP;
-    overflow.push(...stack({ x: colX, y: region.y, width: column, height: region.height }, side, rects, toLeft));
-    overflow.push(...tile({ x: mainX, y: region.y, width: region.width - column - GAP, height: region.height }, main, rects, toLeft));
-  }
-
-  // No room left: the least recently used cascade down from the region's corner, each kept fully inside the area.
-  overflow.sort((a, b) => (a.lastUsed ?? 0) - (b.lastUsed ?? 0)).forEach((p, i) => {
-    const width = Math.min(Math.max(p.width, MIN_WIDTH), region.width);
-    const h = p.folded ? p.height : Math.min(Math.max(p.height, MIN_HEIGHT), region.height);
-    rects[p.kind] = clampInto(area, { x: region.x + i * CASCADE_STEP, y: region.y + i * CASCADE_STEP, width, height: h });
-    cascaded.push(p.kind);
+function layoutPanels({ area, orb, panels, exhaustive = false }) {
+  if (!panels.length) return { rects: {}, order: [], overlap: 0 };
+  const inner = { x: area.x + MARGIN, y: area.y + MARGIN, width: area.width - 2 * MARGIN, height: area.height - 2 * MARGIN };
+  const items = panels.map((p) => {
+    const [mw, mh] = MINS[p.kind] ?? DEFAULT_MIN;
+    const minW = Math.min(p.minWidth ?? mw, inner.width);
+    const minH = p.folded ? p.height : Math.min(p.minHeight ?? mh, inner.height);
+    return { ...p, minW, minH, wantW: Math.max(p.width, minW), wantH: p.folded ? p.height : Math.max(p.height, minH) };
   });
-  return { rects, cascaded };
+
+  let best = null;
+  for (const regions of partitions(inner, orb)) {
+    const usable = regions.filter((r) => r.width > 0 && r.height > 0);
+    if (!usable.length) continue;
+    const found = exhaustive ? searchAll(usable, items) : searchLocal(usable, items);
+    if (!best || better(found.cost, best.cost)) best = found;
+  }
+  if (!best || best.cost.overlap >= INFEASIBLE) return fallback(inner, items);
+
+  const rects = {};
+  for (const [kind, r] of Object.entries(best.rects)) rects[kind] = r;
+  // Lower panels go on top, so where a column overlaps, the header of the one above stays visible.
+  const order = Object.keys(rects).sort((a, b) => rects[a].y - rects[b].y);
+  return { rects, order, overlap: best.cost.overlap };
 }
 
-/** Panels stacked top to bottom in one column, shrunk towards their minimum heights to fit. Returns those that don't. */
-function stack(col, items, rects, alignRight) {
-  const minOf = (p) => (p.folded ? p.height : Math.min(MIN_HEIGHT, p.height));
-  let fitting = [...items];
-  // Drop the least recently used until the minimum heights fit.
-  while (fitting.length && fitting.reduce((n, p) => n + minOf(p), 0) + GAP * (fitting.length - 1) > col.height) fitting.pop();
-  const rest = items.filter((p) => !fitting.includes(p));
-  const fixed = fitting.filter((p) => p.folded).reduce((n, p) => n + p.height, 0);
-  const heights = fitHeights(
-    fitting.filter((p) => !p.folded),
-    col.height - fixed - GAP * Math.max(0, fitting.length - 1),
-    minOf,
-  );
-  let y = col.y;
-  for (const p of fitting) {
-    const width = Math.min(Math.max(p.width, MIN_WIDTH), col.width);
-    const h = p.folded ? p.height : heights.get(p);
-    rects[p.kind] = { x: alignRight ? col.x + col.width - width : col.x, y, width, height: h };
-    y += h + GAP;
+/** The two ways to split the space around the orb into non-overlapping regions. */
+function partitions(inner, orb) {
+  const right = inner.x + inner.width;
+  const bottom = inner.y + inner.height;
+  const ox0 = Math.max(inner.x, orb.x);
+  const ox1 = Math.min(right, orb.x + orb.width);
+  const oy0 = Math.max(inner.y, orb.y);
+  const oy1 = Math.min(bottom, orb.y + orb.height);
+  const box = (x0, y0, x1, y1) => ({ x: x0, y: y0, width: Math.max(0, x1 - x0), height: Math.max(0, y1 - y0) });
+  const leftEdge = ox0 - GAP;
+  const rightEdge = ox1 + GAP;
+  const topEdge = oy0 - GAP;
+  const bottomEdge = oy1 + GAP;
+  return [
+    // Columns: full height either side, strips above and below the orb.
+    [
+      box(inner.x, inner.y, leftEdge, bottom),
+      box(rightEdge, inner.y, right, bottom),
+      box(ox0, inner.y, ox1, topEdge),
+      box(ox0, bottomEdge, ox1, bottom),
+    ],
+    // Rows: full width above and below, strips either side of the orb.
+    [
+      box(inner.x, inner.y, right, topEdge),
+      box(inner.x, bottomEdge, right, bottom),
+      box(inner.x, oy0, leftEdge, oy1),
+      box(rightEdge, oy0, right, oy1),
+    ],
+  ].map((regions) => regions.map((r) => ({ ...r, towardOrbRight: r.x + r.width <= orb.x })));
+}
+
+/** Less overlap wins; then the better fit to the sizes the panels want. */
+const better = (a, b) => (a.overlap !== b.overlap ? a.overlap < b.overlap : a.fit > b.fit + 1e-9);
+
+/** The rects and cost of a given sharing of panels between regions (assign[i] = region index of items[i]). */
+function evaluate(regions, items, assign) {
+  const rects = {};
+  let overlap = 0;
+  let fit = 0;
+  for (let r = 0; r < regions.length; r++) {
+    const mine = items.filter((_, i) => assign[i] === r);
+    if (!mine.length) continue;
+    const tiled = tileRegion(regions[r], mine);
+    if (!tiled) return { rects, cost: { overlap: INFEASIBLE, fit: 0 } };
+    overlap += tiled.overlap;
+    fit += tiled.fit;
+    Object.assign(rects, tiled.rects);
   }
-  return rest;
+  return { rects, cost: { overlap, fit } };
+}
+
+/** Greedy start (biggest panels to the emptiest region), then single moves and swaps until nothing improves. */
+function searchLocal(regions, items) {
+  const order = items.map((_, i) => i).sort((a, b) => items[b].wantW * items[b].wantH - items[a].wantW * items[a].wantH);
+  const load = regions.map(() => 0);
+  const assign = new Array(items.length).fill(0);
+  for (const i of order) {
+    const it = items[i];
+    let pick = -1;
+    let pickScore = Infinity;
+    regions.forEach((reg, r) => {
+      if (reg.width < it.minW || reg.height < it.minH) return;
+      const score = (load[r] + it.wantW * it.wantH) / (reg.width * reg.height);
+      if (score < pickScore) [pick, pickScore] = [r, score];
+    });
+    if (pick < 0) pick = regions.reduce((m, reg, r) => (reg.width * reg.height > regions[m].width * regions[m].height ? r : m), 0);
+    assign[i] = pick;
+    load[pick] += it.wantW * it.wantH;
+  }
+  let best = evaluate(regions, items, assign);
+  for (let pass = 0, improved = true; improved && pass < 30; pass++) {
+    improved = false;
+    for (let i = 0; i < items.length; i++) {
+      for (let r = 0; r < regions.length; r++) {
+        if (assign[i] === r) continue;
+        const was = assign[i];
+        assign[i] = r;
+        const tried = evaluate(regions, items, assign);
+        if (better(tried.cost, best.cost)) [best, improved] = [tried, true];
+        else assign[i] = was;
+      }
+      for (let j = i + 1; j < items.length; j++) {
+        if (assign[i] === assign[j]) continue;
+        [assign[i], assign[j]] = [assign[j], assign[i]];
+        const tried = evaluate(regions, items, assign);
+        if (better(tried.cost, best.cost)) [best, improved] = [tried, true];
+        else [assign[i], assign[j]] = [assign[j], assign[i]];
+      }
+    }
+  }
+  return best;
+}
+
+/** Every sharing of panels between regions (regions^panels of them): the true best, for checking searchLocal. */
+function searchAll(regions, items) {
+  const assign = new Array(items.length).fill(0);
+  let best = null;
+  const total = regions.length ** items.length;
+  for (let n = 0; n < total; n++) {
+    for (let i = 0, v = n; i < items.length; i++, v = Math.floor(v / regions.length)) assign[i] = v % regions.length;
+    const tried = evaluate(regions, items, assign);
+    if (!best || better(tried.cost, best.cost)) best = tried;
+  }
+  return best;
 }
 
 /**
- * Heights for panels sharing `room`: their own heights if they fit, otherwise shrunk by one shared factor, with any
- * that would go below their minimum held at it and the rest shrunk further to make up for them.
+ * Tiles one region with columns of stacked panels, trying every column count. Null if the panels can't go there
+ * at all (too narrow, or too many headers to show in the height).
  */
-function fitHeights(items, room, minOf) {
-  const heights = new Map(items.map((p) => [p, p.height]));
-  let atMin = new Set();
-  for (let pass = 0; pass <= items.length; pass++) {
-    const free = items.filter((p) => !atMin.has(p));
-    const held = [...atMin].reduce((n, p) => n + minOf(p), 0);
-    const want = free.reduce((n, p) => n + p.height, 0);
-    const scale = want > 0 && want > room - held ? Math.max(0, room - held) / want : 1;
-    const next = new Set(atMin);
-    for (const p of free) {
-      const h = Math.floor(p.height * scale);
-      if (h < minOf(p)) next.add(p);
-      heights.set(p, Math.max(h, minOf(p)));
+function tileRegion(region, items) {
+  let best = null;
+  for (let cols = 1; cols <= items.length; cols++) {
+    const colW = Math.floor((region.width - GAP * (cols - 1)) / cols);
+    // Tallest first, each into the column with the least height so far.
+    const columns = Array.from({ length: cols }, () => ({ items: [], height: 0 }));
+    for (const it of [...items].sort((a, b) => b.wantH - a.wantH)) {
+      const col = columns.reduce((m, c) => (c.height < m.height ? c : m));
+      col.items.push(it);
+      col.height += it.wantH;
     }
-    for (const p of atMin) heights.set(p, minOf(p));
+    if (columns.some((c) => !c.items.length || c.items.some((it) => it.minW > colW))) continue;
+    const rects = {};
+    let overlap = 0;
+    let fit = 0;
+    let ok = true;
+    columns.forEach((c, k) => {
+      const x = region.x + k * (colW + GAP);
+      const stacked = stackColumn({ x, y: region.y, width: colW, height: region.height }, c.items, region.towardOrbRight);
+      if (!stacked) return void (ok = false);
+      overlap += stacked.overlap;
+      fit += stacked.fit;
+      Object.assign(rects, stacked.rects);
+    });
+    if (!ok) continue;
+    const tiled = { rects, overlap, fit };
+    if (!best || better(tiled, best)) best = tiled;
+  }
+  return best;
+}
+
+/**
+ * One column: panels at the size they want if they fit, otherwise shrunk towards their minimums, and only then
+ * overlapped (evenly, keeping every header visible). Null if even that can't show every header.
+ */
+function stackColumn(col, items, alignRight) {
+  const n = items.length;
+  const gaps = GAP * (n - 1);
+  const widthOf = (it) => Math.min(it.wantW, col.width);
+  const xOf = (w) => (alignRight ? col.x + col.width - w : col.x);
+  let heights;
+  let shifts = new Array(Math.max(0, n - 1)).fill(0);
+  const sumMin = items.reduce((s, it) => s + it.minH, 0);
+  if (sumMinFits(items, col) === false) return null;
+  if (n === 1) {
+    heights = [Math.min(items[0].wantH, col.height)];
+  } else if (sumMin + gaps <= col.height) {
+    heights = fitHeights(items, col.height - gaps);
+  } else {
+    // Overlap is unavoidable here: minimum heights, and the excess shared evenly between the joins, each limited
+    // so the panel underneath keeps its header (water-filling).
+    // Shortest first, so each panel ends no lower than the next and the last one ends at the bottom: nothing is cut off.
+    items = [...items].sort((a, b) => a.minH - b.minH);
+    heights = items.map((it) => it.minH);
+    let excess = sumMin + gaps - col.height;
+    const caps = items.slice(0, -1).map((it) => Math.max(0, it.minH + GAP - (it.folded ? it.minH + GAP : HEADER)));
+    if (caps.reduce((s, c) => s + c, 0) < excess) return null;
+    let open = caps.map((c, j) => j).filter((j) => caps[j] > 0);
+    while (excess > 0.5 && open.length) {
+      const share = excess / open.length;
+      for (const j of open) {
+        const take = Math.min(share, caps[j] - shifts[j]);
+        shifts[j] += take;
+        excess -= take;
+      }
+      open = open.filter((j) => caps[j] - shifts[j] > 0.5);
+    }
+    shifts = shifts.map((s) => Math.ceil(s));
+  }
+  const rects = {};
+  let overlap = 0;
+  let fit = 0;
+  let y = col.y;
+  items.forEach((it, i) => {
+    const w = widthOf(it);
+    const h = Math.min(heights[i], col.y + col.height - y);
+    rects[it.kind] = { x: xOf(w), y, width: w, height: h };
+    if (!it.folded) fit += Math.min(1, w / it.wantW) * Math.min(1, h / it.wantH);
+    if (i < n - 1) y += heights[i] + GAP - shifts[i];
+  });
+  const placed = items.map((it) => rects[it.kind]);
+  for (let i = 0; i < placed.length; i++) for (let j = i + 1; j < placed.length; j++) overlap += overlapArea(placed[i], placed[j]);
+  return { rects, overlap, fit };
+}
+
+const overlapArea = (a, b) =>
+  Math.max(0, Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x)) *
+  Math.max(0, Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y));
+
+/** A column must at least hold each of its panels at minimum height on its own. */
+const sumMinFits = (items, col) => items.every((it) => it.minH <= col.height);
+
+/** Heights sharing `room`: their own if they fit, otherwise shrunk by one factor, none below its minimum. */
+function fitHeights(items, room) {
+  const heights = items.map((it) => it.wantH);
+  let atMin = new Set(items.map((it, i) => (it.folded ? i : -1)).filter((i) => i >= 0));
+  for (let pass = 0; pass <= items.length; pass++) {
+    const free = items.map((_, i) => i).filter((i) => !atMin.has(i));
+    const held = [...atMin].reduce((s, i) => s + items[i].minH, 0);
+    const want = free.reduce((s, i) => s + items[i].wantH, 0);
+    const scale = want > room - held ? Math.max(0, room - held) / want : 1;
+    const next = new Set(atMin);
+    for (const i of free) {
+      const h = Math.floor(items[i].wantH * scale);
+      if (h < items[i].minH) next.add(i);
+      heights[i] = Math.max(h, items[i].minH);
+    }
+    for (const i of atMin) heights[i] = items[i].minH;
     if (next.size === atMin.size) break;
     atMin = next;
   }
   return heights;
 }
 
-/** The big panels: one fills the area (up to the size it wants), two side by side or stacked, three or more tile. */
-function tile(area, items, rects, alignRight) {
-  if (!items.length) return [];
-  const sized = (p, w, h) => ({ width: Math.min(Math.max(p.width, MIN_WIDTH), w), height: p.folded ? p.height : Math.min(Math.max(p.height, MIN_HEIGHT), h) });
-  const place = (p, box) => {
-    const s = sized(p, box.width, box.height);
-    rects[p.kind] = { x: alignRight ? box.x + box.width - s.width : box.x, y: box.y, ...s };
-  };
-  if (items.length === 1) {
-    place(items[0], area);
-    return [];
-  }
-  const half = Math.floor((area.width - GAP) / 2);
-  if (half >= MIN_WIDTH) {
-    // Newest beside the work column (nearest the orb), the rest stacked in the other half.
-    const nearX = alignRight ? area.x + area.width - half : area.x;
-    const farX = alignRight ? area.x : area.x + half + GAP;
-    place(items[0], { x: nearX, y: area.y, width: half, height: area.height });
-    return stack({ x: farX, y: area.y, width: half, height: area.height }, items.slice(1), rects, alignRight);
-  }
-  return stack(area, items, rects, alignRight);
+/** Nowhere sensible at all (a tiny screen): minimum sizes, staggered by a header so every title still shows. */
+function fallback(inner, items) {
+  const rects = {};
+  items.forEach((it, i) => {
+    const width = Math.min(it.minW, inner.width);
+    const height = Math.min(it.minH, inner.height);
+    const step = Math.max(0, Math.min(HEADER, (inner.height - height) / Math.max(1, items.length - 1)));
+    rects[it.kind] = { x: inner.x + Math.min(i * 24, inner.width - width), y: inner.y + i * step, width, height };
+  });
+  const order = items.map((it) => it.kind);
+  return { rects, order, overlap: Infinity };
 }
 
-/** Moves (and if need be shrinks) a rect so it lies wholly inside the area. */
-function clampInto(area, r) {
-  const width = Math.min(r.width, area.width - 2 * MARGIN);
-  const height = Math.min(r.height, area.height - 2 * MARGIN);
-  const x = Math.max(area.x + MARGIN, Math.min(r.x, area.x + area.width - MARGIN - width));
-  const y = Math.max(area.y + MARGIN, Math.min(r.y, area.y + area.height - MARGIN - height));
-  return { x, y, width, height };
-}
+/** The minimum size of a panel of this kind. */
+const minFor = (kind) => MINS[kind] ?? DEFAULT_MIN;
 
-module.exports = { layoutPanels, MIN_WIDTH, MIN_HEIGHT, GAP };
+module.exports = { layoutPanels, minFor, MIN_WIDTH, MIN_HEIGHT, GAP, HEADER };

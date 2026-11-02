@@ -65,11 +65,4 @@ describe("folding a work panel", () => {
     expect(slab.classList.contains("collapsed")).toBe(false);
     expect(sent.at(-1)).toMatchObject({ type: "slab-collapse", collapsed: false });
   });
-
-  it("still shows an arrow on the round fold button of the other panels", () => {
-    const button = element([], "▾");
-    load(button).slab;
-    button.click();
-    expect(button.textContent).toBe("▸");
-  });
 });
