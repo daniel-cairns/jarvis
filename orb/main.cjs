@@ -5,7 +5,7 @@
 const { app, BrowserWindow, Menu, Tray, globalShortcut, ipcMain, nativeImage, screen, shell } = require("electron");
 const path = require("node:path");
 const readline = require("node:readline");
-const { layoutPanels, minFor } = require("./layout.cjs");
+const { layoutPanels, placeNew, minFor } = require("./layout.cjs");
 
 const ANSWERS = new Set(["yes", "always", "no"]);
 
@@ -157,7 +157,7 @@ app.whenReady().then(() => {
         { label: "Show last detail", enabled: slabs.detail.last !== null, click: () => openSlab("detail", slabs.detail.last, "user") },
         { label: "Show last map", enabled: slabs.graph.last !== null, click: () => openSlab("graph", slabs.graph.last, "user") },
         { label: "Open brain", click: () => send({ type: "brain-request" }) },
-        { label: "Tidy up panels", click: () => relayout(true) },
+        { label: "Tidy up panels", click: () => relayout("tidy") },
         { label: "Show terminal", click: () => openSlab("terminal", slabs.terminal.last ?? { type: "terminal", entries: [] }, "user") },
         { label: "Show git changes", click: () => openSlab("git", slabs.git.last ?? { type: "git", repos: [] }, "user") },
         {
@@ -198,7 +198,12 @@ app.whenReady().then(() => {
     // Narrow: a background run's live transcript.
     transcript: { file: "transcript.html", width: 380, height: 560, win: null, last: null },
   };
-  const dismissed = new Set();
+  /**
+   * Panels Dan closed (✕, or "close your panels"). They stay closed: updates only refresh the dropdown, and only an
+   * explicit show (show_terminal, "show me…", the dropdown, Astra's show tools) opens one again. Never cleared by a
+   * new request, which is what let background runs reopen them.
+   */
+  const closed = new Set();
 
   // Who each open panel is for, which decides whether she tidies it away when she's done:
   // "auto" popped up while she worked (closed when she finishes), "astra" she showed you on purpose (kept until the
@@ -232,6 +237,7 @@ app.whenReady().then(() => {
   const restoreSlab = (kind) => {
     const slab = slabs[kind];
     if (!slab?.last) return;
+    closed.delete(kind);
     if (slab.win && !slab.win.isDestroyed()) {
       slab.owner = "user";
       if (slab.collapsed) slab.win.webContents.send("jarvis", { type: "slab-expand" });
@@ -301,6 +307,7 @@ app.whenReady().then(() => {
     w.on("closed", () => {
       slab.collapsed = false;
       slab.pinned = false;
+      slab.placed = false;
       sendPanels();
       scheduleLayout();
     });
@@ -322,12 +329,27 @@ app.whenReady().then(() => {
    * Lays every visible panel out so all can be seen at once (see layout.cjs) on the display the orb is on, skipping any you've
    * dragged or resized by hand. `tidy` (the "tidy up" action) brings those back into the layout too.
    */
-  const relayout = (tidy = false) => {
+  const relayout = (mode = "new") => {
+    const tidy = mode === "tidy";
     if (tidy) for (const s of Object.values(slabs)) s.pinned = false;
-    const open = Object.entries(slabs).filter(([, s]) => s.win && !s.win.isDestroyed() && s.win.isVisible() && !s.pinned);
-    if (!open.length) return;
+    const visible = Object.entries(slabs).filter(([, s]) => s.win && !s.win.isDestroyed() && s.win.isVisible());
     const orb = win.getBounds();
     const { workArea } = screen.getDisplayMatching(orb);
+    layingOutUntil = Date.now() + 700;
+    // Once panels are arranged, an update never moves them: only panels not yet placed get a spot, a free one.
+    if (mode === "new" && visible.some(([, s]) => s.placed || s.pinned)) {
+      const fixed = visible.filter(([, s]) => s.placed || s.pinned).map(([, s]) => s.win.getBounds());
+      for (const [, s] of visible) {
+        if (s.placed || s.pinned) continue;
+        const rect = placeNew({ area: workArea, orb, fixed, width: s.width, height: s.collapsed ? s.win.getBounds().height : s.height });
+        s.win.setBounds(rect, true);
+        s.placed = true;
+        fixed.push(rect);
+      }
+      return;
+    }
+    const open = visible.filter(([, s]) => !s.pinned);
+    if (!open.length) return;
     const { rects, order } = layoutPanels({
       area: workArea,
       orb,
@@ -337,13 +359,13 @@ app.whenReady().then(() => {
         return { kind, width: s.width, height: s.collapsed ? b.height : s.height, folded: !!s.collapsed, lastUsed: s.lastUsed ?? 0 };
       }),
     });
-    layingOutUntil = Date.now() + 700;
     for (const [kind, s] of open) {
       if (!rects[kind]) continue;
       // The layout never goes below a panel's own minimum (a folded one is just its header).
       const [minW, minH] = minFor(kind);
       s.win.setMinimumSize(Math.min(minW, rects[kind].width), s.collapsed ? 60 : Math.min(minH, rects[kind].height));
       s.win.setBounds(rects[kind], true);
+      s.placed = true;
     }
     // Where panels must overlap, the lower ones go on top so every header above stays visible.
     for (const kind of order) if (slabs[kind]?.win && !slabs[kind].win.isDestroyed()) slabs[kind].win.moveTop();
@@ -354,22 +376,34 @@ app.whenReady().then(() => {
     clearTimeout(layoutTimer);
     layoutTimer = setTimeout(() => relayout(), 250);
   };
-  for (const event of ["display-added", "display-removed", "display-metrics-changed"]) screen.on(event, scheduleLayout);
+  // A display change can leave panels off-screen, so that one re-arranges everything (except panels placed by hand).
+  for (const event of ["display-added", "display-removed", "display-metrics-changed"]) {
+    screen.on(event, () => {
+      clearTimeout(layoutTimer);
+      layoutTimer = setTimeout(() => relayout("all"), 250);
+    });
+  }
 
   /** Astra working her own interface (ui_control and quick spoken commands). */
   const runUi = (action) => {
-    if (action === "stack_windows") return relayout(true);
+    if (action === "stack_windows") return relayout("tidy");
     if (action === "minimise") void hideOrb();
     else if (action === "show") void show();
-    // Closed on request, the work panels stay shut (like closing them by hand) until the next request or "show".
+    // Every panel, whatever fed it, and they stay closed until something explicitly shows one again.
     else if (action === "close_panels") {
       for (const [kind, slab] of Object.entries(slabs)) {
-        if (kind === "terminal" || kind === "git") dismissed.add(kind);
+        closed.add(kind);
         if (slab.win?.isDestroyed() === false) slab.win.close();
       }
+      sendPanels();
     }
-    else if (action === "show_last_detail" && slabs.detail.last) openSlab("detail", slabs.detail.last);
-    else if (action === "show_last_map" && slabs.graph.last) openSlab("graph", slabs.graph.last);
+    else if (action === "show_last_detail" && slabs.detail.last) {
+      closed.delete("detail");
+      openSlab("detail", slabs.detail.last);
+    } else if (action === "show_last_map" && slabs.graph.last) {
+      closed.delete("graph");
+      openSlab("graph", slabs.graph.last);
+    }
     else if (action === "collapse_panel" || action === "expand_panel") {
       win.webContents.send("jarvis", { type: "collapse", collapsed: action === "collapse_panel" });
     }
@@ -501,8 +535,8 @@ app.whenReady().then(() => {
     if (m?.type === "transform-done" && sender === win) return transformWaiter?.();
     if (m?.type === "fit" && sender === win && Number.isFinite(m.height)) return void fitHeight(m.height);
     if (m?.type === "panel-close") {
-      // Closing a work panel keeps it closed for the rest of this request (it reopens on the next one).
-      for (const [kind, slab] of Object.entries(slabs)) if (slab.win === sender) dismissed.add(kind);
+      // Closed by its ✕: it stays closed (see `closed`).
+      for (const [kind, slab] of Object.entries(slabs)) if (slab.win === sender) closed.add(kind);
       return sender && sender !== win ? sender.close() : undefined;
     }
     if (m?.type === "slab-collapse" && sender && sender !== win) {
@@ -586,7 +620,14 @@ app.whenReady().then(() => {
         foldingToQuit = true;
         void (win.isVisible() ? transform("close") : Promise.resolve()).then(() => app.quit());
       }
+      // A background run's transcript updates by itself (no owner); a closed one only refreshes the dropdown.
+      else if (m.type === "transcript" && m.owner !== "user" && closed.has("transcript")) {
+        slabs.transcript.last = m;
+        sendPanels();
+      }
+      // Detail, map and brain come from Astra's show tools (or "show me…"): explicit, so they open even if closed.
       else if (m.type === "detail" || m.type === "graph" || m.type === "brain" || m.type === "transcript") {
+        closed.delete(m.type);
         openSlab(m.type, m, m.owner === "user" ? "user" : "astra");
       }
       // Work panels open by themselves when there's something new, unless closed during this request (or asked for).
@@ -596,20 +637,19 @@ app.whenReady().then(() => {
         const owner = m.owner === "user" ? "user" : m.force ? "astra" : "auto";
         // While she's operating another app, a panel popping up covers it and catches her clicks: keep the news
         // (the dropdown can show it) and only refresh a panel that's already open, without raising it.
-        if (owner === "auto" && Date.now() - lastControlAt < CONTROL_QUIET_MS) {
+        if (owner === "auto" && (closed.has(m.type) || Date.now() - lastControlAt < CONTROL_QUIET_MS)) {
           slab.last = m;
           if (slab.win && !slab.win.isDestroyed()) slab.win.webContents.send("jarvis", m);
           sendPanels();
         } else if (slab.win && !slab.win.isDestroyed()) openSlab(m.type, m, owner);
-        else if (m.force || (hasContent && !dismissed.has(m.type))) {
-          dismissed.delete(m.type);
+        else if (m.force || hasContent) {
+          closed.delete(m.type);
           openSlab(m.type, m, owner);
         } else slab.last = m;
       } else if (m.type === "git-diff-result") slabs.git.win?.webContents.send("jarvis", m);
       else if (m.type === "request-done") tidyUp();
       else if (m.type === "activity-reset") {
         requestNo++;
-        dismissed.clear();
         win.webContents.send("jarvis", m);
       }
       else if (m.type === "brain-note") slabs.brain.win?.webContents.send("jarvis", m);

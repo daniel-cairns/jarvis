@@ -4,8 +4,9 @@ import { describe, expect, it } from "vitest";
 type Rect = { x: number; y: number; width: number; height: number };
 type Panel = { kind: string; width: number; height: number; folded?: boolean; lastUsed?: number };
 type Layout = { rects: Record<string, Rect>; order: string[]; overlap: number };
-const { layoutPanels, minFor, HEADER } = createRequire(import.meta.url)("../orb/layout.cjs") as {
+const { layoutPanels, placeNew, minFor, HEADER } = createRequire(import.meta.url)("../orb/layout.cjs") as {
   layoutPanels(i: { area: Rect; orb: Rect; panels: Panel[]; exhaustive?: boolean }): Layout;
+  placeNew(i: { area: Rect; orb: Rect; fixed: Rect[]; width: number; height: number }): Rect;
   minFor(kind: string): [number, number];
   HEADER: number;
 };
@@ -119,4 +120,35 @@ describe("layoutPanels v2: every open panel visible at once", () => {
     expect(out.overlap).toBeLessThanOrEqual(best.overlap);
   });
 
+});
+
+describe("placeNew", () => {
+  const area = { x: 0, y: 0, width: 1600, height: 1000 };
+  const orb = { x: 1300, y: 700, width: 280, height: 280 };
+  const hit = (a: Rect, b: Rect) => a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+
+  it("puts a new panel in free space, clear of the arranged ones and the orb", () => {
+    const fixed = [
+      { x: 690, y: 400, width: 600, height: 330 },
+      { x: 690, y: 10, width: 600, height: 380 },
+    ];
+    const r = placeNew({ area, orb, fixed, width: 380, height: 560 });
+    for (const f of [...fixed, orb]) expect(hit(r, f)).toBe(false);
+    expect(r.x).toBeGreaterThanOrEqual(0);
+    expect(r.y + r.height).toBeLessThanOrEqual(1000);
+  });
+
+  it("never moves the arranged panels (it only returns the new one's rect)", () => {
+    const fixed = [{ x: 10, y: 10, width: 600, height: 330 }];
+    const before = JSON.stringify(fixed);
+    placeNew({ area, orb, fixed, width: 600, height: 420 });
+    expect(JSON.stringify(fixed)).toBe(before);
+  });
+
+  it("overlaps as little as it can when the screen is full", () => {
+    const fixed = [{ x: 0, y: 0, width: 1290, height: 1000 }];
+    const r = placeNew({ area, orb, fixed, width: 600, height: 400 });
+    expect(r.width).toBe(600);
+    expect(r.y).toBeLessThan(orb.y);
+  });
 });

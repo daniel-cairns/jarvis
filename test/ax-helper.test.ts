@@ -52,4 +52,14 @@ describe("the orb", () => {
   it("keeps work panels from popping up over an app she's operating", () => {
     expect(main).toMatch(/Date\.now\(\) - lastControlAt < CONTROL_QUIET_MS/);
   });
+
+  it("keeps closed panels closed: close_panels covers every kind and nothing clears it on a new request", () => {
+    const close = main.slice(main.indexOf('action === "close_panels"'), main.indexOf('action === "show_last_detail"'));
+    expect(close).toMatch(/closed\.add\(kind\)/);
+    expect(close).not.toMatch(/kind === "terminal"/);
+    const reset = main.slice(main.indexOf('m.type === "activity-reset"'), main.indexOf('m.type === "brain-note"'));
+    expect(reset).not.toMatch(/closed\.clear/);
+    // A background run's transcript (no owner) never reopens a closed panel.
+    expect(main).toMatch(/m\.type === "transcript" && m\.owner !== "user" && closed\.has\("transcript"\)/);
+  });
 });

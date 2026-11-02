@@ -303,4 +303,31 @@ function fallback(inner, items) {
 /** The minimum size of a panel of this kind. */
 const minFor = (kind) => MINS[kind] ?? DEFAULT_MIN;
 
-module.exports = { layoutPanels, minFor, MIN_WIDTH, MIN_HEIGHT, GAP, HEADER };
+/**
+ * Where a new panel goes when others are already arranged: the free spot that overlaps them (and the orb) least,
+ * nearest the orb, without moving anything. Panels you've arranged stay exactly where they are.
+ * @param {{ area: Rect, orb: Rect, fixed: Rect[], width: number, height: number, step?: number }} input
+ * @returns {Rect}
+ */
+function placeNew({ area, orb, fixed, width, height, step = 16 }) {
+  const w = Math.min(width, area.width - 2 * GAP);
+  const h = Math.min(height, area.height - 2 * GAP);
+  const avoid = [orb, ...fixed].map((r) => ({ x: r.x - GAP, y: r.y - GAP, width: r.width + 2 * GAP, height: r.height + 2 * GAP }));
+  const cx = orb.x + orb.width / 2;
+  const cy = orb.y + orb.height / 2;
+  let best = null;
+  const maxX = area.x + area.width - GAP - w;
+  const maxY = area.y + area.height - GAP - h;
+  for (let y = area.y + GAP; y <= maxY; y += step) {
+    for (let x = area.x + GAP; x <= maxX; x += step) {
+      const r = { x, y, width: w, height: h };
+      const overlap = avoid.reduce((sum, o) => sum + overlapArea(r, o), 0);
+      const distance = Math.hypot(x + w / 2 - cx, y + h / 2 - cy);
+      if (!best || overlap < best.overlap || (overlap === best.overlap && distance < best.distance)) best = { r, overlap, distance };
+    }
+  }
+  const r = best?.r ?? { x: area.x + GAP, y: area.y + GAP, width: w, height: h };
+  return { x: Math.round(r.x), y: Math.round(r.y), width: Math.round(r.width), height: Math.round(r.height) };
+}
+
+module.exports = { layoutPanels, placeNew, minFor, MIN_WIDTH, MIN_HEIGHT, GAP, HEADER };
