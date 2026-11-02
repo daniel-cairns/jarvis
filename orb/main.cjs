@@ -120,6 +120,10 @@ app.whenReady().then(() => {
   win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   harden(win);
   win.loadFile(path.join(__dirname, "index.html"));
+  let lastCoffee = null;
+  win.webContents.on("did-finish-load", () => {
+    if (lastCoffee) win.webContents.send("jarvis", lastCoffee);
+  });
   win.webContents.once("did-finish-load", () => send({ type: "ready" }));
 
   // Folding away and unfolding: the orb page plays the transform and reports "transform-done" (or we move on after
@@ -634,6 +638,11 @@ app.whenReady().then(() => {
         void (win.isVisible() ? transform("close") : Promise.resolve()).then(() => app.quit());
       }
       // The sessions panel opens only when asked for (owner "user"); its live updates never reopen it.
+      // Remembered, so a reloaded orb page shows coffee mode again.
+      else if (m.type === "coffee") {
+        lastCoffee = m;
+        win.webContents.send("jarvis", m);
+      }
       else if (m.type === "sessions") {
         if (m.owner === "user") {
           closed.delete("sessions");

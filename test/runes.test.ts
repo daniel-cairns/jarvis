@@ -57,3 +57,13 @@ describe("glyph set", () => {
     expect(panel).toMatch(/reduced\.matches\) return/);
   });
 });
+
+describe("coffee mode indicator", () => {
+  it("is the water clock Dan picked, labelled in text, and the sun stays in the set", () => {
+    const html = readFileSync(new URL("../orb/index.html", import.meta.url), "utf8");
+    const orb = readFileSync(new URL("../orb/orb.js", import.meta.url), "utf8");
+    expect(html).toMatch(/id="coffee" class="coffee" role="img" aria-label=/);
+    expect(orb).toMatch(/svg\("clepsydra", "is-live"\)/);
+    expect(glyphs.names).toContain("aten");
+  });
+});

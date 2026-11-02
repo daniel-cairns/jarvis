@@ -338,3 +338,8 @@ body.top .card, body.top .question { order: 1; }
 body.collapsed .state { cursor: pointer; text-decoration: underline dotted rgba(70, 224, 214, 0.5); text-underline-offset: 3px; }
 .state { cursor: pointer; }
 .state:focus-visible { outline: 2px solid var(--reactor); outline-offset: 3px; border-radius: 4px; }
+
+/* Coffee mode's water clock (glyphs.js), just under the status label. Out of the flow, so showing it moves nothing. */
+.state-wrap { position: relative; }
+.coffee { position: absolute; left: 100%; top: 50%; transform: translate(2px, -60%); margin: 0; color: var(--accent); font-size: 15px; line-height: 1; opacity: 0.9; }
+.coffee[hidden] { display: none; }

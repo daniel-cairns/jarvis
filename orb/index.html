@@ -6,6 +6,7 @@
   <title>Astra</title>
   <link rel="stylesheet" href="orb.css">
   <link rel="stylesheet" href="frame.css">
+  <link rel="stylesheet" href="glyph.css">
 </head>
 <body>
   <main>
@@ -29,7 +30,11 @@
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12.5l2.4-2.6 2.4 2.6 2.4-2.6 2.4 2.6 2.4-2.6 2.4 2.6 2.4-2.6 2.4 2.6"/></svg>
       </button>
     </div>
-    <p id="state" class="state" role="button" tabindex="0" aria-haspopup="menu" aria-controls="panel-menu" aria-expanded="false" title="Show her panels">Idle</p>
+    <div class="state-wrap">
+      <p id="state" class="state" role="button" tabindex="0" aria-haspopup="menu" aria-controls="panel-menu" aria-expanded="false" title="Show her panels">Idle</p>
+      <!-- Coffee mode: the water clock (clepsydra), dripping while the Mac is kept awake. -->
+      <p id="coffee" class="coffee" role="img" aria-label="Coffee mode is on" hidden></p>
+    </div>
     <!-- The status indicator's dropdown: brings back her thinking window and any panel that's closed or folded. -->
     <div id="panel-menu" class="panel-menu" role="menu" aria-label="Her panels" hidden></div>
 
@@ -77,6 +82,7 @@
   </main>
   <script src="panel-menu.js"></script>
   <script src="dial.js"></script>
+  <script src="glyphs.js"></script>
   <script src="orb.js"></script>
 </body>
 </html>

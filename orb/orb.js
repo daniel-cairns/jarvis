@@ -467,6 +467,7 @@
     else if (m.type === "state-label") stateLabel.textContent = m.text;
     else if (m.type === "guard") guardState = m.state === "checking" || m.state === "blocked" ? m.state : null;
     else if (m.type === "transfer") transferDir = m.dir === "up" || m.dir === "down" ? m.dir : null;
+    else if (m.type === "coffee") showCoffee(m);
     else if (m.type === "mode") {
       const on = !!m.typeOnly;
       if (on !== typeOnlyMode) caption.textContent = "";
@@ -630,6 +631,18 @@
       ctx.stroke();
       top += tier.h - 1;
     }
+  }
+
+  /** Coffee mode's water clock under her status: a slow silent drip while the Mac is kept awake. */
+  const coffee = document.getElementById("coffee");
+  function showCoffee(m) {
+    coffee.hidden = !m.on;
+    if (!m.on) return void coffee.replaceChildren();
+    if (!coffee.firstChild) coffee.innerHTML = window.astraGlyphs.svg("clepsydra", "is-live");
+    const until = typeof m.until === "number" ? new Date(m.until).toLocaleTimeString("en-NZ", { hour: "numeric", minute: "2-digit" }) : null;
+    const label = until ? `Coffee mode on until ${until}: the Mac stays awake` : "Coffee mode on: the Mac stays awake";
+    coffee.setAttribute("aria-label", label);
+    coffee.title = label;
   }
 
   /** Small line-drawn symbols for the rotating ring. Ancient forms, drawn fresh here. */
