@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { describe, expect, it } from "vitest";
-import { decide, describeCall, parseAnswer, spokenQuestion } from "../src/permissions.js";
+import { allowKey, decide, describeCall, parseAnswer, spokenQuestion } from "../src/permissions.js";
 import { parseDialogResult } from "../src/ui/dialog.js";
 import { cleanTranscript, stopGracefully } from "../src/voice/listener.js";
 import { chunkForSpeech, toSpeakable } from "../src/voice/speechText.js";
@@ -85,6 +85,30 @@ describe("decide", () => {
     const allowed = { ...ctx, sessionAllowed: new Set(["mcp__rea__inspect_web_page"]) };
     expect(decide("mcp__rea__inspect_web_page", {}, allowed)).toBe("allow");
   });
+
+  it("fetches pages without asking only from safe sites", () => {
+    const safe = { ...ctx, safeSites: () => ["vuejs.org", "github.com"] };
+    expect(decide("WebFetch", { url: "https://vuejs.org/guide/" }, safe)).toBe("allow");
+    expect(decide("WebFetch", { url: "https://docs.github.com/en" }, safe)).toBe("allow");
+    expect(decide("WebFetch", { url: "https://evilvuejs.org/?d=secrets" }, safe)).toBe("ask");
+    expect(decide("WebFetch", { url: "file:///etc/passwd" }, safe)).toBe("ask");
+    expect(decide("WebFetch", { url: "not a url" }, safe)).toBe("ask");
+    expect(decide("WebFetch", {}, safe)).toBe("ask");
+    // No list given: everything asks. Web searches stay free.
+    expect(decide("WebFetch", { url: "https://vuejs.org/" }, ctx)).toBe("ask");
+    expect(decide("WebSearch", { query: "vue" }, ctx)).toBe("allow");
+  });
+
+  it("lets \"always\" allow one host for the session, not the whole web", () => {
+    const fetch = { url: "https://example.com/a" };
+    expect(allowKey("WebFetch", fetch)).toBe("WebFetch:example.com");
+    expect(allowKey("Bash", { command: "ls" })).toBe("Bash");
+    const allowed = { ...ctx, sessionAllowed: new Set([allowKey("WebFetch", fetch)]) };
+    expect(decide("WebFetch", { url: "https://example.com/b" }, allowed)).toBe("allow");
+    expect(decide("WebFetch", { url: "https://attacker.example.net/?d=x" }, allowed)).toBe("ask");
+    // A plain tool-wide "WebFetch" entry no longer opens every host.
+    expect(decide("WebFetch", fetch, { ...ctx, sessionAllowed: new Set(["WebFetch"]) })).toBe("ask");
+  });
 });
 
 describe("describeCall and parseAnswer", () => {
@@ -109,6 +133,8 @@ describe("spokenQuestion", () => {
       "May I use REA's inspect web page?",
     );
     expect(spokenQuestion("Write", { file_path: "/Users/dan/.zshrc" })).toBe("May I write .zshrc, outside your workspace?");
+    expect(spokenQuestion("WebFetch", { url: "https://example.com/x?token=abc" })).toBe("May I fetch a page from example.com?");
+    expect(describeCall("WebFetch", { url: "https://example.com/x" })).toBe("fetch https://example.com/x");
   });
 
   it("accepts whisper's punctuated answers", () => {

@@ -6,7 +6,8 @@ import {
   type SDKMessage,
 } from "@anthropic-ai/claude-agent-sdk";
 import type { JarvisConfig } from "./config.js";
-import { decide, describeCall, parseAnswer, spokenQuestion } from "./permissions.js";
+import { allowKey, decide, describeCall, parseAnswer, spokenQuestion } from "./permissions.js";
+import { loadSafeSites } from "./safeSites.js";
 import { jarvisInstructions } from "./prompt.js";
 import { sessionEnv } from "./tools/runner.js";
 import { createJarvisServer, SERVER_NAME, type SessionTools } from "./tools/server.js";
@@ -57,6 +58,8 @@ export class Jarvis {
   async init(): Promise<void> {
     await fs.mkdir(this.cfg.brainDir, { recursive: true });
     await fs.mkdir(this.cfg.workspaceDir, { recursive: true });
+    // Creates ~/.jarvis/safe-sites.json with the defaults on first run, so it's there to edit.
+    loadSafeSites(this.cfg.home);
   }
 
   /** Cancels the turn in progress, if any. */
@@ -107,13 +110,15 @@ export class Jarvis {
       workspaceDir: this.cfg.workspaceDir,
       brainDir: this.cfg.brainDir,
       sessionAllowed: this.sessionAllowed,
+      // Read on each page fetch, so edits to the list apply without a restart.
+      safeSites: () => loadSafeSites(this.cfg.home),
     });
     if (decision === "allow") return { behavior: "allow", updatedInput: input };
 
     const answer = parseAnswer(
       await this.io.ask({ spoken: spokenQuestion(toolName, input), detail: `I'd like to ${describeCall(toolName, input)}.` }),
     );
-    if (answer === "always") this.sessionAllowed.add(toolName);
+    if (answer === "always") this.sessionAllowed.add(allowKey(toolName, input));
     if (answer === "no") return { behavior: "deny", message: "The user declined this action." };
     return { behavior: "allow", updatedInput: input };
   };
