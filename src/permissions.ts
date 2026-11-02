@@ -12,6 +12,8 @@ import { isInside } from "./tools/mac.js";
 export type Decision = "allow" | "ask" | "deny";
 
 const ALWAYS_ALLOWED = new Set(["Read", "Glob", "Grep", "WebSearch", "TodoWrite", "ToolSearch"]);
+/** Astra's own tools that still need Dan's yes on a card. */
+const CONFIRM_FIRST = new Set(["mcp__jarvis__session_start", "mcp__jarvis__session_send"]);
 const WRITE_TOOLS = new Set(["Write", "Edit", "MultiEdit", "NotebookEdit"]);
 
 export function decide(
@@ -25,6 +27,10 @@ export function decide(
     safeSites?: () => readonly string[];
   },
 ): Decision {
+  // Starting or messaging a background session sets work going with its own tools and permissions. Whether the call
+  // came straight from Dan's words or from something injected into a page she read in the same turn can't be told
+  // apart reliably, so these always ask.
+  if (CONFIRM_FIRST.has(toolName)) return "ask";
   if (toolName.startsWith("mcp__jarvis__")) return "allow";
   if (ALWAYS_ALLOWED.has(toolName)) return "allow";
   // A page fetch could carry your data to its host, so it's checked by host before the per-tool "always".
@@ -60,6 +66,12 @@ export function describeCall(toolName: string, input: Record<string, unknown>): 
   if (toolName === "WebFetch" && typeof input.url === "string") return `fetch ${input.url}`;
   if (toolName === "Bash" && typeof input.command === "string") return `run the command: ${input.command}`;
   if (WRITE_TOOLS.has(toolName) && typeof input.file_path === "string") return `write to ${input.file_path}`;
+  // The whole message, so Dan approves exactly what the session will be told.
+  if (toolName === "mcp__jarvis__session_send") return `send the ${String(input.session ?? "")} session this message:\n\n${String(input.prompt ?? "")}`;
+  if (toolName === "mcp__jarvis__session_start") {
+    const where = input.where === "app" ? "in the Claude app" : "in the background";
+    return `start a new session on ${String(input.project ?? "")} ${where}, with this prompt:\n\n${String(input.prompt ?? "")}`;
+  }
   const name = toolName.replace(/^mcp__([^_]+)__/, "$1: ");
   const json = JSON.stringify(input);
   return `use ${name} ${json.length > 160 ? `${json.slice(0, 157)}...` : json}`;
@@ -68,6 +80,8 @@ export function describeCall(toolName: string, input: Record<string, unknown>): 
 /** A short question for the speech engine; the full details go on screen, never read aloud. */
 export function spokenQuestion(toolName: string, input: Record<string, unknown>): string {
   if (toolName === "Bash") return "May I run a shell command?";
+  if (toolName === "mcp__jarvis__session_send") return `May I message the ${String(input.session ?? "")} session? The message is on screen.`;
+  if (toolName === "mcp__jarvis__session_start") return `May I start a new session on ${String(input.project ?? "")}? The prompt is on screen.`;
   // The host only: a full URL can carry data, and it's unreadable aloud anyway.
   if (toolName === "WebFetch") {
     const host = hostOf(input.url);

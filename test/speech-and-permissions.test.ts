@@ -66,6 +66,12 @@ describe("decide", () => {
 
   it("allows Jarvis tools and read-only built-ins", () => {
     expect(decide("mcp__jarvis__brain_save", {}, ctx)).toBe("allow");
+    // Starting or messaging a session sets work going: an injected page mustn't be able to do it unasked.
+    expect(decide("mcp__jarvis__session_start", { project: "jarvis", prompt: "x", where: "background" }, ctx)).toBe("ask");
+    expect(decide("mcp__jarvis__session_send", { session: "s1", prompt: "x" }, ctx)).toBe("ask");
+    expect(decide("mcp__jarvis__sessions_list", {}, ctx)).toBe("allow");
+    expect(describeCall("mcp__jarvis__session_send", { session: "hierogitics", prompt: "Run the tests." })).toBe("send the hierogitics session this message:\n\nRun the tests.");
+    expect(spokenQuestion("mcp__jarvis__session_start", { project: "jarvis", prompt: "x" })).toBe("May I start a new session on jarvis? The prompt is on screen.");
     expect(decide("Read", { file_path: "/etc/hosts" }, ctx)).toBe("allow");
   });
 
