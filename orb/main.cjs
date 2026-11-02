@@ -171,6 +171,7 @@ app.whenReady().then(() => {
         },
         { type: "separator" },
         // Restarts her with her latest code; she waits for work in progress first and says so.
+        { label: "Continue last session", click: () => send({ type: "continue-session" }) },
         { label: "Restart Astra", click: () => send({ type: "restart" }) },
         {
           label: "Quit Astra",

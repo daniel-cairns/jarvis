@@ -80,6 +80,17 @@ export class Jarvis {
     return true;
   }
 
+  /** The Claude Code session she's in (undefined until her first reply). */
+  get session(): string | undefined {
+    return this.sessionId;
+  }
+
+  /** Continues from another of her conversations (resumed with its full context), or a fresh one with undefined. */
+  resumeFrom(sessionId: string | undefined): void {
+    this.sessionId = sessionId;
+    this.sessionAllowed.clear();
+  }
+
   /** Starts a fresh conversation; memory in the brain is kept. */
   reset(): void {
     this.sessionId = undefined;

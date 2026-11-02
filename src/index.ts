@@ -18,6 +18,7 @@ import { SessionRunner, type Job } from "./tools/runner.js";
 import type { SessionTools, WindowTools } from "./tools/server.js";
 import { appLinks, findSession, listSessions, liveStatus, resolveProject, type SessionSummary } from "./tools/sessions.js";
 import { newlyWaiting, sitrep } from "./tools/sitrep.js";
+import { pickLastSession, saveLastSession } from "./tools/lastSession.js";
 import { z } from "zod";
 import { stopServing } from "./tools/serve.js";
 import { localCommand, type UiAction, type UiCommand } from "./ui/control.js";
@@ -38,7 +39,7 @@ import {
 import { clock, splitStop, transcriptMarkdown, wordCount, type TranscriptLine } from "./voice/transcript.js";
 import { matchWake, matchWakeAnywhere, speechHint, stripOwnSpeech } from "./voice/wake.js";
 
-const HELP = `Say "Astra" to wake her. Commands: /new (fresh conversation), /brain, /stack (tidy her windows), /sitrep, /god on|off, /restart, /type (type only: mic off, silent), /voice, /transcript [title] (record until "stop recording"), /mute, /unmute, /wake on|off, /help, /quit. Ctrl-C or Esc on the orb stops her.`;
+const HELP = `Say "Astra" to wake her. Commands: /new (fresh conversation), /continue (pick up the last one), /brain, /stack (tidy her windows), /sitrep, /god on|off, /restart, /type (type only: mic off, silent), /voice, /transcript [title] (record until "stop recording"), /mute, /unmute, /wake on|off, /help, /quit. Ctrl-C or Esc on the orb stops her.`;
 // Prefixed to each request while god mode is on.
 const GOD_MODE =
   "(God mode is on: you command the user's Claude Code sessions. Hand project work to them rather than doing it yourself: " +
@@ -228,6 +229,8 @@ async function main(): Promise<void> {
       onGitDiff: (msg) => void onGitDiff(msg),
       onVolume: (msg) => void setVolume(msg.level ?? settings.volume + (msg.delta ?? 0)),
       onRecord: () => onRecord(),
+      // "Continue last session" from the menu bar.
+      onContinue: () => void runUi("continue_session").then((what) => console.log(`\n  ${what}`)),
       // "Restart Astra" from the menu bar: now if she's free, otherwise once her work is done (she says which).
       onRestart: () => {
         const what = requestRestart();
@@ -575,6 +578,15 @@ async function main(): Promise<void> {
     if (action === "show_brain") return openBrain();
     if (action === "reopen_windows") return windowTools.show("all");
     if (action === "restart") return requestRestart();
+    if (action === "continue_session") {
+      if (busy) {
+        pendingContinue = true;
+        return "I'll pick up our last conversation as soon as this reply ends.";
+      }
+      // Through the main loop, so nothing else talks to her while she switches conversations.
+      lines.inject("/continue");
+      return "Picking up our last conversation.";
+    }
     if (action === "type_only" || action === "voice_mode") return setTypeOnly(action === "type_only");
     if (action === "god_mode_on" || action === "god_mode_off") return setGodMode(action === "god_mode_on");
     if (action === "sitrep") {
@@ -594,7 +606,7 @@ async function main(): Promise<void> {
     }
     if (!orb?.alive) return "No orb is open.";
     orb.send({ type: "ui", action });
-    const done: Record<Exclude<UiAction, "reopen_windows" | "stop" | "show_brain" | "start_transcript" | "restart" | "type_only" | "voice_mode" | "sitrep" | "god_mode_on" | "god_mode_off" | "volume_up" | "volume_down" | "set_volume" | "move" | "show_terminal" | "show_git">, string> = {
+    const done: Record<Exclude<UiAction, "continue_session" | "reopen_windows" | "stop" | "show_brain" | "start_transcript" | "restart" | "type_only" | "voice_mode" | "sitrep" | "god_mode_on" | "god_mode_off" | "volume_up" | "volume_down" | "set_volume" | "move" | "show_terminal" | "show_git">, string> = {
       minimise: "Minimised to the menu bar.",
       show: "The orb is back.",
       close_panels: "Closed the panels.",
@@ -708,9 +720,55 @@ async function main(): Promise<void> {
    * Restarts her with her latest code: leaves a flag for scripts/astra.sh (npm start), which runs her again, and quits.
    * Waits for the request in progress and her background sessions, since quitting would stop them.
    */
+  /** Records the conversation she's in, so "continue last session" can pick it up after a restart. */
+  const rememberSession = () => {
+    const id = jarvis.session;
+    if (id) saveLastSession(cfg.home, id);
+  };
+
+  // "Continue last session", asked for mid-request: it resumes once the request ends.
+  let pendingContinue = false;
+
+  /**
+   * Picks up her previous conversation (the same Claude Code session, resumed with its full context) and says briefly
+   * what she was last doing. Only when asked: every launch starts fresh. If it can't be resumed she says why plainly
+   * and stays in the fresh conversation.
+   */
+  const continueLast = async (): Promise<void> => {
+    const pick = await pickLastSession({
+      home: cfg.home,
+      workspaceDir: cfg.workspaceDir,
+      current: jarvis.session,
+      exclude: sessionRunner.list().flatMap((j) => (j.sessionId ? [j.sessionId] : [])),
+    });
+    if ("problem" in pick) return void (await say(`${pick.problem} I'm staying in this fresh conversation.`));
+    const fresh = jarvis.session;
+    jarvis.resumeFrom(pick.id);
+    busy = true;
+    syncOrb();
+    orb?.send({ type: "activity-reset" });
+    orb?.send({ type: "activity", text: "Picking up where we left off…", glyph: "water" });
+    try {
+      const result = await jarvis.handle(
+        "(The user asked to continue our last conversation after a restart.) In one or two short sentences, tell them " +
+          "what you were last doing and what was next. Don't start any work until they say.",
+      );
+      if (!result.ok) throw new Error(result.summary);
+      rememberSession();
+      console.log(`  (continued session ${pick.id} · $${result.costUsd.toFixed(3)})`);
+    } catch (err) {
+      jarvis.resumeFrom(fresh);
+      await say(`I couldn't pick up our last conversation (${(err as Error).message}). I'm staying in this fresh one.`);
+    } finally {
+      busy = false;
+      syncOrb();
+    }
+  };
+
   const requestRestart = (): string => {
     const running = sessionRunner.list().filter((j) => j.status === "running");
     if (!busy && !running.length) {
+      rememberSession();
       writeFileSync(path.join(cfg.home, "restart"), new Date().toISOString());
       console.log("\n(restarting)");
       quitting = true;
@@ -1186,6 +1244,7 @@ async function main(): Promise<void> {
       console.log(`  ${await runUi(local.ui)}`);
       continue;
     }
+    if (request === "/continue") { await continueLast(); continue; }
     if (request === "/new") { jarvis.reset(); console.log("Fresh conversation. Your brain notes are kept."); continue; }
     if (request === "/mute") { muted = true; speaker.stop(); continue; }
     if (request === "/unmute") { muted = false; continue; }
@@ -1208,6 +1267,7 @@ async function main(): Promise<void> {
         (lastTranscript ? `(I just recorded a transcript; it's in your brain at ${lastTranscript}.)\n\n` : "");
       lastTranscript = null;
       const result = await jarvis.handle(context + request);
+      rememberSession();
       console.log(`  (${result.ok ? "done" : result.summary} · $${result.costUsd.toFixed(3)})`);
       followUp = spoken && result.ok && !muted;
     } catch (err) {
@@ -1221,6 +1281,10 @@ async function main(): Promise<void> {
       tidyWindows();
     }
     restartIfDue();
+    if (pendingContinue) {
+      pendingContinue = false;
+      await continueLast();
+    }
     if (pendingTranscript) {
       const { title } = pendingTranscript;
       pendingTranscript = null;

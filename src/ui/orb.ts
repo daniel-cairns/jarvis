@@ -55,6 +55,7 @@ export type FromOrb =
   | { type: "talk" }
   | { type: "stop" }
   | { type: "restart" }
+  | { type: "continue-session" }
   | { type: "record" }
   | { type: "type-only"; on: boolean }
   | { type: "typed"; text: string }
@@ -78,6 +79,8 @@ export type OrbHandlers = {
   onQuit(): void;
   /** "Restart Astra" from the menu bar. */
   onRestart?(): void;
+  /** "Continue last session" from the menu bar. */
+  onContinue?(): void;
   /** The brain browser asked for its note list, one note, or a note's map. */
   onBrain?(msg: Extract<FromOrb, { type: "brain-request" | "brain-open" | "brain-map" }>): void;
   /** The git panel asked for one file's diff. */
@@ -98,7 +101,7 @@ export function parseFromOrb(line: string): FromOrb | null {
   }
   if (!m || typeof m !== "object") return null;
   const msg = m as Record<string, unknown>;
-  if (msg.type === "ready" || msg.type === "talk" || msg.type === "stop" || msg.type === "record" || msg.type === "restart" || msg.type === "quit" || msg.type === "brain-request") {
+  if (msg.type === "ready" || msg.type === "talk" || msg.type === "stop" || msg.type === "record" || msg.type === "restart" || msg.type === "continue-session" || msg.type === "quit" || msg.type === "brain-request") {
     return { type: msg.type };
   }
   if (msg.type === "type-only" && typeof msg.on === "boolean") return { type: "type-only", on: msg.on };
@@ -209,6 +212,7 @@ export class Orb {
     else if (msg?.type === "typed") this.handlers.onTyped?.(msg.text);
     else if (msg?.type === "quit") this.handlers.onQuit();
     else if (msg?.type === "restart") this.handlers.onRestart?.();
+    else if (msg?.type === "continue-session") this.handlers.onContinue?.();
     else if (msg?.type === "brain-request" || msg?.type === "brain-open" || msg?.type === "brain-map") this.handlers.onBrain?.(msg);
     else if (msg?.type === "volume") this.handlers.onVolume?.(msg);
     else if (msg?.type === "git-diff") this.handlers.onGitDiff?.(msg);
