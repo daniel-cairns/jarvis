@@ -70,11 +70,12 @@
   const lerp = (a, b, t) => a + (b - a) * t;
 
   // ── Gate dial: on each state change the glyph ring dials like a stargate ──
-  // The ring spins and settles on a symbol, the top chevron engages and the next chevron round lights; it reverses
-  // for the next symbol, three locks in all, then the lit chevrons flare and a burst ripples out from the eye.
+  // The ring spins and settles on a symbol, the top chevron engages and the next mirror pair of chevrons lights (both
+  // sides at once, top down: see dial.js); it reverses for the next symbol, one lock per pair, then the whole ring
+  // flares and a burst ripples out from the eye. With reduced motion: no spin or burst, just a brief full-ring glow.
   const CHEVRONS = 9;
-  const LOCKS = 3;
-  const SPIN_MS = 420;
+  const LOCKS = window.astraDial.locksFor(CHEVRONS);
+  const SPIN_MS = 340;
   const ENGAGE_MS = 230;
   const BURST_MS = 650;
   const FADE_MS = 900;
@@ -88,9 +89,15 @@
   // How far each lock's spin travels (in glyph slots of 30°), alternating direction like a gate dialling.
   const spinFor = (k) => (k % 2 === 0 ? 1 : -1) * (Math.PI / 6) * (5 + k * 2);
 
+  const fullSpin = () => Array.from({ length: LOCKS }, (_, k) => spinFor(k)).reduce((sum, s) => sum + s, 0);
+
   function startUnlock() {
-    if (reducedMotion) return;
-    if (dialing) ringOffset = dialFrom + [0, 1, 2].reduce((sum, k) => sum + spinFor(k), 0);
+    if (reducedMotion) {
+      // No movement: the ring just glows once, gently.
+      dialAt = performance.now() - DIAL_MS - BURST_MS;
+      return;
+    }
+    if (dialing) ringOffset = dialFrom + fullSpin();
     dialFrom = ringOffset;
     dialAt = performance.now();
     dialing = true;
@@ -102,7 +109,7 @@
     if (!dialing && e > DIAL_MS + BURST_MS + FADE_MS) return { offset: ringOffset, engage: 0, lit: 0, burst: 0, glow: 0 };
     if (e >= DIAL_MS) {
       if (dialing) {
-        ringOffset = dialFrom + [0, 1, 2].reduce((sum, k) => sum + spinFor(k), 0);
+        ringOffset = dialFrom + fullSpin();
         dialing = false;
       }
       const after = e - DIAL_MS;
@@ -1245,7 +1252,8 @@
     };
     for (let c = 0; c < CHEVRONS; c++) {
       const a = -Math.PI / 2 + (c * Math.PI * 2) / CHEVRONS;
-      const dialLit = c === 0 ? Math.max(dial.engage, dial.lit >= LOCKS ? dial.glow : 0) : c <= dial.lit ? dial.glow : 0;
+      // Every chevron gets its turn: mirror pairs from the top down, then the whole ring (dial.js).
+      const dialLit = Math.max(c === 0 ? dial.engage : 0, window.astraDial.chevronLit(c, dial.lit, CHEVRONS) ? dial.glow : 0);
       const lit = Math.max(dialLit, stateLit(c));
       ctx.save();
       ctx.translate(cx + Math.cos(a) * (gr + 13), cy + Math.sin(a) * (gr + 13));
