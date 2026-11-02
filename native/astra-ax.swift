@@ -241,26 +241,78 @@ func key(_ combo: String) {
     }
   }
   guard let c = code else { fail("no key in \(combo)", code: "bad_key") }
+  // Press the modifiers as real keys and release them afterwards. Only setting flags on the key event left macOS
+  // believing ⌘ was still held, and everything typed after a shortcut arrived as ⌘+letter and was lost.
+  let mods = MODIFIER_KEYS.filter { flags.contains($0.flag) }
+  var held: CGEventFlags = []
+  for m in mods {
+    held.insert(m.flag)
+    let e = CGEvent(keyboardEventSource: nil, virtualKey: m.code, keyDown: true)
+    e?.flags = held
+    post(e)
+  }
   let d = CGEvent(keyboardEventSource: nil, virtualKey: c, keyDown: true)
   let u = CGEvent(keyboardEventSource: nil, virtualKey: c, keyDown: false)
   d?.flags = flags
   u?.flags = flags
   post(d)
   post(u)
+  for m in mods.reversed() {
+    held.remove(m.flag)
+    let e = CGEvent(keyboardEventSource: nil, virtualKey: m.code, keyDown: false)
+    e?.flags = held
+    post(e)
+  }
 }
 
+let MODIFIER_KEYS: [(flag: CGEventFlags, code: CGKeyCode)] = [
+  (.maskCommand, 55), (.maskShift, 56), (.maskAlternate, 58), (.maskControl, 59), (.maskSecondaryFn, 63),
+]
+
+/// The element with keyboard focus. The system-wide query often fails (it did with TextEdit frontmost), so this
+/// falls back to asking the frontmost app directly.
 func focusedElement() -> AXUIElement? {
-  attr(AXUIElementCreateSystemWide(), kAXFocusedUIElementAttribute).map { $0 as! AXUIElement }
+  if let f = attr(AXUIElementCreateSystemWide(), kAXFocusedUIElementAttribute) { return (f as! AXUIElement) }
+  guard let pid = NSWorkspace.shared.frontmostApplication?.processIdentifier else { return nil }
+  return attr(AXUIElementCreateApplication(pid), kAXFocusedUIElementAttribute).map { $0 as! AXUIElement }
 }
 
-func typeText(_ text: String) {
-  if let f = focusedElement(), isSecure(f) { fail("the focused field is a password field; Astra never types into one", code: "secure_field") }
+/// The focused element's text, when it has some (nil for elements without a readable value).
+func textValue(_ el: AXUIElement?) -> String? { el.flatMap { attr($0, kAXValueAttribute) as? String } }
+
+/// Refuses to type unless the keystrokes will reach the app that's meant to get them: the frontmost app owns the
+/// focused element, and, when the caller says which app it expects, it's that one. Typing blind is a safety risk,
+/// since a newline in the wrong app can send a message.
+func checkTarget(_ expected: pid_t?) -> AXUIElement {
+  guard let front = NSWorkspace.shared.frontmostApplication else { fail("no app is in front", code: "wrong_target") }
+  let frontName = front.localizedName ?? "?"
+  if let e = expected, e != front.processIdentifier {
+    let want = NSRunningApplication(processIdentifier: e)?.localizedName ?? "the app I focused"
+    fail("\(frontName) is in front, not \(want), so I didn't type. Focus the field again first.", code: "wrong_target")
+  }
+  guard let f = focusedElement() else { fail("nothing in \(frontName) has keyboard focus, so I didn't type", code: "wrong_target") }
+  if pidOf(f) != front.processIdentifier {
+    fail("keyboard focus isn't in \(frontName), the app in front, so I didn't type", code: "wrong_target")
+  }
+  if isSecure(f) { fail("the focused field is a password field; Astra never types into one", code: "secure_field") }
+  return f
+}
+
+/// Types `text` into the focused element. Each event carries no modifier flags: an event made without them
+/// inherits whatever modifiers macOS thinks are held, so a stuck ⌘ turned typing into a string of ⌘ shortcuts.
+func typeText(_ text: String, expected: pid_t?) {
+  let target = checkTarget(expected)
+  let front = pidOf(target)
   let units = Array(text.utf16)
   var i = 0
   while i < units.count {
+    if NSWorkspace.shared.frontmostApplication?.processIdentifier != front {
+      fail("another app came to the front after \(i) of \(units.count) characters, so I stopped typing", code: "wrong_target")
+    }
     let chunk = Array(units[i..<min(i + 16, units.count)])
     for down in [true, false] {
       let e = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: down)
+      e?.flags = []
       chunk.withUnsafeBufferPointer { e?.keyboardSetUnicodeString(stringLength: chunk.count, unicodeString: $0.baseAddress) }
       post(e)
     }
@@ -349,11 +401,24 @@ case "click":
 
 case "type":
   guard let text = input["text"] as? String else { fail("type needs text") }
-  typeText(text)
-  emit(["typed": text.count])
+  let expected = (input["pid"] as? NSNumber).map { pid_t($0.int32Value) }
+  let before = textValue(focusedElement())
+  typeText(text, expected: expected)
+  usleep(150_000)
+  let after = textValue(focusedElement())
+  var out: [String: Any] = ["typed": text.count, "app": NSWorkspace.shared.frontmostApplication?.localizedName ?? "?"]
+  // Did it land? Only checkable when the field exposes its text; apps may autocorrect, so compare loosely.
+  if let b = before, let a = after {
+    out["landed"] = a.count > b.count && (text.count < 4 || a.lowercased().contains(text.lowercased().trimmingCharacters(in: .whitespaces)))
+  }
+  emit(out)
 
 case "key":
   guard let combo = input["combo"] as? String else { fail("key needs combo") }
+  if let e = (input["pid"] as? NSNumber).map({ pid_t($0.int32Value) }),
+     let front = NSWorkspace.shared.frontmostApplication, front.processIdentifier != e {
+    fail("\(front.localizedName ?? "another app") is in front, not the app I focused, so I didn't press \(combo)", code: "wrong_target")
+  }
   key(combo)
   emit(["pressed": combo])
 
@@ -368,10 +433,13 @@ case "scroll":
 
 case "activate":
   let name = (input["name"] as? String ?? "").lowercased()
-  guard let app = NSWorkspace.shared.runningApplications.first(where: {
+  let byPid = (input["pid"] as? NSNumber).flatMap { NSRunningApplication(processIdentifier: pid_t($0.int32Value)) }
+  guard let app = byPid ?? NSWorkspace.shared.runningApplications.first(where: {
     ($0.localizedName ?? "").lowercased() == name || ($0.bundleIdentifier ?? "").lowercased() == name
   }) else { fail("\(name) isn't running", code: "not_running") }
   app.activate()
+  // Wait (briefly) until it really is in front, so the keystrokes that follow reach it.
+  for _ in 0..<20 where NSWorkspace.shared.frontmostApplication?.processIdentifier != app.processIdentifier { usleep(50_000) }
   emit(["activated": app.localizedName ?? name, "pid": app.processIdentifier])
 
 default:

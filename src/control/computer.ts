@@ -64,6 +64,8 @@ export function nativeHelper(binDir: string): Helper {
 export class ComputerControl {
   readonly stopper = new StopSwitch();
   private indicatorOff?: NodeJS.Timeout;
+  /** The app (pid) Astra last focused a field in: typing and keys refuse to go anywhere else. */
+  private target?: number;
 
   constructor(
     private readonly helper: Helper,
@@ -115,6 +117,8 @@ export class ComputerControl {
           this.hooks.log(`Dan declined: ${description}`);
           return `Dan said no, so I didn't ${description}.`;
         }
+        // Answering the card brought the orb to the front; hand the keyboard back to the app she was working in.
+        if (this.target) await this.helper("activate", { pid: this.target }).catch(() => undefined);
       }
     }
     this.hooks.log(description);
@@ -181,25 +185,46 @@ export class ComputerControl {
     const target = (await this.helper("at", { x, y }).catch(() => undefined)) as UiElement | undefined;
     const name = elementLabel(target) || target?.role || `${Math.round(x)},${Math.round(y)}`;
     const verb = right ? "right-click" : count === 2 ? "double-click" : "click";
+    // A click can land in any app, so typing afterwards goes wherever it put focus.
+    this.target = undefined;
     return this.act(`${verb} "${name}"${target?.app ? ` in ${target.app}` : ""}`, { kind: "click", target }, (signal) =>
       this.helper("click", { x, y, count, right }, signal),
     );
   }
 
-  /** Types text into the focused element, a piece at a time so "stop" can halt it. Refuses password fields. */
+  /**
+   * Types text into the focused element, a piece at a time so "stop" can halt it. Refuses password fields, and
+   * stops rather than typing blind if the app in front isn't the one she focused (the helper checks every piece).
+   * Reports what actually landed when the field's text can be read back.
+   */
   async type(text: string): Promise<unknown> {
     const focused = (await this.helper("focused").catch(() => undefined)) as UiElement | undefined;
     if (isSecureField(focused)) return "The focused field is a password field. I never type into those; please do it yourself.";
     const preview = text.length > 60 ? `${text.slice(0, 60)}…` : text;
+    const pid = this.target;
     return this.act(`type "${preview}"${focused?.app ? ` in ${focused.app}` : ""}`, { kind: "type", text, focused }, async (signal) => {
       let typed = 0;
+      let missed = 0;
+      let app = focused?.app;
       for (const piece of typingChunks(text)) {
         this.stopper.check();
-        if (piece === "\n") await this.helper("key", { combo: "return" }, signal);
-        else await this.helper("type", { text: piece }, signal);
+        try {
+          if (piece === "\n") await this.helper("key", { combo: "return", pid }, signal);
+          else {
+            const done = (await this.helper("type", { text: piece, pid }, signal)) as { app?: string; landed?: boolean };
+            app = done?.app ?? app;
+            if (done?.landed === false) missed += piece.length;
+          }
+        } catch (err) {
+          if ((err as { code?: string }).code !== "wrong_target") throw err;
+          return `Stopped after ${typed} of ${text.length} characters: ${(err as Error).message}`;
+        }
         typed += piece.length;
       }
-      return { typed };
+      if (missed) {
+        return `I sent ${typed} characters to ${app ?? "the app"}, but ${missed} of them didn't show up in the field. Read the UI to see what's there before trying again.`;
+      }
+      return { typed, app };
     });
   }
 
@@ -207,9 +232,15 @@ export class ComputerControl {
   async key(combo: string): Promise<unknown> {
     const normal = normaliseCombo(combo);
     const focused = (await this.helper("focused").catch(() => undefined)) as UiElement | undefined;
-    return this.act(`press ${normal}${focused?.app ? ` in ${focused.app}` : ""}`, { kind: "key", combo: normal, focused }, (signal) =>
-      this.helper("key", { combo: normal }, signal),
-    );
+    const pid = this.target;
+    return this.act(`press ${normal}${focused?.app ? ` in ${focused.app}` : ""}`, { kind: "key", combo: normal, focused }, async (signal) => {
+      try {
+        return await this.helper("key", { combo: normal, pid }, signal);
+      } catch (err) {
+        if ((err as { code?: string }).code !== "wrong_target") throw err;
+        return (err as Error).message;
+      }
+    });
   }
 
   async scroll(dy: number, dx = 0, at?: { x: number; y: number }): Promise<unknown> {
@@ -220,11 +251,17 @@ export class ComputerControl {
   async focus(ref: string): Promise<unknown> {
     const target = (await this.helper("describe", { ref })) as UiElement;
     if (isSecureField(target)) return "That's a password field. I don't touch those.";
-    return this.act(`focus "${elementLabel(target) || target.role}"`, { kind: "focus", target }, (signal) => this.helper("focus", { ref }, signal));
+    return this.act(`focus "${elementLabel(target) || target.role}"`, { kind: "focus", target }, async (signal) => {
+      const done = await this.helper("focus", { ref }, signal);
+      // Refs start with the app's pid: typing now has to go there or nowhere.
+      this.target = Number(ref.split("/")[0]) || undefined;
+      return done;
+    });
   }
 
   /** Opens (launching if need be) and brings an app to the front. */
   async openApp(name: string): Promise<unknown> {
+    this.target = undefined;
     return this.act(`open ${name}`, { kind: "focus", target: { app: name } }, async (signal) => {
       await this.hooks.open(name);
       for (let i = 0; i < 20; i++) {

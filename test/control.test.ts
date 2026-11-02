@@ -147,3 +147,63 @@ describe("typing pieces", () => {
     expect(typingChunks("x".repeat(50)).every((p) => p.length <= 24)).toBe(true);
   });
 });
+
+describe("typing goes only where she focused", () => {
+  const field = { role: "AXTextArea", app: "TextEdit" };
+
+  it("sends the focused app's pid with every piece, so the helper can refuse another app", async () => {
+    const h = fakeHelper({ describe: () => field, focused: () => field, type: () => ({ app: "TextEdit", landed: true }) });
+    const { c } = control(h.helper);
+    await c.focus("4321/w/0.1");
+    expect(await c.type("hello\nthere")).toEqual({ typed: 11, app: "TextEdit" });
+    expect(h.did("type").map((x) => x.input.pid)).toEqual([4321, 4321]);
+    expect(h.did("key")[0]!.input).toEqual({ combo: "return", pid: 4321 });
+  });
+
+  it("stops and says why when the app in front isn't the one she focused", async () => {
+    const h = fakeHelper({
+      describe: () => field,
+      focused: () => field,
+      type: () => {
+        throw Object.assign(new Error("Astra is in front, not TextEdit, so I didn't type."), { code: "wrong_target" });
+      },
+    });
+    const { c } = control(h.helper);
+    await c.focus("4321/w/0.1");
+    const said = await c.type("one\ntwo");
+    expect(said).toBe("Stopped after 0 of 7 characters: Astra is in front, not TextEdit, so I didn't type.");
+    expect(h.did("type")).toHaveLength(1);
+    expect(h.did("key")).toHaveLength(0);
+  });
+
+  it("reports text that was sent but never showed up", async () => {
+    const h = fakeHelper({ focused: () => field, type: () => ({ app: "TextEdit", landed: false }) });
+    const { c } = control(h.helper);
+    expect(await c.type("lost words")).toMatch(/10 of them didn't show up/);
+  });
+
+  it("forgets the target after a click, which can put focus anywhere", async () => {
+    const h = fakeHelper({ describe: () => field, focused: () => field, at: () => field });
+    const { c } = control(h.helper);
+    await c.focus("4321/w/0.1");
+    await c.click(10, 10);
+    await c.type("hi");
+    expect(h.did("type")[0]!.input.pid).toBeUndefined();
+  });
+});
+
+describe("after an approval card", () => {
+  it("brings the app she focused back to the front before acting", async () => {
+    // Anything in System Settings is confirmed first.
+    const field = { role: "AXTextField", app: "System Settings" };
+    const h = fakeHelper({ describe: () => field, focused: () => field, type: () => ({ landed: true }) });
+    const { c, asked } = control(h.helper);
+    await c.focus("777/w/0.1");
+    asked.length = 0;
+    await c.type("Thanks!");
+    expect(asked).toHaveLength(1);
+    const order = h.calls.map((x) => x.command).filter((x) => x === "activate" || x === "type");
+    expect(order[0]).toBe("activate");
+    expect(h.did("activate")[0]!.input).toEqual({ pid: 777 });
+  });
+});

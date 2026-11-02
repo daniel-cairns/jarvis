@@ -17,4 +17,15 @@ describe("astra-ax helper", () => {
     expect(focus).toMatch(/\.activate\(\)/);
     expect(focus).toMatch(/kAXRaiseAction/);
   });
+
+  it("presses and releases modifiers as real keys, and types with no modifiers held", () => {
+    // Setting flags only on the key event left ⌘ stuck down, so later typing arrived as ⌘ shortcuts and was lost.
+    const key = source.slice(source.indexOf("func key("), source.indexOf("let MODIFIER_KEYS"));
+    expect(key).toMatch(/for m in mods \{/);
+    expect(key).toMatch(/for m in mods\.reversed\(\)/);
+    expect(source).toMatch(/\(\.maskCommand, 55\)/);
+    const type = source.slice(source.indexOf("func typeText("), source.indexOf("// MARK: - Commands"));
+    expect(type).toMatch(/e\?\.flags = \[\]/);
+    expect(type).toMatch(/checkTarget\(expected\)/);
+  });
 });
