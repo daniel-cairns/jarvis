@@ -109,6 +109,10 @@ no Terminal window, just her orb and menu-bar icon; her output goes to `~/.jarvi
 running you get a notification instead. The first time, macOS asks to let Astra use the microphone: allow it, or she
 hears nothing. To restart her, use **Restart Astra** in her menu-bar menu or say "Astra, restart".
 
+`Astra.app` has this folder's path baked in. To move the repo, use `scripts/relocate.sh` (it quits her, moves the
+folder, rebuilds both copies of the app, runs the checks and relaunches her; `--dry-run` to preview, `--rollback` to
+undo). Set `RELOCATE_TO` for somewhere other than `~/Workspace/jarvis`.
+
 ```bash
 npm start            # voice: press Enter to talk, Enter again to send
 npm run text         # typed mode

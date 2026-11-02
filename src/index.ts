@@ -125,7 +125,8 @@ async function main(): Promise<void> {
   const args = new Set(process.argv.slice(2));
   const textMode = args.has("--text");
   try {
-    process.loadEnvFile(".env");
+    // The repo's own .env, wherever the repo lives and whatever folder she was started from.
+    process.loadEnvFile(new URL("../.env", import.meta.url));
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
   }

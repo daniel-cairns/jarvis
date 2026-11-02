@@ -35,8 +35,10 @@ mic="Astra listens for her name and for what you ask her."
 codesign --force --deep --sign - "$app"
 echo "Built $app"
 
-if [ -d /Applications/Astra.app ]; then
-  rm -rf /Applications/Astra.app
-  ditto "$app" /Applications/Astra.app
-  echo "Updated /Applications/Astra.app"
+# ASTRA_APPS_DIR lets a rehearsal (scripts/relocate.sh) refresh a stand-in folder instead of the real one.
+apps="${ASTRA_APPS_DIR:-/Applications}"
+if [ -d "$apps/Astra.app" ]; then
+  rm -rf "$apps/Astra.app"
+  ditto "$app" "$apps/Astra.app"
+  echo "Updated $apps/Astra.app"
 fi
