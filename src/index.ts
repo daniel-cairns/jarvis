@@ -980,7 +980,7 @@ async function main(): Promise<void> {
       tidyWindows();
       restartIfDue();
     },
-  });
+  }, undefined, () => settings.backgroundPermissionMode);
 
   /** A session with its status corrected by her own runs (see liveStatus). */
   const live = (s: SessionSummary): SessionSummary => ({ ...s, status: liveStatus(s, sessionRunner.list()) });
@@ -1090,6 +1090,7 @@ async function main(): Promise<void> {
       const s = live(await sessionRef(ref));
       if (s.status === "working") throw new Error(`"${s.title}" is working right now; I only send to a session when it's idle.`);
       const job = sessionRunner.send(s.id, s.folder || cfg.workspaceDir, prompt, s.project);
+      console.log(`  [${job.id} ${job.label}] resumed ${s.id} with ${job.permissionMode} permissions`);
       startTranscript(job);
       return `Sent to "${s.title}" (${s.project}) as background run ${job.id}. You'll hear when it's done, and its approvals will come to you.`;
     },
@@ -1102,6 +1103,7 @@ async function main(): Promise<void> {
         return `Started a new session in ${path.basename(folder)} in the Claude app; it's running there now, so you can watch it.`;
       }
       const job = sessionRunner.start(folder, prompt, path.basename(folder));
+      console.log(`  [${job.id} ${job.label}] started in ${folder} with ${job.permissionMode} permissions`);
       startTranscript(job);
       return `Started background run ${job.id} in ${path.basename(folder)}. You'll hear when it's done, and its approvals will come to you.`;
     },

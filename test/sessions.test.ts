@@ -52,6 +52,18 @@ describe("summarise", () => {
     expect(liveStatus(quiet, [{ sessionId: ID(1), status: "stopped" }, { sessionId: ID(1), status: "running" }])).toBe("working");
   });
 
+  it("starts background runs in the permission mode the setting gives, and records it on the run", async () => {
+    let seen: unknown;
+    const fake = (async function* ({ options: o }: { options: Record<string, unknown> }) {
+      seen = o.permissionMode;
+    }) as never;
+    const runner = new SessionRunner(loadConfig({}), { activity: () => {}, ask: async () => "no", finished: () => {} }, fake, () => "default");
+    const job = runner.start(os.tmpdir(), "go", "test");
+    await new Promise((r) => setTimeout(r, 20));
+    expect(job.permissionMode).toBe("default");
+    expect(seen).toBe("default");
+  });
+
   it("refuses to launch in a folder that no longer exists, saying which", () => {
     const runner = new SessionRunner(loadConfig({}), { activity: () => {}, ask: async () => "no", finished: () => {} });
     expect(() => runner.send(ID(9), "/no/such/folder", "go", "potato")).toThrow("The potato session's folder no longer exists (/no/such/folder)");
@@ -134,6 +146,9 @@ describe("SessionRunner", () => {
     });
     const job = await finished;
     expect(options).toMatchObject({ cwd: os.tmpdir(), resume: ID(9) });
+    // Auto mode by default, like your own sessions; what it can't decide still comes through canUseTool.
+    expect(options.permissionMode).toBe("auto");
+    expect(typeof options.canUseTool).toBe("function");
     // Background runs get the same page-fetch security check as Astra.
     const hooks = options.hooks as Record<string, { matcher: string }[]>;
     expect(hooks.PreToolUse?.[0]?.matcher).toBe("WebFetch");

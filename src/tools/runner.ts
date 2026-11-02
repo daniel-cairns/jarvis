@@ -6,6 +6,7 @@
 import { existsSync } from "node:fs";
 import { query, type CanUseTool, type SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 import type { JarvisConfig } from "../config.js";
+import type { BackgroundPermissionMode } from "../settings.js";
 import type { Approval } from "../agent.js";
 import { allowKey, describeCall, parseAnswer } from "../permissions.js";
 import { createFetchGuard } from "../security/fetchGuard.js";
@@ -24,6 +25,8 @@ export type Job = {
   lastText: string;
   costUsd: number;
   startedAt: string;
+  /** The permission mode it started with (see BackgroundPermissionMode). */
+  permissionMode: BackgroundPermissionMode;
   abort: AbortController;
 };
 
@@ -64,6 +67,8 @@ export class SessionRunner {
     private readonly cfg: JarvisConfig,
     private readonly events: RunnerEvents,
     private readonly runQuery: QueryFn = query,
+    /** Read at each launch, so a change to the setting applies to the next run. */
+    private readonly permissionMode: () => BackgroundPermissionMode = () => "auto",
   ) {}
 
   list(): Job[] {
@@ -104,6 +109,7 @@ export class SessionRunner {
       lastText: "",
       costUsd: 0,
       startedAt: new Date().toISOString(),
+      permissionMode: this.permissionMode(),
       abort: new AbortController(),
     };
     this.jobs.set(job.id, job);
@@ -139,7 +145,9 @@ export class SessionRunner {
           cwd: job.folder,
           model: this.cfg.model,
           maxBudgetUsd: this.cfg.maxBudgetUsd,
-          permissionMode: "default",
+          // Auto mode as in your own sessions: its classifier decides under your settings' autoMode rules, and what it
+          // can't decide still comes through canUseTool below, as an approval card via Astra.
+          permissionMode: job.permissionMode,
           canUseTool,
           hooks: guard.hooks,
           env: sessionEnv(),

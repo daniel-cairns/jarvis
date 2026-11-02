@@ -2,9 +2,17 @@
 import fs from "node:fs";
 import path from "node:path";
 
-export type Settings = { volume: number; typeOnly: boolean; godMode: boolean };
+/**
+ * How background runs she starts or resumes handle permissions. "auto" (the default) is what Claude Code itself
+ * starts in for you: its classifier approves or declines each call under your settings' autoMode rules, and only
+ * what it can't decide comes to you as a card. "default" sends every approval to you. Nothing looser is allowed.
+ */
+export type BackgroundPermissionMode = "auto" | "default";
+const BACKGROUND_MODES: readonly BackgroundPermissionMode[] = ["auto", "default"];
 
-const DEFAULTS: Settings = { volume: 0.8, typeOnly: false, godMode: false };
+export type Settings = { volume: number; typeOnly: boolean; godMode: boolean; backgroundPermissionMode: BackgroundPermissionMode };
+
+const DEFAULTS: Settings = { volume: 0.8, typeOnly: false, godMode: false, backgroundPermissionMode: "auto" };
 
 export const clampVolume = (v: number) => Math.round(Math.min(1, Math.max(0, v)) * 100) / 100;
 
@@ -15,6 +23,9 @@ export function loadSettings(home: string): Settings {
       volume: typeof raw.volume === "number" ? clampVolume(raw.volume) : DEFAULTS.volume,
       typeOnly: raw.typeOnly === true,
       godMode: raw.godMode === true,
+      backgroundPermissionMode: BACKGROUND_MODES.includes(raw.backgroundPermissionMode as BackgroundPermissionMode)
+        ? (raw.backgroundPermissionMode as BackgroundPermissionMode)
+        : DEFAULTS.backgroundPermissionMode,
     };
   } catch {
     return { ...DEFAULTS };

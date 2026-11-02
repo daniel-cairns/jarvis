@@ -104,8 +104,11 @@ describe("settings", () => {
     const home = fs.mkdtempSync(path.join(os.tmpdir(), "astra-settings-"));
     expect(loadSettings(home).volume).toBe(0.8);
     expect(loadSettings(home).typeOnly).toBe(false);
-    saveSettings(home, { volume: clampVolume(1.7), typeOnly: true, godMode: true });
-    expect(loadSettings(home)).toEqual({ volume: 1, typeOnly: true, godMode: true });
+    saveSettings(home, { volume: clampVolume(1.7), typeOnly: true, godMode: true, backgroundPermissionMode: "default" });
+    expect(loadSettings(home)).toEqual({ volume: 1, typeOnly: true, godMode: true, backgroundPermissionMode: "default" });
+    // Background runs default to auto mode, and nothing looser than "default" can be set.
+    fs.writeFileSync(path.join(home, "settings.json"), JSON.stringify({ backgroundPermissionMode: "bypassPermissions" }));
+    expect(loadSettings(home).backgroundPermissionMode).toBe("auto");
     fs.writeFileSync(path.join(home, "settings.json"), "not json");
     expect(loadSettings(home).volume).toBe(0.8);
     fs.rmSync(home, { recursive: true, force: true });
