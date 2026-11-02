@@ -1,13 +1,15 @@
 /**
  * The page-fetch security check as Agent SDK hooks, shared by Astra and the background sessions she runs.
- * Before a WebFetch: a threat-list hit is refused, a warning sign forces an approval (see takeFlags). After it,
+ * Before any tool reaches out to a `url` (WebFetch, launch_clean_browser, REA's browser tools…), the egress gate
+ * checks it: a threat-list hit is refused, a warning sign forces an approval (see takeFlags). After a WebFetch,
  * before the model reads it: the page is cleaned and labelled. Hooks run ahead of Claude Code's own allow rules,
  * so sites allowed in your settings are checked too.
  */
 import type { HookCallback, Options } from "@anthropic-ai/claude-agent-sdk";
 import { hostOf } from "../safeSites.js";
 import { scanContent } from "./contentScan.js";
-import { checkUrl, type IndexDeps, type IndexKeys } from "./urlCheck.js";
+import { egress, outboundUrl } from "./egress.js";
+import type { IndexDeps, IndexKeys } from "./urlCheck.js";
 
 export type FetchGuard = {
   hooks: NonNullable<Options["hooks"]>;
@@ -28,10 +30,11 @@ export function createFetchGuard(keys: IndexKeys, events: GuardEvents, deps: Ind
 
   const before: HookCallback = async (input) => {
     if (input.hook_event_name !== "PreToolUse") return {};
-    const url = (input.tool_input as { url?: unknown }).url;
-    if (typeof url !== "string") return {};
+    const url = outboundUrl(input.tool_input);
+    if (!url) return {};
     events.checking?.("start");
-    const result = await checkUrl(url, keys, deps);
+    const gate = await egress(url, input.tool_name, keys, deps);
+    const result = { verdict: gate.decision === "deny" ? "block" : gate.decision === "ask" ? "warn" : "ok", reasons: gate.reasons };
     events.checking?.(result.verdict === "block" ? "blocked" : "ok");
     const host = hostOf(url) ?? "that address";
     if (result.verdict === "block") {
@@ -45,7 +48,7 @@ export function createFetchGuard(keys: IndexKeys, events: GuardEvents, deps: Ind
       };
     }
     if (result.verdict === "warn") {
-      flagged.set(url, result.reasons);
+      flagged.set(`${input.tool_name} ${url}`, result.reasons);
       return {
         hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "ask", permissionDecisionReason: `Security check: ${result.reasons.join("; ")}` },
       };
@@ -69,13 +72,16 @@ export function createFetchGuard(keys: IndexKeys, events: GuardEvents, deps: Ind
 
   return {
     hooks: {
-      PreToolUse: [{ matcher: "WebFetch", hooks: [before] }],
+      // Every tool: any call with a `url` goes through the egress gate (calls without one pass straight through).
+      PreToolUse: [{ hooks: [before] }],
       PostToolUse: [{ matcher: "WebFetch", hooks: [after] }],
     },
     takeFlags(toolName, input) {
-      if (toolName !== "WebFetch" || typeof input.url !== "string") return undefined;
-      const reasons = flagged.get(input.url);
-      flagged.delete(input.url);
+      const url = outboundUrl(input);
+      if (!url) return undefined;
+      const key = `${toolName} ${url}`;
+      const reasons = flagged.get(key);
+      flagged.delete(key);
       return reasons;
     },
   };

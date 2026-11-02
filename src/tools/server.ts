@@ -9,6 +9,7 @@ import type { QuestionAnswer, QuestionSpec } from "../voice/answers.js";
 import { POSITIONS, UI_ACTIONS, type Position, type UiAction } from "../ui/control.js";
 import type { ComputerControl } from "../control/computer.js";
 import type { CoffeeMode } from "../power/coffee.js";
+import { egress } from "../security/egress.js";
 
 export const SERVER_NAME = "jarvis";
 
@@ -239,7 +240,13 @@ export function createJarvisServer(cfg: JarvisConfig, runner: Runner = realRunne
         "Start a fresh Chrome profile on a DevTools port and load a URL, so REA's browser tools can observe it. Returns its cdp_endpoint and pid: always pass that exact cdp_endpoint to REA's browser tools (the port can differ from 9222 when an earlier clean Chrome holds it), and that pid to the computer_* tools.",
         { url: z.string().min(1) },
         (args) =>
-          guarded(() => launchCleanBrowser(args.url, { chromeBin: cfg.chromeBin, port: cfg.chromeDebugPort }, runner)),
+          guarded(async () => {
+            // The hooks already put this through the egress gate; refusing a listed site here too means no caller
+            // that bypasses the hooks can open one.
+            const gate = await egress(args.url, "launch_clean_browser", { safeBrowsing: cfg.safeBrowsingKey, urlhaus: cfg.urlhausKey });
+            if (gate.decision === "deny") throw new Error(`The security check blocked that site: ${gate.reasons.join("; ")}. Don't try to reach it another way; tell Dan.`);
+            return launchCleanBrowser(args.url, { chromeBin: cfg.chromeBin, port: cfg.chromeDebugPort }, runner);
+          }),
       ),
     ],
   });

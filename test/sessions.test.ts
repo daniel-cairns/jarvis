@@ -162,7 +162,8 @@ describe("SessionRunner", () => {
     expect(typeof options.canUseTool).toBe("function");
     // Background runs get the same page-fetch security check as Astra.
     const hooks = options.hooks as Record<string, { matcher: string }[]>;
-    expect(hooks.PreToolUse?.[0]?.matcher).toBe("WebFetch");
+    // The egress gate sees every tool call (it acts on any with a url); page cleaning stays on WebFetch.
+    expect(hooks.PreToolUse?.[0]?.matcher).toBeUndefined();
     expect(hooks.PostToolUse?.[0]?.matcher).toBe("WebFetch");
     expect(seen).toEqual(["activity:Bash", "ask:gymclaw session: I'd like to run the command: npm test.", "permission:allow"]);
     expect(job).toMatchObject({ status: "done", sessionId: ID(9), lastText: "All 12 tests pass.", costUsd: 0.12 });

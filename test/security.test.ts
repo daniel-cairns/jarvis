@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { scanContent } from "../src/security/contentScan.js";
 import { createFetchGuard } from "../src/security/fetchGuard.js";
+import { egress } from "../src/security/egress.js";
 import { addressFindings, checkUrl, clearUrlCheckCache, indexFindings, type IndexDeps } from "../src/security/urlCheck.js";
 
 // Fake indexes: nothing listed, and the DNS answers the same on both Quad9 servers.
@@ -67,6 +68,20 @@ describe("checkUrl", () => {
     expect((await checkUrl("https://203.0.113.9/", {}, clean)).verdict).toBe("warn");
     const ok = await checkUrl("https://nuxt.com/docs", {}, clean);
     expect(ok).toEqual({ verdict: "ok", reasons: [], unchecked: ["Google Safe Browsing (no key)", "URLhaus (no key)"] });
+  });
+});
+
+describe("egress", () => {
+  it("allows this machine, refuses listed sites, asks about risky or non-web addresses", async () => {
+    const deps: IndexDeps = { resolveOn: async (server, host) => server === "9.9.9.10" || !host.startsWith("bad.") };
+    expect((await egress("http://localhost:3000/", "serve_app", {}, deps)).decision).toBe("allow");
+    expect((await egress("https://bad.example/", "launch_clean_browser", {}, deps)).decision).toBe("deny");
+    expect((await egress("https://203.0.113.9/", "launch_clean_browser", {}, deps)).decision).toBe("ask");
+    expect(await egress("javascript:alert(1)", "launch_clean_browser", {}, deps)).toEqual({
+      decision: "ask",
+      reasons: ["launch_clean_browser wants to open a javascript: address, not a web page"],
+    });
+    expect((await egress("https://nuxt.com/", "launch_clean_browser", {}, deps)).decision).toBe("allow");
   });
 });
 
@@ -163,6 +178,23 @@ describe("createFetchGuard", () => {
     expect(guard.takeFlags("WebFetch", { url: "https://203.0.113.9/" })).toBeUndefined();
 
     expect(await run(before, pre("https://nuxt.com/docs"))).toEqual({});
+  });
+
+  it("gates every tool that reaches out to a url, not just WebFetch", async () => {
+    const guard = createFetchGuard({}, { notify: () => {} }, { resolveOn: async (server, host) => server === "9.9.9.10" || !host.startsWith("bad.") });
+    expect(guard.hooks.PreToolUse![0]!.matcher).toBeUndefined();
+    const before = guard.hooks.PreToolUse![0]!.hooks[0];
+    const call = (tool_name: string, tool_input: object) => run(before, { hook_event_name: "PreToolUse", tool_name, tool_input });
+    // An injected page talking Astra into opening an attacker's site in the clean browser, or REA's.
+    expect((await call("mcp__jarvis__launch_clean_browser", { url: "https://bad.example/login" })).hookSpecificOutput).toMatchObject({ permissionDecision: "deny" });
+    expect((await call("mcp__rea__inspect_web_page", { url: "https://bad.example/" })).hookSpecificOutput).toMatchObject({ permissionDecision: "deny" });
+    // Risky signs ask, and the flag is tied to that tool.
+    expect((await call("mcp__jarvis__launch_clean_browser", { url: "https://203.0.113.9/" })).hookSpecificOutput).toMatchObject({ permissionDecision: "ask" });
+    expect(guard.takeFlags("WebFetch", { url: "https://203.0.113.9/" })).toBeUndefined();
+    expect(guard.takeFlags("mcp__jarvis__launch_clean_browser", { url: "https://203.0.113.9/" })).toBeTruthy();
+    // Calls without a url, and this machine's own servers, pass straight through.
+    expect(await call("Read", { file_path: "/tmp/x" })).toEqual({});
+    expect(await call("mcp__rea__inspect_web_page", { url: "http://127.0.0.1:5173/" })).toEqual({});
   });
 
   it("cleans the page before the model reads it", async () => {
