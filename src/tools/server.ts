@@ -244,8 +244,8 @@ function computerTools(computer: ComputerControl) {
     tool("computer_windows", "List on-screen windows: app, pid, windowId, title, frame.", {}, () => guarded(() => computer.windows())),
     tool(
       "computer_read_ui",
-      "Read an app's UI as an Accessibility tree (roles, titles, labels, values, frames, actions), each element with a ref to act on. Defaults to the frontmost app's focused window. Prefer this to screenshots. Password fields show as secure, without their value.",
-      { app: z.string().optional(), scope: z.enum(["window", "app"]).optional(), depth: z.number().int().min(1).max(40).optional(), max: z.number().int().min(10).max(2000).optional() },
+      "Read an app's UI as an Accessibility tree (roles, titles, labels, values, frames, actions), each element with a ref to act on. Defaults to the frontmost app's focused window. Prefer this to screenshots. Password fields show as secure, without their value. When two copies of an app run (Dan's own Chrome and the clean one), pass pid (from computer_windows or launch_clean_browser); by name it refuses to guess.",
+      { app: z.string().optional(), pid: z.number().int().optional(), scope: z.enum(["window", "app"]).optional(), depth: z.number().int().min(1).max(40).optional(), max: z.number().int().min(10).max(2000).optional() },
       (a) => guarded(() => computer.readUi(a)),
     ),
     tool(
@@ -279,6 +279,11 @@ function computerTools(computer: ComputerControl) {
     tool("computer_scroll", "Scroll by lines: negative dy scrolls down. Optionally at a point.", { dy: z.number().int(), dx: z.number().int().optional(), x: z.number().optional(), y: z.number().optional() }, (a) =>
       guarded(() => computer.scroll(a.dy, a.dx, a.x !== undefined && a.y !== undefined ? { x: a.x, y: a.y } : undefined)),
     ),
-    tool("computer_open_app", "Open an app (launching it if needed) and bring it to the front.", { name: z.string().min(1) }, (a) => guarded(() => computer.openApp(a.name))),
+    tool(
+      "computer_open_app",
+      "Open an app (launching it if needed) and bring it to the front. Pass pid to bring one exact copy forward when several are running.",
+      { name: z.string().min(1), pid: z.number().int().optional() },
+      (a) => guarded(() => computer.openApp(a.name, a.pid)),
+    ),
   ];
 }

@@ -86,6 +86,8 @@ describe("launchCleanBrowser", () => {
     expect(calls[0]?.args).toContain("--remote-debugging-address=127.0.0.1");
     expect(calls[0]?.args).toContain(`--user-data-dir=${res.profileDir}`);
     expect(calls[0]?.args.at(-1)).toBe("https://igloo.inc/");
+    // Without it, Chrome shows Astra's computer_read_ui an empty page.
+    expect(calls[0]?.args).toContain("--force-renderer-accessibility");
     await fs.rm(res.profileDir, { recursive: true, force: true });
   });
 

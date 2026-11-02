@@ -12,7 +12,8 @@ const execFileAsync = promisify(execFile);
 
 export type Runner = {
   run(cmd: string, args: string[]): Promise<void>;
-  launchDetached(cmd: string, args: string[]): void;
+  /** Starts a process that outlives Astra; returns its pid when known. */
+  launchDetached(cmd: string, args: string[]): number | undefined | void;
 };
 
 export const realRunner: Runner = {
@@ -23,6 +24,7 @@ export const realRunner: Runner = {
     const child = spawn(cmd, args, { detached: true, stdio: "ignore" });
     child.on("error", () => {});
     child.unref();
+    return child.pid;
   },
 };
 
@@ -88,17 +90,21 @@ export async function launchCleanBrowser(
   opts: { chromeBin: string; port: number },
   runner: Runner = realRunner,
   platform = process.platform,
-): Promise<{ cdp_endpoint: string; profileDir: string; url: string }> {
+): Promise<{ cdp_endpoint: string; profileDir: string; url: string; pid?: number }> {
   requireMac(platform);
   const url = validateWebUrl(rawUrl);
   const profileDir = await fs.mkdtemp(path.join(os.tmpdir(), "jarvis-chrome-"));
-  runner.launchDetached(opts.chromeBin, [
+  const pid = runner.launchDetached(opts.chromeBin, [
     `--remote-debugging-port=${opts.port}`,
     "--remote-debugging-address=127.0.0.1",
     `--user-data-dir=${profileDir}`,
     "--no-first-run",
     "--no-default-browser-check",
+    // Chrome only builds the page's accessibility tree for screen readers, and ignores the switches other apps
+    // honour (AXManualAccessibility, AXEnhancedUserInterface). Without this the page is one empty group to Astra.
+    "--force-renderer-accessibility",
     url,
   ]);
-  return { cdp_endpoint: `http://127.0.0.1:${opts.port}`, profileDir, url };
+  // The pid lets the computer_* tools target this Chrome and never Dan's own.
+  return { cdp_endpoint: `http://127.0.0.1:${opts.port}`, profileDir, url, ...(pid ? { pid } : {}) };
 }

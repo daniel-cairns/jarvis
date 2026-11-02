@@ -144,12 +144,13 @@ export class ComputerControl {
   }
 
   /** The UI tree of an app (default: the frontmost), focused window or whole app. */
-  async readUi(opts: { app?: string; scope?: "window" | "app"; depth?: number; max?: number } = {}): Promise<unknown> {
+  /** Reads an app's UI tree. `pid` (or a numeric `app`) picks one exact copy when several are running. */
+  async readUi(opts: { app?: string; pid?: number; scope?: "window" | "app"; depth?: number; max?: number } = {}): Promise<unknown> {
     this.stopper.check();
     const perms = await this.permissions("accessibility");
     if (!perms.ok) return perms.message;
     let pid: number | undefined;
-    if (opts.app) pid = ((await this.helper("activate", { name: opts.app })) as { pid: number }).pid;
+    if (opts.pid || opts.app) pid = ((await this.helper("activate", { name: opts.app ?? "", pid: opts.pid })) as { pid: number }).pid;
     return this.helper("tree", { pid, scope: opts.scope ?? "window", depth: opts.depth ?? 12, max: opts.max ?? 400 });
   }
 
@@ -260,8 +261,9 @@ export class ComputerControl {
   }
 
   /** Opens (launching if need be) and brings an app to the front. */
-  async openApp(name: string): Promise<unknown> {
+  async openApp(name: string, pid?: number): Promise<unknown> {
     this.target = undefined;
+    if (pid) return this.act(`bring pid ${pid} to the front`, { kind: "focus", target: { app: name } }, (signal) => this.helper("activate", { name, pid }, signal));
     return this.act(`open ${name}`, { kind: "focus", target: { app: name } }, async (signal) => {
       await this.hooks.open(name);
       for (let i = 0; i < 20; i++) {

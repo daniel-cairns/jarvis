@@ -280,6 +280,20 @@ func focusedElement() -> AXUIElement? {
 /// The focused element's text, when it has some (nil for elements without a readable value).
 func textValue(_ el: AXUIElement?) -> String? { el.flatMap { attr($0, kAXValueAttribute) as? String } }
 
+/// Brings an element's app to the front with its window raised and made main, so the keyboard follows: focusing or
+/// pressing inside a background app moved its focus but sent the keystrokes elsewhere (to the orb, in testing).
+func bringForward(_ el: AXUIElement) {
+  let pid = pidOf(el)
+  NSRunningApplication(processIdentifier: pid)?.activate()
+  if let window = attr(el, kAXWindowAttribute) {
+    let w = window as! AXUIElement
+    AXUIElementPerformAction(w, kAXRaiseAction as CFString)
+    AXUIElementSetAttributeValue(w, kAXMainAttribute as CFString, kCFBooleanTrue)
+  }
+  for _ in 0..<10 where NSWorkspace.shared.frontmostApplication?.processIdentifier != pid { usleep(50_000) }
+  usleep(100_000)
+}
+
 /// Refuses to type unless the keystrokes will reach the app that's meant to get them: the frontmost app owns the
 /// focused element, and, when the caller says which app it expects, it's that one. Typing blind is a safety risk,
 /// since a newline in the wrong app can send a message.
@@ -372,6 +386,9 @@ case "describe":
 case "press":
   guard let ref = input["ref"] as? String else { fail("press needs ref") }
   let el = resolve(ref)
+  // Pressing by action works on a background app, but the keys that usually follow (cmd+a, typing) go to the app
+  // in front: the address bar was pressed in Chrome while Astra's orb kept the keyboard.
+  bringForward(el)
   if AXUIElementPerformAction(el, kAXPressAction as CFString) == .success { emit(["pressed": ref, "via": "action"]) }
   guard let f = frame(el) else { fail("can't press \(ref): no action and no position") }
   click(x: f["x"]! + f["w"]! / 2, y: f["y"]! + f["h"]! / 2, count: 1, right: false)
@@ -381,11 +398,7 @@ case "focus":
   guard let ref = input["ref"] as? String else { fail("focus needs ref") }
   let el = resolve(ref)
   if isSecure(el) { fail("that's a password field; Astra doesn't touch those", code: "secure_field") }
-  // Typing goes to the frontmost app, so bring the element's app and window forward first; focusing inside an app
-  // that's in the background moved its focus but sent the keystrokes elsewhere (to the orb, in testing).
-  NSRunningApplication(processIdentifier: pidOf(el))?.activate()
-  if let window = attr(el, kAXWindowAttribute) { AXUIElementPerformAction(window as! AXUIElement, kAXRaiseAction as CFString) }
-  usleep(250_000)
+  bringForward(el)
   AXUIElementSetAttributeValue(el, kAXFocusedAttribute as CFString, kCFBooleanTrue)
   usleep(100_000)
   // Chromium sometimes ignores the AX focus request; a click in the middle of the element focuses it reliably.
@@ -433,10 +446,19 @@ case "scroll":
 
 case "activate":
   let name = (input["name"] as? String ?? "").lowercased()
-  let byPid = (input["pid"] as? NSNumber).flatMap { NSRunningApplication(processIdentifier: pid_t($0.int32Value)) }
-  guard let app = byPid ?? NSWorkspace.shared.runningApplications.first(where: {
+  let pidIn = (input["pid"] as? NSNumber).map { pid_t($0.int32Value) } ?? pid_t(name)
+  let byPid = pidIn.flatMap { NSRunningApplication(processIdentifier: $0) }
+  if pidIn != nil && byPid == nil { fail("no app with pid \(pidIn!) is running", code: "not_running") }
+  let named = NSWorkspace.shared.runningApplications.filter {
     ($0.localizedName ?? "").lowercased() == name || ($0.bundleIdentifier ?? "").lowercased() == name
-  }) else { fail("\(name) isn't running", code: "not_running") }
+  }
+  // Two copies running (Dan's own Chrome and the clean one): never guess which, since acting in his personal
+  // profile by accident is exactly what must not happen.
+  if byPid == nil && named.count > 1 {
+    let pids = named.map { String($0.processIdentifier) }.joined(separator: ", ")
+    fail("\(named.count) copies of \(name) are running (pids \(pids)); say which by pid", code: "ambiguous")
+  }
+  guard let app = byPid ?? named.first else { fail("\(name) isn't running", code: "not_running") }
   app.activate()
   // Wait (briefly) until it really is in front, so the keystrokes that follow reach it.
   for _ in 0..<20 where NSWorkspace.shared.frontmostApplication?.processIdentifier != app.processIdentifier { usleep(50_000) }

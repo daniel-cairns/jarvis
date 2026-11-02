@@ -544,6 +544,9 @@ app.whenReady().then(() => {
 
   // While Astra operates apps: a click-through glow round the screen she's working on, and a hotkey to stop her.
   let controlWin = null;
+  /** When she last acted on another app; work panels stay put for a minute after. */
+  let lastControlAt = 0;
+  const CONTROL_QUIET_MS = 60_000;
   const controlIndicator = (on) => {
     if (!on) return void controlWin?.hide();
     const { bounds } = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
@@ -574,7 +577,10 @@ app.whenReady().then(() => {
       } catch {
         return;
       }
-      if (m.type === "control") controlIndicator(!!m.on);
+      if (m.type === "control") {
+        if (m.on) lastControlAt = Date.now();
+        controlIndicator(!!m.on);
+      }
       // Quitting folds her away first (she's gone either way within 1.6 s).
       else if (m.type === "quit") {
         foldingToQuit = true;
@@ -588,7 +594,13 @@ app.whenReady().then(() => {
         const slab = slabs[m.type];
         const hasContent = m.type === "terminal" ? m.entries.length > 0 : m.repos.length > 0;
         const owner = m.owner === "user" ? "user" : m.force ? "astra" : "auto";
-        if (slab.win && !slab.win.isDestroyed()) openSlab(m.type, m, owner);
+        // While she's operating another app, a panel popping up covers it and catches her clicks: keep the news
+        // (the dropdown can show it) and only refresh a panel that's already open, without raising it.
+        if (owner === "auto" && Date.now() - lastControlAt < CONTROL_QUIET_MS) {
+          slab.last = m;
+          if (slab.win && !slab.win.isDestroyed()) slab.win.webContents.send("jarvis", m);
+          sendPanels();
+        } else if (slab.win && !slab.win.isDestroyed()) openSlab(m.type, m, owner);
         else if (m.force || (hasContent && !dismissed.has(m.type))) {
           dismissed.delete(m.type);
           openSlab(m.type, m, owner);
@@ -611,7 +623,9 @@ app.whenReady().then(() => {
         // A question needs you, so a minimised orb comes back for it.
         if (!win.isVisible()) show();
         win.webContents.send("jarvis", m);
-        win.focus();
+        // On top, but not focused: focusing made Astra the active app, so the keys she sent next (and Dan's own
+        // typing) went to her instead of the app she was working in. Clicking the card still focuses it.
+        win.moveTop();
       } else win.webContents.send("jarvis", m);
     })
     // Astra's process closed the pipe: quit, unless a quit fold is already playing (it quits when done).
