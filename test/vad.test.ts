@@ -120,10 +120,14 @@ describe.skipIf(!existsSync(MODEL))("the Silero speech detector on recorded spee
 describe("the recorder around it", () => {
   const tmp = mkdtempSync(path.join(os.tmpdir(), "astra-vad-"));
   afterAll(() => rmSync(tmp, { recursive: true, force: true }));
-  /** A stand-in for sox's rec that records its arguments, then streams silence (or zeros) until stopped. */
+  /**
+   * A stand-in for sox's rec: streams silence at a real microphone's rate (16 kHz, 16-bit mono: 3.2 KB every 0.1 s)
+   * until stopped. It used to `cat /dev/zero`, which floods gigabytes a second; the speech detector then ran flat out
+   * over all of it, starving the event loop (so the cap's timer fired late) and slowing every test running alongside.
+   */
   const fakeRec = (name: string) => {
     const bin = path.join(tmp, name);
-    writeFileSync(bin, `#!/bin/sh\necho "$@" > "${bin}.args"\nexec cat /dev/zero\n`);
+    writeFileSync(bin, "#!/bin/sh\nwhile :; do head -c 3200 /dev/zero; sleep 0.1; done\n");
     chmodSync(bin, 0o755);
     return bin;
   };
@@ -147,13 +151,15 @@ describe("the recorder around it", () => {
     const l = new Listener(cfg(bin, MODEL));
     const t0 = Date.now();
     await l.start({ autoStop: true, noSpeechMs: Infinity, maxMs: 700 });
+    // The arguments Astra spawned the recorder with, read from the process itself. (Read from a file the fake wrote,
+    // they went missing under load: the cap could kill the fake's shell before it ran.)
+    const args = (l as unknown as { recorder: { spawnargs: string[] } }).recorder.spawnargs.join(" ");
     await l.whenDone();
     const took = Date.now() - t0;
     await l.cancel();
-    expect(readFileSync(`${bin}.args`, "utf8").trim()).toMatch(/-t raw -$/); // the speech-detector path: raw audio to Node
+    expect(args).toMatch(/-t raw -$/); // the speech-detector path: raw audio to Node
     expect(took).toBeGreaterThanOrEqual(650);
-    // Generous: other test files run the detector in parallel and can slow this down. Without the cap it would
-    // never end at all (no speech and no give-up time).
-    expect(took).toBeLessThan(6000);
-  }, 15_000);
+    // Without the cap it would never end at all (no speech and no give-up time); with it, it ends just after 0.7 s.
+    expect(took).toBeLessThan(3000);
+  });
 });
