@@ -3,7 +3,7 @@ import fs from "node:fs";
 import { describe, expect, it } from "vitest";
 import { renderDetail } from "../src/ui/detail.js";
 import { parseFromOrb } from "../src/ui/orb.js";
-import { minSpeechBytes, recorderArgs } from "../src/voice/listener.js";
+import { minSpeechBytes, noiseFloor, quietPercentFor, recorderArgs } from "../src/voice/listener.js";
 import { decodeWav16, encodeWav16, loudnessEnvelope } from "../src/voice/audio.js";
 import { Speaker, type Utterance } from "../src/voice/speaker.js";
 import type { Tts } from "../src/voice/tts.js";
@@ -161,8 +161,45 @@ describe("recorderArgs", () => {
     );
   });
 
+  it("uses the room's calibrated threshold for the pause, written as a percentage", () => {
+    expect(recorderArgs("/tmp/a.wav", { autoStop: true, pauseSec: 2, quietPercent: 3.456 }).slice(8)).toEqual(
+      ["silence", "1", "0.10", "3.46%", "1", "2.00", "3.46%"],
+    );
+  });
+
   it("boosts a quiet mic before speech detection, with a limiter", () => {
     expect(recorderArgs("/tmp/a.wav", { autoStop: true, gainDb: 20 }).slice(8, 12)).toEqual(["gain", "-l", "20", "silence"]);
+  });
+});
+
+describe("room calibration", () => {
+  // Deterministic noise at a given RMS (fraction of full scale), plus optional loud "speech" bursts.
+  const signal = (seconds: number, rms: number, speechAt: number[] = []) => {
+    const out = new Int16Array(16_000 * seconds);
+    let seed = 7;
+    for (let i = 0; i < out.length; i++) {
+      seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+      const noise = ((seed / 0x7fffffff) * 2 - 1) * Math.sqrt(3) * rms * 32_767;
+      const inSpeech = speechAt.some((t) => i >= t * 16_000 && i < (t + 0.1) * 16_000);
+      out[i] = Math.round(inSpeech ? noise + Math.sin(i / 8) * 0.3 * 32_767 : noise);
+    }
+    return out;
+  };
+
+  it("measures a steady room's noise, and isn't fooled by speech in the sample", () => {
+    expect(noiseFloor(signal(0.3, 0.02))).toBeCloseTo(0.02, 2);
+    expect(noiseFloor(signal(0.3, 0.02, [0, 0.12]))).toBeCloseTo(0.02, 2);
+    expect(noiseFloor(new Int16Array(10))).toBe(0);
+    // The blank stretch a mic gives while it warms up doesn't drag the reading to zero.
+    const warmUp = signal(0.3, 0.02);
+    warmUp.fill(0, 0, 16_000 * 0.12);
+    expect(noiseFloor(warmUp)).toBeCloseTo(0.02, 2);
+  });
+
+  it("sets the stop threshold above the room's noise, never below 1% or above 8%", () => {
+    expect(quietPercentFor(0.001)).toBe(1);
+    expect(quietPercentFor(0.02)).toBeCloseTo(5, 5);
+    expect(quietPercentFor(0.2)).toBe(8);
   });
 });
 

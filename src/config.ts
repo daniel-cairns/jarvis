@@ -22,6 +22,8 @@ export type JarvisConfig = {
    * (19/100) a quietly spoken "no" was never heard without it, while room noise stays below the threshold with it.
    */
   micGainDb: number;
+  /** Longest a single recording may run (ms), so steady background noise can't keep her listening forever. */
+  maxListenMs: number;
   recorderBin: string;
   whisperBin: string;
   whisperModel: string;
@@ -80,6 +82,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): JarvisConfig {
     micGainDb: env.JARVIS_MIC_GAIN_DB === "0" ? 0 : positiveNumber(env.JARVIS_MIC_GAIN_DB, 18, "JARVIS_MIC_GAIN_DB"),
     ttsCacheDir: expandHome(env.JARVIS_TTS_CACHE_DIR ?? path.join(home, "models", "tts")),
     speechRate: positiveNumber(env.JARVIS_SPEECH_RATE, 190, "JARVIS_SPEECH_RATE"),
+    maxListenMs: positiveNumber(env.JARVIS_MAX_LISTEN_SEC, 45, "JARVIS_MAX_LISTEN_SEC") * 1000,
     recorderBin: env.JARVIS_RECORDER_BIN ?? "rec",
     whisperBin: env.JARVIS_WHISPER_BIN ?? "whisper-cli",
     whisperModel: expandHome(env.JARVIS_WHISPER_MODEL ?? path.join(home, "models", "ggml-base.en.bin")),

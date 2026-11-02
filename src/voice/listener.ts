@@ -16,6 +16,8 @@ export type ListenerConfig = {
   whisperModel: string;
   /** A sentence of likely names, so whisper hears "Quire" rather than "choir" (see speechHint). */
   hint?: string;
+  /** Longest a recording may run when the caller doesn't set maxMs (JARVIS_MAX_LISTEN_SEC, 45 s by default). */
+  maxListenMs?: number;
 };
 
 /** whisper.cpp prints markers like [BLANK_AUDIO] or (music) for non-speech; those aren't a request. */
@@ -40,14 +42,48 @@ export type ListenOptions = {
   maxMs?: number;
   /** Boost applied (with a limiter) before speech detection, for quiet mics. 0 = none. */
   gainDb?: number;
+  /** Loudness (percent of full scale) below which the mic counts as quiet; set from the room by calibration. */
+  quietPercent?: number;
 };
 
 const WAV_HEADER_BYTES = 44;
 /**
- * Level below which the mic counts as quiet. 1%: at 0.6% everyday room noise kept resetting the end-of-speech timer
- * (recordings ran ~6 s past the last word). Quiet voices at a low mic input level need JARVIS_MIC_GAIN_DB instead.
+ * Level below which the mic counts as quiet, never lower than 1%: at 0.6% everyday room noise kept resetting the
+ * end-of-speech timer (recordings ran ~6 s past the last word). Quiet voices at a low mic input level need
+ * JARVIS_MIC_GAIN_DB instead. In a noisier room (fan, TV, music) the threshold is raised above the room's own noise,
+ * or the pause after you finish never registers.
  */
-const QUIET_THRESHOLD = "1%";
+const QUIET_FLOOR = 1;
+/** Steady noise sits this far below the stop threshold (×2.5 ≈ 8 dB), so the room's hum reads as quiet. */
+const NOISE_MARGIN = 2.5;
+/** Never above this: a threshold too high would hear quiet speech as silence and cut you off. */
+const QUIET_CEILING = 8;
+const DEFAULT_MAX_LISTEN_MS = 45_000;
+
+/**
+ * The room's noise floor from a short 16-bit mono sample, as a fraction of full scale: the RMS of the quietest 30 ms
+ * slices (20th percentile), so someone already talking in the sample barely moves it while a steady fan or TV does.
+ * Slices of near-total silence are skipped: a Mac mic hands over a blank stretch while it warms up, and counting it
+ * read every room as silent.
+ */
+export function noiseFloor(samples: Int16Array, rate = 16_000): number {
+  const size = Math.round(rate * 0.03);
+  const slices: number[] = [];
+  for (let i = 0; i + size <= samples.length; i += size) {
+    let sum = 0;
+    for (let j = i; j < i + size; j++) sum += samples[j]! * samples[j]!;
+    const rms = Math.sqrt(sum / size) / 32_768;
+    if (rms > 0.0001) slices.push(rms);
+  }
+  if (!slices.length) return 0;
+  slices.sort((a, b) => a - b);
+  return slices[Math.floor((slices.length - 1) * 0.2)]!;
+}
+
+/** The stop threshold for a room: a margin above its noise floor, between 1% and 8%. */
+export function quietPercentFor(floor: number): number {
+  return Math.min(QUIET_CEILING, Math.max(QUIET_FLOOR, floor * 100 * NOISE_MARGIN));
+}
 
 /** 16 kHz mono 16-bit is the format whisper.cpp expects; `silence` trims leading quiet and stops after a pause. */
 export function recorderArgs(wav: string, opts: ListenOptions = {}): string[] {
@@ -58,7 +94,8 @@ export function recorderArgs(wav: string, opts: ListenOptions = {}): string[] {
     // Always write the pause with decimals: sox reads a bare "2" as 2 *samples*, which cut every recording off at the
     // first gap between words.
     const pause = (opts.pauseSec ?? 1.5).toFixed(2);
-    args.push("silence", "1", "0.10", QUIET_THRESHOLD, "1", pause, QUIET_THRESHOLD);
+    const quiet = `${Number((opts.quietPercent ?? QUIET_FLOOR).toFixed(2))}%`;
+    args.push("silence", "1", "0.10", quiet, "1", pause, quiet);
   }
   return args;
 }
@@ -95,6 +132,11 @@ export class Listener {
   private wavPath: string | null = null;
   private done: Promise<void> = Promise.resolve();
   private minBytes = minSpeechBytes(false);
+  // The room's noise level, shared by all her recorders. Only the very first recording waits for it; after that a
+  // stale reading is used while a fresh one is taken alongside, so recordings start without a gap.
+  private static calibrated: { at: number; gainDb: number; quietPercent: number } | null = null;
+  private static refreshing = false;
+  private static readonly CALIBRATE_MS = 20_000;
 
   constructor(private readonly cfg: ListenerConfig) {}
 
@@ -128,14 +170,66 @@ export class Listener {
     const wav = path.join(dir, "input.wav");
     this.wavPath = wav;
     this.minBytes = minSpeechBytes(!!opts.autoStop);
+    // Ending on a pause only works if the pause is quieter than the threshold: set it from the room's own noise.
+    if (opts.autoStop && opts.quietPercent === undefined) opts = { ...opts, quietPercent: await this.quietPercent(opts.gainDb ?? 0) };
     const rec = spawn(this.cfg.recorderBin, recorderArgs(wav, opts), { stdio: "ignore" });
     this.recorder = rec;
     this.done = new Promise((resolve) => rec.once("exit", () => resolve()));
     if (opts.autoStop) this.watchForNoSpeech(rec, wav, opts.noSpeechMs ?? 8_000);
-    if (opts.maxMs) {
-      const cap = setTimeout(() => void stopGracefully(rec), opts.maxMs);
+    // Always capped, so a pause that never registers can't keep her recording forever.
+    const maxMs = opts.maxMs ?? this.cfg.maxListenMs ?? DEFAULT_MAX_LISTEN_MS;
+    if (Number.isFinite(maxMs)) {
+      const cap = setTimeout(() => void stopGracefully(rec), maxMs);
       rec.once("exit", () => clearTimeout(cap));
     }
+  }
+
+  /**
+   * The stop threshold for the room, measured with the same gain as the recording (that's what the pause detection
+   * hears) and set above the room's noise floor.
+   */
+  private async quietPercent(gainDb: number): Promise<number> {
+    const c = Listener.calibrated;
+    if (c && c.gainDb === gainDb) {
+      if (Date.now() - c.at >= Listener.CALIBRATE_MS && !Listener.refreshing) {
+        Listener.refreshing = true;
+        void this.measureRoom(gainDb).finally(() => (Listener.refreshing = false));
+      }
+      return c.quietPercent;
+    }
+    return this.measureRoom(gainDb);
+  }
+
+  /** Samples the mic for half a second and stores the threshold it gives (1% if it can't be measured). */
+  private async measureRoom(gainDb: number): Promise<number> {
+    const args = ["-q", "-r", "16000", "-c", "1", "-b", "16", "-e", "signed-integer", "-t", "raw", "-"];
+    if (gainDb) args.push("gain", "-l", String(gainDb));
+    // Skips the mic's start-up click and blank stretch, then keeps 0.35 s of the room.
+    args.push("trim", "0.15", "0.35");
+    const raw = await new Promise<Buffer | null>((resolve) => {
+      const chunks: Buffer[] = [];
+      const probe = spawn(this.cfg.recorderBin, args, { stdio: ["ignore", "pipe", "ignore"] });
+      // The mic permission prompt (or a missing mic) can hold it open: give up after 2 s.
+      const timer = setTimeout(() => {
+        probe.kill("SIGKILL");
+        resolve(null);
+      }, 2_000);
+      probe.stdout.on("data", (d: Buffer) => chunks.push(d));
+      probe.once("error", () => {
+        clearTimeout(timer);
+        resolve(null);
+      });
+      probe.once("exit", () => {
+        clearTimeout(timer);
+        resolve(Buffer.concat(chunks));
+      });
+    });
+    if (!raw || raw.length < 960) return QUIET_FLOOR;
+    const floor = noiseFloor(new Int16Array(raw.buffer, raw.byteOffset, Math.floor(raw.length / 2)));
+    const quietPercent = quietPercentFor(floor);
+    Listener.calibrated = { at: Date.now(), gainDb, quietPercent };
+    if (process.env.JARVIS_DEBUG_WAKE) console.log(`  (room noise ${(floor * 100).toFixed(2)}%, stop below ${quietPercent.toFixed(2)}%)`);
+    return quietPercent;
   }
 
   get recording(): boolean {
