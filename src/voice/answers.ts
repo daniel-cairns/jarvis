@@ -44,6 +44,9 @@ export function parseSpokenChoice(raw: string, spec: QuestionSpec): QuestionAnsw
   return matchChoices(text, spec.options, spec.multiSelect) ?? (spec.allowOther ? text : null);
 }
 
+/** Words that don't tell options apart. */
+const FILLER_WORDS = new Set(["the", "and", "for", "with", "this", "that", "then", "into", "from", "your", "you", "but"]);
+
 const ORDINALS: Record<string, number> = {
   first: 1, one: 1, "1": 1, second: 2, two: 2, "2": 2, third: 3, three: 3, "3": 3, fourth: 4, four: 4, "4": 4,
   fifth: 5, five: 5, "5": 5, sixth: 6, six: 6, "6": 6,
@@ -67,10 +70,24 @@ export function matchChoices(raw: string, options: Choice[], multiSelect = false
       picked.add(n - 1);
     }
   }
-  options.forEach((o, i) => {
-    const label = normalise(o.label);
-    if (label && (s.includes(label) || label.split(" ").every((w) => w.length > 2 && s.split(" ").includes(w)))) picked.add(i);
-  });
+  // By name: the whole label, or a clear part of it ("send both" for "Send both to Jarvis"). Each option scores the
+  // share of its meaningful words that were said; the best scorer wins if it got at least half and no other option
+  // tied with it. (The old rule wanted every word and counted "to" as missing, so most labels could never match.)
+  if (!picked.size) {
+    const said = new Set(s.split(" "));
+    const scores = options.map((o) => {
+      const label = normalise(o.label);
+      if (label && s.includes(label)) return 1;
+      const key = label.split(" ").filter((w) => w.length > 2 && !FILLER_WORDS.has(w));
+      return key.length ? key.filter((w) => said.has(w)).length / key.length : 0;
+    });
+    const best = Math.max(...scores);
+    const winners = scores.flatMap((score, i) => (score === best ? [i] : []));
+    if (best >= 0.5) {
+      if (multiSelect) winners.forEach((i) => picked.add(i));
+      else if (winners.length === 1) picked.add(winners[0]!);
+    }
+  }
   if (!picked.size) return null;
   const labels = [...picked].sort((a, b) => a - b).map((i) => options[i]!.label);
   return multiSelect ? labels : labels.slice(0, 1);

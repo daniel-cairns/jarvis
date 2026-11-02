@@ -47,3 +47,32 @@ describe("speakQuestion", () => {
     expect(speakQuestion("What should I call it?", [])).toBe("What should I call it?");
   });
 });
+
+describe("answering tonight's cards by voice", () => {
+  const send = [{ label: "Send both to Jarvis" }, { label: "Not now" }];
+  const wait = [{ label: "Wait for Jarvis" }, { label: "Go ahead anyway" }, { label: "Control Chrome in the background" }];
+
+  it("matches the full label, even with short words like 'to' in it", () => {
+    expect(matchChoices("Send both to Jarvis.", send)).toEqual(["Send both to Jarvis"]);
+    expect(matchChoices("send both to jarvis please", send)).toEqual(["Send both to Jarvis"]);
+  });
+
+  it("matches a clear part of a label", () => {
+    expect(matchChoices("send both", send)).toEqual(["Send both to Jarvis"]);
+    expect(matchChoices("not now", send)).toEqual(["Not now"]);
+    expect(matchChoices("wait", wait)).toEqual(["Wait for Jarvis"]);
+    expect(matchChoices("go ahead", wait)).toEqual(["Go ahead anyway"]);
+    expect(matchChoices("control chrome in the background", wait)).toEqual(["Control Chrome in the background"]);
+  });
+
+  it("matches by position", () => {
+    expect(matchChoices("the first one", send)).toEqual(["Send both to Jarvis"]);
+    expect(matchChoices("option two", wait)).toEqual(["Go ahead anyway"]);
+    expect(matchChoices("the last one", wait)).toEqual(["Control Chrome in the background"]);
+  });
+
+  it("doesn't guess when a word fits two options equally", () => {
+    expect(matchChoices("jarvis", [{ label: "Ask Jarvis" }, { label: "Tell Jarvis" }])).toBeNull();
+    expect(matchChoices("something else entirely", send)).toBeNull();
+  });
+});

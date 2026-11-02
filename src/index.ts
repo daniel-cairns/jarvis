@@ -191,6 +191,8 @@ async function main(): Promise<void> {
   let quitting = false;
   // While a dialog is open, "Astra …" (or a click on the orb) goes to it instead of starting a new request.
   let dialogWake: ((request: string) => void) | null = null;
+  /** While a dialog listens for a spoken answer: whether some text would answer it. */
+  let dialogParses: ((text: string) => boolean) | null = null;
   // A request heard via the wake word and queued for the main loop, so it's treated as spoken.
   let wokeWith: string | null = null;
 
@@ -383,6 +385,35 @@ async function main(): Promise<void> {
         raw !== null && herVoice ? stripOwnSpeech(raw, spoken.filter((s) => s.at >= startedAt - 15_000).map((s) => s.text)) : raw;
       if (process.env.JARVIS_DEBUG_WAKE) console.log(`  (wake ${herVoice ? "over her voice" : "idle"} heard: "${heard}" → ${request === null ? "ignored" : `"${request}"`})`);
       if (request !== null) onWake(request);
+      else if (dialogParses && heard.trim()) answerWithoutName(heard, herVoice, startedAt);
+    }
+  };
+
+  /**
+   * A card is waiting and the always-on listener heard something without her name. When she wasn't talking, an
+   * answer is taken as it is ("the first one" once her listening window has closed). Over her own voice it can't be
+   * trusted (she has just read the options aloud), so if it holds words she didn't say and reads as an answer, she
+   * stops talking and listens for it properly.
+   */
+  const answerWithoutName = (heard: string, herVoice: boolean, startedAt: number) => {
+    if (!dialogParses || !dialogWake) return;
+    if (!herVoice) {
+      if (dialogParses(heard)) {
+        chime();
+        dialogWake(heard);
+      }
+      return;
+    }
+    const hers = new Set(
+      spoken
+        .filter((s) => s.at >= startedAt - 15_000)
+        .flatMap((s) => s.text.toLowerCase().split(/[^\p{L}\p{N}']+/u)),
+    );
+    const extra = heard.toLowerCase().split(/[^\p{L}\p{N}']+/u).filter((w) => w.length > 1 && !hers.has(w));
+    if (extra.length && dialogParses(heard)) {
+      console.log("  (you answered over me: stopping to listen)");
+      speaker.stop();
+      dialogWake("");
     }
   };
 
@@ -434,6 +465,7 @@ async function main(): Promise<void> {
       woke = request;
       wakeUp?.();
     };
+    dialogParses = (text) => parse(text) !== null;
     try {
       let tries = 0;
       while (!signal.aborted) {
@@ -475,6 +507,7 @@ async function main(): Promise<void> {
       return null;
     } finally {
       dialogWake = null;
+      dialogParses = null;
     }
   };
 
