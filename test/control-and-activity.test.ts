@@ -72,6 +72,7 @@ describe("parseFromOrb (new messages)", () => {
   it("accepts question answers and brain browser requests", () => {
     expect(parseFromOrb('{"type":"question-answer","id":"2","answer":["Spotify"]}')).toEqual({ type: "question-answer", id: "2", answer: ["Spotify"] });
     expect(parseFromOrb('{"type":"typed","text":"sit rep"}')).toEqual({ type: "typed", text: "sit rep" });
+    expect(parseFromOrb('{"type":"restart"}')).toEqual({ type: "restart" });
     expect(parseFromOrb('{"type":"typed","text":"   "}')).toBeNull();
     expect(parseFromOrb('{"type":"question-answer","id":"2","answer":"Something else"}')).toMatchObject({ answer: "Something else" });
     expect(parseFromOrb('{"type":"brain-open","path":"teardowns/a.md"}')).toEqual({ type: "brain-open", path: "teardowns/a.md" });

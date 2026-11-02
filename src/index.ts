@@ -224,6 +224,12 @@ async function main(): Promise<void> {
       onGitDiff: (msg) => void onGitDiff(msg),
       onVolume: (msg) => void setVolume(msg.level ?? settings.volume + (msg.delta ?? 0)),
       onRecord: () => onRecord(),
+      // "Restart Astra" from the menu bar: now if she's free, otherwise once her work is done (she says which).
+      onRestart: () => {
+        const what = requestRestart();
+        console.log(`\n  ${what}`);
+        orb?.send({ type: "caption", role: "status", text: what });
+      },
       onTypeOnly: (on) => console.log(`\n  ${setTypeOnly(on)}`),
       // Same as typing in the terminal: a request at the prompt, or an answer to an open approval or question.
       onTyped: (text) => {
