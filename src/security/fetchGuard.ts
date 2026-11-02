@@ -15,15 +15,24 @@ export type FetchGuard = {
   takeFlags(toolName: string, input: Record<string, unknown>): string[] | undefined;
 };
 
-/** `notify` hears what the check did (blocked a site, cleaned a page), for the orb and terminal. */
-export function createFetchGuard(keys: IndexKeys, notify: (text: string) => void, deps: IndexDeps = {}): FetchGuard {
+export type GuardEvents = {
+  /** What the check did (blocked a site, cleaned a page), for the orb and terminal. */
+  notify(text: string): void;
+  /** A check started, or ended: passed ("ok") or refused ("blocked"). Drives the guardian on the orb. */
+  checking?(phase: "start" | "ok" | "blocked"): void;
+};
+
+export function createFetchGuard(keys: IndexKeys, events: GuardEvents, deps: IndexDeps = {}): FetchGuard {
+  const { notify } = events;
   const flagged = new Map<string, string[]>();
 
   const before: HookCallback = async (input) => {
     if (input.hook_event_name !== "PreToolUse") return {};
     const url = (input.tool_input as { url?: unknown }).url;
     if (typeof url !== "string") return {};
+    events.checking?.("start");
     const result = await checkUrl(url, keys, deps);
+    events.checking?.(result.verdict === "block" ? "blocked" : "ok");
     const host = hostOf(url) ?? "that address";
     if (result.verdict === "block") {
       notify(`Security check blocked ${host}: ${result.reasons[0]}`);
@@ -50,7 +59,9 @@ export function createFetchGuard(keys: IndexKeys, notify: (text: string) => void
     const result = typeof response === "string" ? response : (response as { result?: unknown } | null)?.result;
     if (typeof result !== "string") return {};
     const source = hostOf((input.tool_input as { url?: unknown }).url) ?? "the web";
+    events.checking?.("start");
     const scan = scanContent(result, source);
+    events.checking?.("ok");
     if (scan.findings.length) notify(`Security check cleaned ${source}: removed ${scan.findings.join("; ")}`);
     const updatedToolOutput = typeof response === "string" ? scan.text : { ...(response as object), result: scan.text };
     return { hookSpecificOutput: { hookEventName: "PostToolUse", updatedToolOutput } };

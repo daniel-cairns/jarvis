@@ -112,12 +112,12 @@ describe("createFetchGuard", () => {
 
   it("refuses listed sites, flags risky ones for an approval, and passes the rest", async () => {
     const notes: string[] = [];
-    const guard = createFetchGuard({}, (t) => notes.push(t), { resolveOn: async (server, host) => server === "9.9.9.10" || !host.startsWith("bad.") });
+    const guard = createFetchGuard({}, { notify: (t) => notes.push(t), checking: (p) => notes.push(p) }, { resolveOn: async (server, host) => server === "9.9.9.10" || !host.startsWith("bad.") });
     const before = guard.hooks.PreToolUse![0]!.hooks[0];
 
     const blocked = await run(before, pre("https://bad.example/x"));
     expect(blocked.hookSpecificOutput).toMatchObject({ permissionDecision: "deny" });
-    expect(notes).toEqual(["Security check blocked bad.example: Quad9's threat list blocks this site"]);
+    expect(notes).toEqual(["start", "blocked", "Security check blocked bad.example: Quad9's threat list blocks this site"]);
 
     const risky = await run(before, pre("https://203.0.113.9/"));
     expect(risky.hookSpecificOutput).toMatchObject({ permissionDecision: "ask" });
@@ -129,7 +129,7 @@ describe("createFetchGuard", () => {
 
   it("cleans the page before the model reads it", async () => {
     const notes: string[] = [];
-    const guard = createFetchGuard({}, (t) => notes.push(t));
+    const guard = createFetchGuard({}, { notify: (t) => notes.push(t) });
     const after = guard.hooks.PostToolUse![0]!.hooks[0];
     const out = await run(after, {
       hook_event_name: "PostToolUse",

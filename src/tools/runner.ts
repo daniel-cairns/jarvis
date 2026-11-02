@@ -37,6 +37,8 @@ export type RunnerEvents = {
   toolEvent?(job: Job, e: ToolEvent): void;
   /** The page-fetch security check did something (blocked a site, cleaned a page). */
   security?(job: Job, text: string): void;
+  /** A security check started or ended in a background session. */
+  guard?(job: Job, phase: "start" | "ok" | "blocked"): void;
 };
 
 type QueryFn = typeof query;
@@ -107,8 +109,9 @@ export class SessionRunner {
   private async run(job: Job, resume?: string): Promise<void> {
     const sessionAllowed = new Set<string>();
     // The same page-fetch security check as Astra's own: before every fetch (even ones your settings allow) and after.
-    const guard = createFetchGuard({ safeBrowsing: this.cfg.safeBrowsingKey, urlhaus: this.cfg.urlhausKey }, (text) =>
-      this.events.security?.(job, text),
+    const guard = createFetchGuard(
+      { safeBrowsing: this.cfg.safeBrowsingKey, urlhaus: this.cfg.urlhausKey },
+      { notify: (text) => this.events.security?.(job, text), checking: (phase) => this.events.guard?.(job, phase) },
     );
     // Claude Code's own settings (your allow-lists) decide first; anything it would ask about comes to you via Astra.
     const canUseTool: CanUseTool = async (toolName, input) => {

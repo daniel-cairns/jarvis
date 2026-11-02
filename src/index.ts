@@ -788,6 +788,21 @@ async function main(): Promise<void> {
     orb?.send({ type: "transfer", dir: now });
   };
 
+  // The guardian on the orb: up while any security check runs, and for a moment after so a quick one is seen.
+  let checksRunning = 0;
+  let guardHide: NodeJS.Timeout | undefined;
+  const onGuard = (phase: "start" | "ok" | "blocked") => {
+    clearTimeout(guardHide);
+    if (phase === "start") {
+      checksRunning++;
+      orb?.send({ type: "guard", state: "checking" });
+      return;
+    }
+    checksRunning = Math.max(0, checksRunning - 1);
+    if (phase === "blocked") orb?.send({ type: "guard", state: "blocked" });
+    if (!checksRunning) guardHide = setTimeout(() => orb?.send({ type: "guard", state: null }), phase === "blocked" ? 4_000 : 1_800);
+  };
+
   const onToolEvent = (source: string, cwd: string, e: ToolEvent) => {
     const dir = e.kind === "use" ? transferKind(e.name, e.input) : null;
     if (dir) transfers.set(e.id, { dir, at: Date.now(), source });
@@ -819,6 +834,7 @@ async function main(): Promise<void> {
     },
     ask: (_job, approval) => askApproval(approval),
     toolEvent: (job, e) => onToolEvent(job.label, job.folder, e),
+    guard: (_job, phase) => onGuard(phase),
     security: (job, text) => {
       console.log(`  [${job.id} ${job.label}] ${text}`);
       orb?.send({ type: "activity", text: `${job.label}: ${text}`, glyph: "eye" });
@@ -975,6 +991,7 @@ async function main(): Promise<void> {
       return "Printed in the terminal (no orb is open).";
     },
     // The terminal gets the technical line; the orb gets plain English ("Searching your brain…").
+    guard: onGuard,
     status: (text, input) => {
       console.log(`  ${text}`);
       const tool = text.match(/^→ (\S+)/)?.[1];

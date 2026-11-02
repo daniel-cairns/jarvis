@@ -22,6 +22,8 @@ export type JarvisIO = {
   say(text: string): Promise<void>;
   /** Status lines that are shown but not spoken; tool calls come with their input for a short detail. */
   status(text: string, input?: Record<string, unknown>): void;
+  /** A page-fetch security check started or ended (see GuardEvents): the orb shows its guardian. */
+  guard?(phase: "start" | "ok" | "blocked"): void;
   /** Working the user's other Claude Code sessions. */
   sessions?: SessionTools;
   /** Each tool call and its result, for the terminal and git panels. */
@@ -57,7 +59,10 @@ export class Jarvis {
     private readonly io: JarvisIO,
     private readonly runQuery: QueryFn = query,
   ) {
-    this.fetchGuard = createFetchGuard({ safeBrowsing: cfg.safeBrowsingKey, urlhaus: cfg.urlhausKey }, (text) => io.status(text));
+    this.fetchGuard = createFetchGuard(
+      { safeBrowsing: cfg.safeBrowsingKey, urlhaus: cfg.urlhausKey },
+      { notify: (text) => io.status(text), checking: (phase) => io.guard?.(phase) },
+    );
   }
 
   async init(): Promise<void> {

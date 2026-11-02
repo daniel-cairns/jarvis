@@ -385,6 +385,7 @@
     else if (m.type === "activity-reset") resetActivity();
     // Transcript mode: "Recording 03:12" in place of "Listening…" until the state changes.
     else if (m.type === "state-label") stateLabel.textContent = m.text;
+    else if (m.type === "guard") guardState = m.state === "checking" || m.state === "blocked" ? m.state : null;
     else if (m.type === "transfer") transferDir = m.dir === "up" || m.dir === "down" ? m.dir : null;
     else if (m.type === "mode") {
       const on = !!m.typeOnly;
@@ -872,6 +873,161 @@
     }
   }
 
+  // Security checks: Anubis rises behind the orb, head and shoulders, holding the was sceptre. His eyes glow gold while
+  // he checks and burn red when he blocks a site.
+  let guardState = null;
+  let guardAmt = 0;
+  let guardRed = 0;
+  const JACKAL = [16, 20, 34];
+
+  function drawGuardian(cx, t, amt, red) {
+    const rise = (1 - amt) * 34;
+    const bob = reducedMotion ? 0 : Math.sin(t * 1.6) * 1.2;
+    const y0 = 3 + rise + bob; // top of his ears
+    const eyeColour = [lerp(255, 255, red), lerp(214, 70, red), lerp(110, 60, red)];
+    ctx.save();
+    ctx.globalAlpha = amt;
+
+    // A faint ward over the orb: the arc he keeps.
+    const ward = ctx.createRadialGradient(cx, y0 + 30, 4, cx, y0 + 30, 90);
+    ward.addColorStop(0, rgba(red > 0.5 ? [255, 90, 70] : GOLD, 0.18));
+    ward.addColorStop(1, rgba(GOLD, 0));
+    ctx.fillStyle = ward;
+    ctx.fillRect(0, 0, W, H);
+
+    // Shoulders, lapis fading into the dark behind the orb, the top edge in gold.
+    ctx.beginPath();
+    ctx.moveTo(cx - 64, y0 + 80);
+    ctx.quadraticCurveTo(cx - 60, y0 + 50, cx - 26, y0 + 44);
+    ctx.lineTo(cx + 26, y0 + 44);
+    ctx.quadraticCurveTo(cx + 60, y0 + 50, cx + 64, y0 + 80);
+    const body = ctx.createLinearGradient(0, y0 + 44, 0, y0 + 80);
+    body.addColorStop(0, rgba(LAPIS, 0.95));
+    body.addColorStop(0.6, rgba(JACKAL, 0.8));
+    body.addColorStop(1, rgba(JACKAL, 0));
+    ctx.fillStyle = body;
+    ctx.fill();
+    const edge = ctx.createLinearGradient(0, y0 + 44, 0, y0 + 80);
+    edge.addColorStop(0, rgba(GOLD, 0.9));
+    edge.addColorStop(1, rgba(GOLD, 0));
+    ctx.strokeStyle = edge;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    // Striped headdress falling behind his head to the shoulders.
+    for (const side of [-1, 1]) {
+      for (let i = 0; i < 4; i++) {
+        ctx.beginPath();
+        ctx.moveTo(cx + side * (10 + i * 2.2), y0 + 18 + i * 6.5);
+        ctx.lineTo(cx + side * (19 + i * 2.6), y0 + 18 + i * 6.5);
+        ctx.lineTo(cx + side * (21 + i * 2.6), y0 + 24 + i * 6.5);
+        ctx.lineTo(cx + side * (12 + i * 2.2), y0 + 24 + i * 6.5);
+        ctx.closePath();
+        ctx.fillStyle = rgba(i % 2 ? LAPIS : GOLD, 0.95);
+        ctx.fill();
+      }
+    }
+
+    // Broad collar (wesekh): rows of gold and turquoise.
+    [[22, GOLD], [26.5, [70, 210, 220]], [31, GOLD]].forEach(([radius, colour]) => {
+      ctx.beginPath();
+      ctx.arc(cx, y0 + 36, radius, Math.PI * 0.16, Math.PI * 0.84);
+      ctx.strokeStyle = rgba(colour, 0.9);
+      ctx.lineWidth = 3;
+      ctx.stroke();
+    });
+
+    // The jackal head, facing you: tall ears, narrow muzzle.
+    ctx.fillStyle = rgba(JACKAL, 1);
+    ctx.strokeStyle = rgba(GOLD, 0.9);
+    ctx.lineWidth = 1;
+    for (const side of [-1, 1]) {
+      ctx.beginPath();
+      ctx.moveTo(cx + side * 4, y0 + 13);
+      ctx.lineTo(cx + side * 13, y0);
+      ctx.lineTo(cx + side * 13, y0 + 16);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(cx + side * 7, y0 + 12);
+      ctx.lineTo(cx + side * 11.5, y0 + 5);
+      ctx.lineTo(cx + side * 11.5, y0 + 13);
+      ctx.closePath();
+      ctx.fillStyle = rgba(GOLD, 0.75);
+      ctx.fill();
+      ctx.fillStyle = rgba(JACKAL, 1);
+    }
+    ctx.beginPath();
+    ctx.ellipse(cx, y0 + 19, 11, 9, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(cx - 7, y0 + 22);
+    ctx.lineTo(cx + 7, y0 + 22);
+    ctx.lineTo(cx + 2.5, y0 + 37);
+    ctx.lineTo(cx - 2.5, y0 + 37);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(cx, y0 + 36.5, 1.8, 0, Math.PI * 2);
+    ctx.fillStyle = rgba(GOLD, 0.9);
+    ctx.fill();
+
+    // Eyes: watchful slits that pulse while he checks.
+    const glow = 0.7 + (reducedMotion ? 0 : 0.3 * Math.sin(t * 4));
+    for (const side of [-1, 1]) {
+      ctx.beginPath();
+      ctx.ellipse(cx + side * 5, y0 + 18, 2.6, 1.1, side * -0.25, 0, Math.PI * 2);
+      ctx.fillStyle = rgba(eyeColour, glow);
+      ctx.shadowColor = rgba(eyeColour, 0.9);
+      ctx.shadowBlur = 8;
+      ctx.fill();
+      ctx.shadowBlur = 0;
+    }
+
+    // The was sceptre in his hand, beside the orb: a forked staff with an angled animal head, a light scanning up it.
+    const sx = cx + 70;
+    const top = y0 + 4;
+    const bottom = y0 + 92;
+    ctx.strokeStyle = rgba(GOLD, 0.95);
+    ctx.lineWidth = 2.2;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(sx, bottom);
+    ctx.lineTo(sx, top);
+    ctx.lineTo(sx - 7, top - 3);
+    ctx.moveTo(sx, top);
+    ctx.lineTo(sx + 3, top - 4);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(sx - 3, bottom + 4);
+    ctx.lineTo(sx, bottom);
+    ctx.lineTo(sx + 3, bottom + 4);
+    ctx.stroke();
+    // His hand: a gold band where he grips it, and his arm reaching from the shoulder.
+    ctx.beginPath();
+    ctx.moveTo(cx + 50, y0 + 60);
+    ctx.quadraticCurveTo(sx - 4, y0 + 60, sx, y0 + 52);
+    ctx.strokeStyle = rgba(GOLD, 0.9);
+    ctx.lineWidth = 7;
+    ctx.stroke();
+    ctx.strokeStyle = rgba(LAPIS, 1);
+    ctx.lineWidth = 5;
+    ctx.stroke();
+    ctx.fillStyle = rgba(GOLD, 0.95);
+    ctx.fillRect(sx - 3.5, y0 + 48, 7, 5);
+    const p = reducedMotion ? 0.5 : (t * 0.9) % 1;
+    const gy = bottom - (bottom - top) * p;
+    const glint = ctx.createRadialGradient(sx, gy, 0, sx, gy, 6);
+    glint.addColorStop(0, rgba(red > 0.5 ? [255, 120, 100] : [255, 248, 220], 0.95));
+    glint.addColorStop(1, rgba(GOLD, 0));
+    ctx.fillStyle = glint;
+    ctx.fillRect(sx - 6, gy - 6, 12, 12);
+    ctx.restore();
+  }
+
   function draw(now) {
     const t = now / 1000;
     const form = currentForm(now);
@@ -922,6 +1078,10 @@
     halo.addColorStop(1, rgba(GOLD, 0));
     ctx.fillStyle = halo;
     ctx.fillRect(0, 0, W, H);
+
+    guardAmt = lerp(guardAmt, guardState && formTo === 1 ? 1 : 0, 0.07);
+    guardRed = lerp(guardRed, guardState === "blocked" ? 1 : 0, 0.12);
+    if (guardAmt > 0.01) drawGuardian(cx, t, guardAmt * st.wings, guardRed);
 
     // Sun rays while speaking
     if (level > 0.03) {
