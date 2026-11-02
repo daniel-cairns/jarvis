@@ -179,14 +179,23 @@ export async function checkUrl(raw: string, keys: IndexKeys, deps: IndexDeps = {
   // Index answers are cached per address (without its query), since they don't depend on it.
   const cacheKey = `${url.protocol}//${url.host}${url.pathname}`;
   const hit = cache.get(cacheKey);
-  const indexes =
-    hit && Date.now() - hit.at < CACHE_MS
-      ? { listed: hit.result.verdict === "block" ? hit.result.reasons : [], unchecked: hit.result.unchecked }
-      : await indexFindings(raw, keys, deps);
-  if (!hit || Date.now() - hit.at >= CACHE_MS) {
-    cache.set(cacheKey, { at: Date.now(), result: { verdict: indexes.listed.length ? "block" : "ok", reasons: indexes.listed, unchecked: indexes.unchecked } });
+  const fresh = hit && Date.now() - hit.at < CACHE_MS;
+  const indexes = fresh
+    ? { listed: hit.result.verdict === "block" ? hit.result.reasons : [], unchecked: hit.result.unchecked }
+    : await indexFindings(raw, keys, deps);
+  if (indexes.listed.length) {
+    if (!fresh) cache.set(cacheKey, { at: Date.now(), result: { verdict: "block", reasons: indexes.listed, unchecked: indexes.unchecked } });
+    return { verdict: "block", reasons: [...indexes.listed, ...signs], unchecked: indexes.unchecked };
   }
-  if (indexes.listed.length) return { verdict: "block", reasons: [...indexes.listed, ...signs], unchecked: indexes.unchecked };
+  // An index that was asked but didn't answer (a Quad9 timeout, an outage) means "not checked", not "clean": it used
+  // to come out "ok" and be cached for half an hour, so one slow lookup let a site through unchecked. Now Dan is
+  // asked (a "warn" becomes an approval card) and nothing is cached, so the next attempt checks again.
+  const silent = indexes.unchecked.filter((u) => u.endsWith("(no answer)"));
+  if (silent.length) {
+    const names = silent.map((u) => u.replace(/ \(no answer\)$/, "")).join(" and ");
+    return { verdict: "warn", reasons: [`couldn't confirm it's safe: ${names} didn't answer`, ...signs], unchecked: indexes.unchecked };
+  }
+  if (!fresh) cache.set(cacheKey, { at: Date.now(), result: { verdict: "ok", reasons: [], unchecked: indexes.unchecked } });
   return { verdict: signs.length ? "warn" : "ok", reasons: signs, unchecked: indexes.unchecked };
 }
 

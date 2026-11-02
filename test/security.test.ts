@@ -70,6 +70,30 @@ describe("checkUrl", () => {
   });
 });
 
+describe("checkUrl when an index doesn't answer", () => {
+  it("asks rather than passing a site Quad9 couldn't check, and doesn't cache it", async () => {
+    clearUrlCheckCache();
+    let quad9Up = false;
+    const flaky: IndexDeps = {
+      resolveOn: async () => {
+        if (!quad9Up) throw Object.assign(new Error("timeout"), { code: "ETIMEOUT" });
+        return true;
+      },
+    };
+    const first = await checkUrl("https://slow-dns.example/page", {}, flaky);
+    expect(first.verdict).toBe("warn");
+    expect(first.reasons[0]).toBe("couldn't confirm it's safe: Quad9 didn't answer");
+    // Not cached: once Quad9 answers, it's checked for real and passes.
+    quad9Up = true;
+    expect((await checkUrl("https://slow-dns.example/page", {}, flaky)).verdict).toBe("ok");
+  });
+
+  it("doesn't ask just because an index has no key", async () => {
+    clearUrlCheckCache();
+    expect((await checkUrl("https://nuxt.com/blog", {}, clean)).verdict).toBe("ok");
+  });
+});
+
 describe("scanContent", () => {
   it("labels clean pages as untrusted data and leaves them intact", () => {
     const scan = scanContent("Vue is a progressive framework.\nIt has a guide.", "vuejs.org");
