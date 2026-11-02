@@ -14,15 +14,16 @@ import { realRunner } from "./tools/mac.js";
 import { fileDiff, gitRoot, repoState, type RepoState } from "./tools/git.js";
 import { WorkLog, type ToolEvent } from "./ui/worklog.js";
 import { SessionRunner } from "./tools/runner.js";
-import type { SessionTools } from "./tools/server.js";
+import type { SessionTools, WindowTools } from "./tools/server.js";
 import { appLinks, findSession, listSessions, resolveProject, type SessionSummary } from "./tools/sessions.js";
 import { newlyWaiting, sitrep } from "./tools/sitrep.js";
 import { z } from "zod";
 import { stopServing } from "./tools/serve.js";
 import { localCommand, type UiAction, type UiCommand } from "./ui/control.js";
+import { WindowHistory, type WindowKind } from "./ui/windows.js";
 import { clampVolume, loadSettings, saveSettings } from "./settings.js";
 import { askDialog } from "./ui/dialog.js";
-import { Orb } from "./ui/orb.js";
+import { Orb, type ToOrb } from "./ui/orb.js";
 import { Listener } from "./voice/listener.js";
 import { Speaker } from "./voice/speaker.js";
 import { KokoroTts, SayTts } from "./voice/tts.js";
@@ -476,14 +477,32 @@ async function main(): Promise<void> {
     return heard;
   };
 
+  // Windows she's shown, so you can ask for any of them back after she tidies them away (see orb/main.cjs tidyUp).
+  const windows = new WindowHistory();
+  let requestCount = 0;
+  const remember = (kind: WindowKind, title: string, reopen: () => void | Promise<void>, key = `${kind}:${title}`) =>
+    windows.record({ key, kind, title, at: Date.now(), request: requestCount, reopen });
+
+  /** Shows a detail panel or map and remembers it. Reopened on request, it's yours: she won't close it on you. */
+  const showPanel = (msg: Extract<ToOrb, { type: "detail" | "graph" }>) => {
+    orb?.send(msg);
+    remember(msg.type, msg.title, () => orb?.send({ ...msg, owner: "user" }));
+  };
+
+  /** She's finished and no background session is running: the orb closes the panels that aren't needed any more. */
+  const tidyWindows = () => {
+    if (!busy && !sessionRunner.list().some((j) => j.status === "running")) orb?.send({ type: "request-done" });
+  };
+
   /** Opens the brain browser (every note and teardown), or lists them in the terminal without the orb. */
-  const openBrain = async (): Promise<string> => {
+  const openBrain = async (owner?: "user"): Promise<string> => {
     const notes = await brainIndex(cfg.brainDir);
     if (!orb?.alive) {
       for (const n of notes) console.log(`  ${n.folder}/ ${n.title}`);
       return `Listed ${notes.length} notes in the terminal.`;
     }
-    orb.send({ type: "brain", notes });
+    orb.send({ type: "brain", notes, ...(owner ? { owner } : {}) });
+    remember("brain", "Brain browser", () => void openBrain("user"));
     return `Opened the brain browser with ${notes.length} notes.`;
   };
 
@@ -503,7 +522,8 @@ async function main(): Promise<void> {
       const raw = await noteMap(cfg.brainDir, msg.path);
       if (!raw) return;
       const graph = checkGraph(z.object(graphShape).parse(raw));
-      orb?.send({ type: "graph", title: msg.path.split("/").at(-1)!.replace(/\.md$/, ""), graph });
+      // Opened from the brain browser, so it's yours.
+      showPanel({ type: "graph", title: msg.path.split("/").at(-1)!.replace(/\.md$/, ""), graph, owner: "user" });
     } catch (err) {
       console.log(`  (brain browser: ${(err as Error).message})`);
     }
@@ -543,6 +563,7 @@ async function main(): Promise<void> {
       return "Stopped.";
     }
     if (action === "show_brain") return openBrain();
+    if (action === "reopen_windows") return windowTools.show("all");
     if (action === "restart") return requestRestart();
     if (action === "type_only" || action === "voice_mode") return setTypeOnly(action === "type_only");
     if (action === "god_mode_on" || action === "god_mode_off") return setGodMode(action === "god_mode_on");
@@ -563,7 +584,7 @@ async function main(): Promise<void> {
     }
     if (!orb?.alive) return "No orb is open.";
     orb.send({ type: "ui", action });
-    const done: Record<Exclude<UiAction, "stop" | "show_brain" | "start_transcript" | "restart" | "type_only" | "voice_mode" | "sitrep" | "god_mode_on" | "god_mode_off" | "volume_up" | "volume_down" | "set_volume" | "move" | "show_terminal" | "show_git">, string> = {
+    const done: Record<Exclude<UiAction, "reopen_windows" | "stop" | "show_brain" | "start_transcript" | "restart" | "type_only" | "voice_mode" | "sitrep" | "god_mode_on" | "god_mode_off" | "volume_up" | "volume_down" | "set_volume" | "move" | "show_terminal" | "show_git">, string> = {
       minimise: "Minimised to the menu bar.",
       show: "The orb is back.",
       close_panels: "Closed the panels.",
@@ -590,8 +611,12 @@ async function main(): Promise<void> {
     orb?.send({ type: "recording", on: true });
     const startedAt = Date.now();
     const found: TranscriptLine[] = [];
-    const show = (endedAt?: number) =>
-      orb?.send({ type: "detail", title, html: renderDetail(transcriptMarkdown(title, startedAt, found, endedAt)), follow: true });
+    const show = (endedAt?: number) => {
+      const msg = { type: "detail", title, html: renderDetail(transcriptMarkdown(title, startedAt, found, endedAt)), follow: true } as const;
+      // The live updates just refresh the panel; the finished transcript is remembered so you can bring it back.
+      if (endedAt) showPanel(msg);
+      else orb?.send(msg);
+    };
     const label = () => orb?.send({ type: "state-label", text: `Recording ${clock(Date.now() - startedAt)}` });
     refreshHint();
     listening = true;
@@ -756,15 +781,18 @@ async function main(): Promise<void> {
   let terminalTimer: NodeJS.Timeout | undefined;
   let gitTimer: NodeJS.Timeout | undefined;
 
-  const sendTerminal = (force = false) =>
+  const sendTerminal = (force = false, owner?: "user") => {
     orb?.send({
       type: "terminal",
       force,
+      ...(owner ? { owner } : {}),
       entries: work.entries.slice(-40).map((e) => ({ ...e, output: e.output.length > 4000 ? `…${e.output.slice(-4000)}` : e.output })),
     });
+    if (work.entries.length) remember("terminal", "Terminal", () => sendTerminal(true, "user"));
+  };
 
   /** Re-reads the repos her commands and edits touched (the three most recent) and updates the git panel. */
-  const refreshGit = async (force = false) => {
+  const refreshGit = async (force = false, owner?: "user") => {
     const roots: string[] = [];
     for (const dir of work.touched) {
       const root = await gitRoot(dir);
@@ -772,7 +800,8 @@ async function main(): Promise<void> {
       if (roots.length === 3) break;
     }
     repos = (await Promise.all(roots.map((r) => repoState(r).catch(() => null)))).filter((r): r is RepoState => r !== null);
-    if (repos.length || force) orb?.send({ type: "git", repos, force });
+    if (repos.length || force) orb?.send({ type: "git", repos, force, ...(owner ? { owner } : {}) });
+    if (repos.length) remember("git", `Git changes (${repos.map((r) => r.name).join(", ")})`, () => refreshGit(true, "user"), "git");
   };
 
   // Uploads and downloads in progress (hers and her background sessions'), for the orb's laser array and mothership.
@@ -849,6 +878,7 @@ async function main(): Promise<void> {
             : `The ${job.label} session ran into a problem`;
       console.log(`\n  [${job.id} ${job.label}] ${job.status} · $${job.costUsd.toFixed(3)}\n${job.lastText}\n`);
       void say(first ? `${what}. ${first}` : `${what}.`);
+      tidyWindows();
       restartIfDue();
     },
   });
@@ -881,7 +911,7 @@ async function main(): Promise<void> {
   const showSitrep = async (): Promise<string> => {
     const runs = sessionRunner.list().map((j) => ({ handle: j.id, label: j.label, status: j.status, latest: j.lastText }));
     const report = sitrep(await listSessions({ limit: 30, exclude: [cfg.workspaceDir] }), runs);
-    if (orb?.alive) orb.send({ type: "detail", title: "Sit rep", html: renderDetail(report.markdown) });
+    if (orb?.alive) showPanel({ type: "detail", title: "Sit rep", html: renderDetail(report.markdown) });
     else console.log(`\n${report.markdown}\n`);
     return report.spoken;
   };
@@ -970,13 +1000,32 @@ async function main(): Promise<void> {
     stop: (handle) => (sessionRunner.stop(handle) ? `Stopping ${handle}.` : `There's no running background session called ${handle}.`),
   };
 
+  /** Bringing back windows she showed recently (the show_window tool and "show me your windows"). */
+  const windowTools: WindowTools = {
+    show: async (which) => {
+      const ask = which?.trim() ?? "";
+      if (!ask || /^(list|which|what)$/i.test(ask)) return `Windows I've shown recently, newest first:\n${windows.describe()}`;
+      if (/^(all|everything|recent|latest|last|them|those)$/i.test(ask)) {
+        const latest = windows.latest();
+        if (!latest.length) return "I haven't shown any windows yet.";
+        for (const e of latest) await e.reopen();
+        return `Brought back ${latest.map((e) => e.title).join(", ")}.`;
+      }
+      const match = windows.find(ask);
+      if (!match) return `Nothing I've shown recently matches "${ask}". Recent windows:\n${windows.describe()}`;
+      await match.reopen();
+      return `Showing ${match.title} again.`;
+    },
+  };
+
   const jarvis = new Jarvis(cfg, {
     say,
     sessions,
+    windows: windowTools,
     toolEvent: (e) => onToolEvent("Astra", cfg.workspaceDir, e),
     graph: (title, graph) => {
       if (orb?.alive) {
-        orb.send({ type: "graph", title, graph });
+        showPanel({ type: "graph", title, graph });
         return "Shown as a 3D map. The user can orbit it and click nodes for detail.";
       }
       console.log(`\n${graphAsText(title, graph)}\n`);
@@ -984,7 +1033,7 @@ async function main(): Promise<void> {
     },
     show: (title, markdown) => {
       if (orb?.alive) {
-        orb.send({ type: "detail", title, html: renderDetail(markdown) });
+        showPanel({ type: "detail", title, html: renderDetail(markdown) });
         return "Shown in the detail panel.";
       }
       console.log(`\n── ${title} ──\n${markdown}\n`);
@@ -1092,6 +1141,7 @@ async function main(): Promise<void> {
     }
 
     busy = true;
+    requestCount++;
     syncOrb();
     orb?.send({ type: "activity-reset" });
     orb?.send({ type: "activity", text: "Thinking…", glyph: "sun" });
@@ -1113,6 +1163,7 @@ async function main(): Promise<void> {
       // A stopped request never reports its last results: clear her own transfers so the orb doesn't keep beaming.
       for (const [id, t] of transfers) if (t.source === "Astra") transfers.delete(id);
       syncTransfer();
+      tidyWindows();
     }
     restartIfDue();
     if (pendingTranscript) {

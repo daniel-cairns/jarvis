@@ -38,6 +38,13 @@ export type ServerHooks = {
   askQuestion?: AskQuestion;
   uiControl?: UiControl;
   sessions?: SessionTools;
+  windows?: WindowTools;
+};
+
+/** Bringing back windows she showed recently; see src/index.ts. */
+export type WindowTools = {
+  /** No `which` (or "list"): what's been shown. "all": everything from her last request. Otherwise the best match. */
+  show(which?: string): Promise<string>;
 };
 
 /** Working your other Claude Code sessions; see src/index.ts for the implementation. */
@@ -51,7 +58,7 @@ export type SessionTools = {
 };
 
 export function createJarvisServer(cfg: JarvisConfig, runner: Runner = realRunner, hooks: ServerHooks = {}) {
-  const { showDetail, showGraph, askQuestion, uiControl, sessions } = hooks;
+  const { showDetail, showGraph, askQuestion, uiControl, sessions, windows } = hooks;
   const noSessions = "Session control isn't available here.";
   return createSdkMcpServer({
     name: SERVER_NAME,
@@ -164,6 +171,12 @@ export function createJarvisServer(cfg: JarvisConfig, runner: Runner = realRunne
         "Stop a background session run you started (its handle, like 's1').",
         { job: z.string().min(1).max(20) },
         (args) => guarded(async () => (sessions ? sessions.stop(args.job) : noSessions)),
+      ),
+      tool(
+        "show_window",
+        "Your panels close by themselves when you finish a request, unless you showed them on purpose. Use this when the user asks to see one again: which='list' to see what you've shown recently, 'all' for everything from your last request, or a description ('the sit rep', 'terminal', 'gymclaw map', 'the teardown').",
+        { which: z.string().max(200).optional() },
+        (args) => guarded(async () => (windows ? windows.show(args.which) : "No screen is attached.")),
       ),
       tool(
         "ui_control",

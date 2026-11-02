@@ -154,12 +154,12 @@ app.whenReady().then(() => {
       Menu.buildFromTemplate([
         win.isVisible() ? { label: "Hide Astra", click: () => void hideOrb() } : { label: "Show Astra", click: () => void show() },
         { label: "Stop Astra", click: () => send({ type: "stop" }) },
-        { label: "Show last detail", enabled: slabs.detail.last !== null, click: () => openSlab("detail", slabs.detail.last) },
-        { label: "Show last map", enabled: slabs.graph.last !== null, click: () => openSlab("graph", slabs.graph.last) },
+        { label: "Show last detail", enabled: slabs.detail.last !== null, click: () => openSlab("detail", slabs.detail.last, "user") },
+        { label: "Show last map", enabled: slabs.graph.last !== null, click: () => openSlab("graph", slabs.graph.last, "user") },
         { label: "Open brain", click: () => send({ type: "brain-request" }) },
         { label: "Stack windows", click: () => stackWindows() },
-        { label: "Show terminal", click: () => openSlab("terminal", slabs.terminal.last ?? { type: "terminal", entries: [] }) },
-        { label: "Show git changes", click: () => openSlab("git", slabs.git.last ?? { type: "git", repos: [] }) },
+        { label: "Show terminal", click: () => openSlab("terminal", slabs.terminal.last ?? { type: "terminal", entries: [] }, "user") },
+        { label: "Show git changes", click: () => openSlab("git", slabs.git.last ?? { type: "git", repos: [] }, "user") },
         {
           label: "Volume",
           submenu: [25, 50, 75, 100].map((pct) => ({
@@ -194,14 +194,37 @@ app.whenReady().then(() => {
     git: { file: "git.html", width: 600, height: 420, win: null, last: null, place: "above-terminal" },
   };
   const dismissed = new Set();
-  const openSlab = (kind, msg) => {
+
+  // Who each open panel is for, which decides whether she tidies it away when she's done:
+  // "auto" popped up while she worked (closed when she finishes), "astra" she showed you on purpose (kept until the
+  // end of her next request), "user" you opened or clicked into (never closed for you).
+  const RANK = { auto: 0, astra: 1, user: 2 };
+  let requestNo = 0;
+  const TIDY_MS = 6000;
+
+  /** She's finished (and no background session is running): close what's no longer needed, after a moment. */
+  const tidyUp = () => {
+    const at = requestNo;
+    setTimeout(() => {
+      if (requestNo !== at) return; // A new request started: leave everything for it.
+      for (const slab of Object.values(slabs)) {
+        if (!slab.win || slab.win.isDestroyed()) continue;
+        if (slab.owner === "auto" || (slab.owner === "astra" && slab.request < at)) slab.win.close();
+      }
+    }, TIDY_MS);
+  };
+
+  const openSlab = (kind, msg, owner = "astra") => {
     const slab = slabs[kind];
     slab.last = msg;
+    slab.request = requestNo;
     if (slab.win && !slab.win.isDestroyed()) {
+      if (RANK[owner] > RANK[slab.owner ?? "auto"]) slab.owner = owner;
       slab.win.webContents.send("jarvis", msg);
       slab.win.showInactive();
       return;
     }
+    slab.owner = owner;
     const bounds = win.getBounds();
     const { workArea } = screen.getDisplayMatching(bounds);
     const { width, height } = slab;
@@ -234,6 +257,8 @@ app.whenReady().then(() => {
       webPreferences: WEB_PREFERENCES,
     });
     slab.win = w;
+    // Clicking into a panel (or dragging it) makes it yours: she won't close it on you.
+    w.on("focus", () => (slab.owner = "user"));
     w.setAlwaysOnTop(true, "floating");
     harden(w);
     w.loadFile(path.join(__dirname, slab.file));
@@ -444,18 +469,21 @@ app.whenReady().then(() => {
         foldingToQuit = true;
         void (win.isVisible() ? transform("close") : Promise.resolve()).then(() => app.quit());
       }
-      else if (m.type === "detail" || m.type === "graph" || m.type === "brain") openSlab(m.type, m);
+      else if (m.type === "detail" || m.type === "graph" || m.type === "brain") openSlab(m.type, m, m.owner === "user" ? "user" : "astra");
       // Work panels open by themselves when there's something new, unless closed during this request (or asked for).
       else if (m.type === "terminal" || m.type === "git") {
         const slab = slabs[m.type];
         const hasContent = m.type === "terminal" ? m.entries.length > 0 : m.repos.length > 0;
-        if (slab.win && !slab.win.isDestroyed()) openSlab(m.type, m);
+        const owner = m.owner === "user" ? "user" : m.force ? "astra" : "auto";
+        if (slab.win && !slab.win.isDestroyed()) openSlab(m.type, m, owner);
         else if (m.force || (hasContent && !dismissed.has(m.type))) {
           dismissed.delete(m.type);
-          openSlab(m.type, m);
+          openSlab(m.type, m, owner);
         } else slab.last = m;
       } else if (m.type === "git-diff-result") slabs.git.win?.webContents.send("jarvis", m);
+      else if (m.type === "request-done") tidyUp();
       else if (m.type === "activity-reset") {
+        requestNo++;
         dismissed.clear();
         win.webContents.send("jarvis", m);
       }

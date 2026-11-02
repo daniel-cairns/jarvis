@@ -25,6 +25,7 @@ export const UI_ACTIONS = [
   "god_mode_on",
   "god_mode_off",
   "stack_windows",
+  "reopen_windows",
 ] as const;
 export type UiAction = (typeof UI_ACTIONS)[number];
 /** Where "move" can put the orb: a spot on screen, or a nudge in one direction. */
@@ -82,6 +83,7 @@ export function quickUiCommand(request: string): UiCommand | null {
   if (/^(show|open)( me)? (your |the )?(terminal|commands?|command log)$/.test(s)) return { action: "show_terminal" };
   if (/^(show|open)( me)? (your |the )?(git( changes)?|changes|diffs?|code changes)$/.test(s)) return { action: "show_git" };
   if (/^(restart|reboot|reload)( yourself)?( please)?$/.test(s)) return { action: "restart" };
+  if (/^(show|reopen|bring back|open)( me)?( all)?( your| my| the)?( recent| last| latest)? (windows|panels)( back| again)?$|^bring (your |the )?(windows|panels) back$/.test(s)) return { action: "reopen_windows" };
   if (/^(stack|arrange|tidy( up)?|organi[sz]e|line up|sort out)( all)?( your| the| my)? (windows|panels)( nicely)?( please)?$/.test(s)) return { action: "stack_windows" };
   if (/^(go |switch to |turn on )?(type|typing|text) (only )?mode( on)?( please)?$|^type only( please)?$/.test(s)) return { action: "type_only" };
   if (/^(give me |get me |what s the |what is the )?(a |the |your )?(sit ?rep|situation report|status report)( please)?$|^what (s|is) everyone (doing|up to)$/.test(s)) return { action: "sitrep" };

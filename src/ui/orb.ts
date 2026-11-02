@@ -24,21 +24,22 @@ export type ToOrb =
   | { type: "caption"; role: "jarvis" | "you" | "status"; text: string }
   | { type: "ask"; id: string; spoken: string; detail: string }
   | { type: "answered"; id: string }
-  | { type: "detail"; title: string; html: string; follow?: boolean }
+  | { type: "detail"; title: string; html: string; follow?: boolean; owner?: "user" }
+  | { type: "request-done" }
   | { type: "state-label"; text: string }
   | { type: "recording"; on: boolean }
   | { type: "mode"; typeOnly: boolean; god: boolean }
   | { type: "transfer"; dir: "up" | "down" | null }
   | { type: "guard"; state: "checking" | "blocked" | null }
-  | { type: "graph"; title: string; graph: TeardownGraph }
+  | { type: "graph"; title: string; graph: TeardownGraph; owner?: "user" }
   | { type: "question"; id: string; question: string; options: Choice[]; multiSelect: boolean; allowOther: boolean }
   | { type: "activity"; text: string; glyph?: ActivityGlyph }
   | { type: "activity-reset" }
   | { type: "ui"; action: UiAction; position?: Position }
   | { type: "volume-level"; level: number; quiet?: boolean }
-  | { type: "brain"; notes: BrainEntry[] }
-  | { type: "terminal"; entries: TermEntry[]; force?: boolean }
-  | { type: "git"; repos: RepoState[]; force?: boolean }
+  | { type: "brain"; notes: BrainEntry[]; owner?: "user" }
+  | { type: "terminal"; entries: TermEntry[]; force?: boolean; owner?: "user" }
+  | { type: "git"; repos: RepoState[]; force?: boolean; owner?: "user" }
   | { type: "git-diff-result"; root: string; path: string; diff: string }
   | { type: "brain-note"; path: string; title: string; html: string; hasMap: boolean }
   | { type: "quit" };
