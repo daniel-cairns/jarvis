@@ -24,6 +24,8 @@ export type JarvisConfig = {
   micGainDb: number;
   /** Longest a single recording may run (ms), so steady background noise can't keep her listening forever. */
   maxListenMs: number;
+  /** Silero speech detector model (ONNX); recordings fall back to the loudness threshold if it's missing. */
+  vadModel: string;
   recorderBin: string;
   whisperBin: string;
   whisperModel: string;
@@ -83,6 +85,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): JarvisConfig {
     ttsCacheDir: expandHome(env.JARVIS_TTS_CACHE_DIR ?? path.join(home, "models", "tts")),
     speechRate: positiveNumber(env.JARVIS_SPEECH_RATE, 190, "JARVIS_SPEECH_RATE"),
     maxListenMs: positiveNumber(env.JARVIS_MAX_LISTEN_SEC, 45, "JARVIS_MAX_LISTEN_SEC") * 1000,
+    vadModel: expandHome(env.JARVIS_VAD_MODEL ?? path.join(home, "models", "silero_vad.onnx")),
     recorderBin: env.JARVIS_RECORDER_BIN ?? "rec",
     whisperBin: env.JARVIS_WHISPER_BIN ?? "whisper-cli",
     whisperModel: expandHome(env.JARVIS_WHISPER_MODEL ?? path.join(home, "models", "ggml-base.en.bin")),

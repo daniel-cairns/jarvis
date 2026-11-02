@@ -7,6 +7,9 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
+import type * as ort from "onnxruntime-node";
+import { encodeWav16 } from "./audio.js";
+import { loadVadModel, SileroVad, VAD_RATE, VadCapture } from "./vad.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -18,7 +21,34 @@ export type ListenerConfig = {
   hint?: string;
   /** Longest a recording may run when the caller doesn't set maxMs (JARVIS_MAX_LISTEN_SEC, 45 s by default). */
   maxListenMs?: number;
+  /** The Silero speech detector model; without it, recordings end on the room-calibrated loudness instead. */
+  vadModel?: string;
 };
+
+/**
+ * Which way her recordings end: the speech detector, or (if it can't load) the room-calibrated loudness threshold.
+ * Logged once each time it changes, so it's always clear in her log which one is active.
+ */
+export async function chooseEndDetector(
+  modelPath: string | undefined,
+): Promise<{ kind: "vad"; session: ort.InferenceSession } | { kind: "loudness"; reason: string }> {
+  if (!modelPath) return { kind: "loudness", reason: "no speech detector model is configured" };
+  try {
+    return { kind: "vad", session: await loadVadModel(modelPath) };
+  } catch (err) {
+    return { kind: "loudness", reason: (err as Error).message };
+  }
+}
+let announced = "";
+function announce(choice: Awaited<ReturnType<typeof chooseEndDetector>>): void {
+  const line =
+    choice.kind === "vad"
+      ? "Ending recordings with the Silero speech detector."
+      : `Speech detector unavailable (${choice.reason}): ending recordings on the room-calibrated loudness threshold instead.`;
+  if (line === announced) return;
+  announced = line;
+  console.log(`  (${line})`);
+}
 
 /** whisper.cpp prints markers like [BLANK_AUDIO] or (music) for non-speech; those aren't a request. */
 export function cleanTranscript(raw: string): string {
@@ -132,6 +162,8 @@ export class Listener {
   private wavPath: string | null = null;
   private done: Promise<void> = Promise.resolve();
   private minBytes = minSpeechBytes(false);
+  // The speech detector's view of the recording in progress (none on the loudness path or for push-to-talk).
+  private capture: VadCapture | null = null;
   // The room's noise level, shared by all her recorders. Only the very first recording waits for it; after that a
   // stale reading is used while a fresh one is taken alongside, so recordings start without a gap.
   private static calibrated: { at: number; gainDb: number; quietPercent: number } | null = null;
@@ -170,6 +202,11 @@ export class Listener {
     const wav = path.join(dir, "input.wav");
     this.wavPath = wav;
     this.minBytes = minSpeechBytes(!!opts.autoStop);
+    if (opts.autoStop) {
+      const choice = await chooseEndDetector(this.cfg.vadModel);
+      announce(choice);
+      if (choice.kind === "vad") return this.startWithVad(wav, opts, choice.session);
+    }
     // Ending on a pause only works if the pause is quieter than the threshold: set it from the room's own noise.
     if (opts.autoStop && opts.quietPercent === undefined) opts = { ...opts, quietPercent: await this.quietPercent(opts.gainDb ?? 0) };
     const rec = spawn(this.cfg.recorderBin, recorderArgs(wav, opts), { stdio: "ignore" });
@@ -177,6 +214,35 @@ export class Listener {
     this.done = new Promise((resolve) => rec.once("exit", () => resolve()));
     if (opts.autoStop) this.watchForNoSpeech(rec, wav, opts.noSpeechMs ?? 8_000);
     // Always capped, so a pause that never registers can't keep her recording forever.
+    const maxMs = opts.maxMs ?? this.cfg.maxListenMs ?? DEFAULT_MAX_LISTEN_MS;
+    if (Number.isFinite(maxMs)) {
+      const cap = setTimeout(() => void stopGracefully(rec), maxMs);
+      rec.once("exit", () => clearTimeout(cap));
+    }
+  }
+
+  /**
+   * Records raw audio and lets the speech detector decide when you've finished: about pauseSec of no speech after
+   * you started. The room-noise loudness doesn't come into it, so a fan or music can't keep the recording open.
+   * Still capped at maxMs, and stopped after noSpeechMs if you never start.
+   */
+  private startWithVad(wav: string, opts: ListenOptions, session: ort.InferenceSession): void {
+    const args = ["-q", "-r", String(VAD_RATE), "-c", "1", "-b", "16", "-e", "signed-integer", "-t", "raw", "-"];
+    if (opts.gainDb) args.push("gain", "-l", String(opts.gainDb));
+    const rec = spawn(this.cfg.recorderBin, args, { stdio: ["ignore", "pipe", "ignore"] });
+    const capture = new VadCapture(new SileroVad(session), () => void stopGracefully(rec), {
+      endSilenceMs: (opts.pauseSec ?? 1.5) * 1000,
+    });
+    capture.attach(rec.stdout!);
+    this.capture = capture;
+    this.recorder = rec;
+    this.wavPath = wav;
+    this.done = new Promise((resolve) => rec.once("exit", () => resolve()));
+    const noSpeechMs = opts.noSpeechMs ?? 8_000;
+    if (Number.isFinite(noSpeechMs)) {
+      const quiet = setTimeout(() => !capture.started && void stopGracefully(rec), noSpeechMs);
+      rec.once("exit", () => clearTimeout(quiet));
+    }
     const maxMs = opts.maxMs ?? this.cfg.maxListenMs ?? DEFAULT_MAX_LISTEN_MS;
     if (Number.isFinite(maxMs)) {
       const cap = setTimeout(() => void stopGracefully(rec), maxMs);
@@ -242,6 +308,7 @@ export class Listener {
     const wav = this.wavPath;
     this.recorder = null;
     this.wavPath = null;
+    this.capture = null;
     if (rec) await stopGracefully(rec);
     if (wav) await fs.rm(path.dirname(wav), { recursive: true, force: true });
   }
@@ -268,11 +335,19 @@ export class Listener {
     const rec = this.recorder;
     const wav = this.wavPath;
     if (!rec || !wav) throw new Error("Not recording");
+    const capture = this.capture;
     this.recorder = null;
     this.wavPath = null;
+    this.capture = null;
 
     // SIGINT lets sox finish writing the WAV header; SIGKILL is only the last resort.
     await stopGracefully(rec);
+    // On the speech-detector path the audio is in memory: write what it kept (lead-in plus speech) as the WAV.
+    if (capture) {
+      await capture.settle();
+      const { pcm } = capture.result();
+      await fs.writeFile(wav, encodeWav16({ samples: Float32Array.from(pcm, (s) => s / 32_768), rate: VAD_RATE }));
+    }
 
     try {
       const size = await fs.stat(wav).then((s) => s.size, () => 0);

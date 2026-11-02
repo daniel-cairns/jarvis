@@ -77,6 +77,10 @@ brew install sox whisper-cpp
 mkdir -p ~/.jarvis/models
 curl -L -o ~/.jarvis/models/ggml-base.en.bin \
   https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin
+# The speech detector that ends a recording when you stop talking, even with background noise (Silero VAD, 2.3 MB,
+# runs locally). Without it she falls back to a loudness threshold calibrated to the room, and says so in her log.
+curl -L -o ~/.jarvis/models/silero_vad.onnx \
+  https://github.com/snakers4/silero-vad/raw/v5.1.2/src/silero_vad/data/silero_vad.onnx
 
 # 3. REA
 npm install -g rea-agents
