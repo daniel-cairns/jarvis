@@ -3,7 +3,7 @@ import { readdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import readline from "node:readline";
 import { setTimeout as sleep } from "node:timers/promises";
-import { activityGlyph, describeActivity } from "./activity.js";
+import { activityGlyph, describeActivity, transferKind, type Transfer } from "./activity.js";
 import { Jarvis, type Approval } from "./agent.js";
 import { loadConfig } from "./config.js";
 import { parseAnswer, type Answer } from "./permissions.js";
@@ -775,7 +775,23 @@ async function main(): Promise<void> {
     if (repos.length || force) orb?.send({ type: "git", repos, force });
   };
 
+  // Uploads and downloads in progress (hers and her background sessions'), for the orb's laser array and mothership.
+  const transfers = new Map<string, { dir: Transfer; at: number; source: string }>();
+  let shownTransfer: Transfer | null = null;
+  const syncTransfer = () => {
+    const stale = Date.now() - 10 * 60_000;
+    for (const [id, t] of transfers) if (t.at < stale) transfers.delete(id);
+    const dirs = [...transfers.values()].map((t) => t.dir);
+    const now = dirs.includes("up") ? "up" : dirs.includes("down") ? "down" : null;
+    if (now === shownTransfer) return;
+    shownTransfer = now;
+    orb?.send({ type: "transfer", dir: now });
+  };
+
   const onToolEvent = (source: string, cwd: string, e: ToolEvent) => {
+    const dir = e.kind === "use" ? transferKind(e.name, e.input) : null;
+    if (dir) transfers.set(e.id, { dir, at: Date.now(), source });
+    if (dir || (e.kind === "result" && transfers.delete(e.id))) syncTransfer();
     const changed = work.record(source, cwd, e);
     if (changed.terminal) {
       clearTimeout(terminalTimer);
@@ -1073,6 +1089,9 @@ async function main(): Promise<void> {
     } finally {
       busy = false;
       syncOrb();
+      // A stopped request never reports its last results: clear her own transfers so the orb doesn't keep beaming.
+      for (const [id, t] of transfers) if (t.source === "Astra") transfers.delete(id);
+      syncTransfer();
     }
     restartIfDue();
     if (pendingTranscript) {

@@ -103,3 +103,25 @@ export function describeActivity(toolName: string, input?: Record<string, unknow
   }
   return detail ? `${what}: ${detail}` : `${what}…`;
 }
+
+export type Transfer = "up" | "down";
+
+// Shell commands that send data off the machine, or bring it in. Checked in order: "up" wins for mixed pipelines.
+const UPLOAD_COMMAND =
+  /\b(?:git\s+push|gh\s+release\s+upload|gh\s+gist\s+create|npm\s+publish|pnpm\s+publish|yarn\s+publish|docker\s+push|wrangler\s+(?:deploy|pages\s+deploy|r2\s+object\s+put)|vercel\s+deploy|netlify\s+deploy|firebase\s+deploy|aws\s+s3\s+(?:cp|sync)\s+\S+\s+s3:|gsutil\s+cp\s+\S+\s+gs:|huggingface-cli\s+upload|hf\s+upload)\b|\bcurl\b[^|;&]*(?:\s-T\s|--upload-file|\s-F\s|--form|--data-binary\s+@|-X\s*(?:POST|PUT))|\bscp\s+(?:-\S+\s+)*[^\s:]+\s+\S+:|\brsync\b[^|;&]*\s\S+:\S*\s*$/;
+const DOWNLOAD_COMMAND =
+  /\b(?:git\s+(?:clone|pull|fetch)|curl|wget|npm\s+(?:install|i|ci)|pnpm\s+(?:install|i|add)|yarn\s+(?:install|add)|npm\s+add|brew\s+install|pip3?\s+install|docker\s+pull|gh\s+(?:release\s+download|repo\s+clone|run\s+download)|aws\s+s3\s+(?:cp|sync)\s+s3:|gsutil\s+cp\s+gs:|huggingface-cli\s+download|hf\s+download|ollama\s+pull)\b|\bscp\s+(?:-\S+\s+)*\S+:\S*\s/;
+
+/** Whether a tool call sends data up (uploads, pushes, deploys) or brings it down (downloads, clones, fetches). */
+export function transferKind(toolName: string, input: Record<string, unknown> = {}): Transfer | null {
+  const tool = toolName.replace(/^mcp__[^_]+__/, "").toLowerCase();
+  if (toolName === "Bash" && typeof input.command === "string") {
+    if (UPLOAD_COMMAND.test(input.command)) return "up";
+    if (DOWNLOAD_COMMAND.test(input.command)) return "down";
+    return null;
+  }
+  if (toolName === "WebFetch") return "down";
+  if (/upload|publish|deploy|push/.test(tool)) return "up";
+  if (/download|fetch_file|import_url|pull/.test(tool)) return "down";
+  return null;
+}

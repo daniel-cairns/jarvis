@@ -28,6 +28,7 @@ export type ToOrb =
   | { type: "state-label"; text: string }
   | { type: "recording"; on: boolean }
   | { type: "mode"; typeOnly: boolean; god: boolean }
+  | { type: "transfer"; dir: "up" | "down" | null }
   | { type: "graph"; title: string; graph: TeardownGraph }
   | { type: "question"; id: string; question: string; options: Choice[]; multiSelect: boolean; allowOther: boolean }
   | { type: "activity"; text: string; glyph?: ActivityGlyph }

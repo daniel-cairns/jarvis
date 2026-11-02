@@ -385,6 +385,7 @@
     else if (m.type === "activity-reset") resetActivity();
     // Transcript mode: "Recording 03:12" in place of "Listening…" until the state changes.
     else if (m.type === "state-label") stateLabel.textContent = m.text;
+    else if (m.type === "transfer") transferDir = m.dir === "up" || m.dir === "down" ? m.dir : null;
     else if (m.type === "mode") {
       const on = !!m.typeOnly;
       if (on !== typeOnlyMode) caption.textContent = "";
@@ -756,6 +757,121 @@
     }
   }
 
+  // Data transfers: "up" fires a laser pulse array straight up out of the core; "down" calls the pyramid mothership.
+  let transferDir = null;
+  let upAmt = 0;
+  let downAmt = 0;
+  const BEAM = [120, 255, 236];
+
+  /** Uploading: five beams rise from the core, converging into the distance, with bright pulses racing up them. */
+  function drawLaserArray(cx, top, t, amt) {
+    const beams = [-12, -6, 0, 6, 12];
+    const speed = reducedMotion ? 0.15 : 1.7;
+    const emitter = ctx.createRadialGradient(cx, top, 0, cx, top, 22);
+    emitter.addColorStop(0, rgba([255, 255, 255], 0.8 * amt));
+    emitter.addColorStop(1, rgba(BEAM, 0));
+    ctx.fillStyle = emitter;
+    ctx.fillRect(cx - 22, top - 22, 44, 44);
+    // x at height y: the beams draw together as they go up, like a distant target.
+    const at = (dx, y) => cx + dx * (0.35 + 0.65 * (y / top));
+    beams.forEach((dx, i) => {
+      const centre = dx === 0;
+      ctx.beginPath();
+      ctx.moveTo(at(dx, top), top);
+      ctx.lineTo(at(dx, 0), 0);
+      ctx.strokeStyle = rgba(BEAM, (centre ? 0.45 : 0.25) * amt);
+      ctx.lineWidth = centre ? 2 : 1;
+      ctx.stroke();
+      for (let k = 0; k < 3; k++) {
+        const p = (t * speed + k / 3 + i * 0.17) % 1;
+        const y = top * (1 - p);
+        const len = 10 + 8 * (1 - p);
+        const g = ctx.createLinearGradient(0, y, 0, y + len);
+        g.addColorStop(0, rgba([255, 255, 255], amt * (1 - p * 0.7)));
+        g.addColorStop(1, rgba(BEAM, 0));
+        ctx.beginPath();
+        ctx.moveTo(at(dx, y), y);
+        ctx.lineTo(at(dx, Math.min(top, y + len)), Math.min(top, y + len));
+        ctx.strokeStyle = g;
+        ctx.lineWidth = centre ? 3 : 2;
+        ctx.lineCap = "round";
+        ctx.stroke();
+      }
+    });
+  }
+
+  /** Downloading: a gold pyramid mothership descends, turning slowly, and beams the data down into the core. */
+  function drawMothership(cx, coreTop, coreR, t, amt) {
+    const s = 22;
+    const h = 26;
+    const baseY = -30 + 58 * amt;
+    const spinAngle = t * (reducedMotion ? 0.15 : 0.8);
+    const corners = [0, 1, 2, 3].map((i) => {
+      const a = spinAngle + (i * Math.PI) / 2;
+      return { x: cx + Math.cos(a) * s, y: baseY + Math.sin(a) * s * 0.28, z: Math.sin(a) };
+    });
+    const apex = { x: cx, y: baseY - h };
+
+    // Tractor beam to the core, with rings travelling down it.
+    const beam = ctx.createLinearGradient(0, baseY, 0, coreTop);
+    beam.addColorStop(0, rgba(BEAM, 0.32 * amt));
+    beam.addColorStop(1, rgba(BEAM, 0.06 * amt));
+    ctx.beginPath();
+    ctx.moveTo(cx - s * 0.9, baseY + 3);
+    ctx.lineTo(cx + s * 0.9, baseY + 3);
+    ctx.lineTo(cx + coreR * 0.7, coreTop);
+    ctx.lineTo(cx - coreR * 0.7, coreTop);
+    ctx.closePath();
+    ctx.fillStyle = beam;
+    ctx.fill();
+    for (let k = 0; k < 3; k++) {
+      const p = (t * (reducedMotion ? 0.1 : 0.9) + k / 3) % 1;
+      const y = baseY + 3 + (coreTop - baseY - 3) * p;
+      const w = s * 0.9 + (coreR * 0.7 - s * 0.9) * p;
+      ctx.beginPath();
+      ctx.ellipse(cx, y, w, 2.2, 0, 0, Math.PI * 2);
+      ctx.strokeStyle = rgba([255, 255, 255], 0.55 * amt * Math.sin(p * Math.PI));
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    }
+
+    // Faces, back to front, lit by how squarely each faces you.
+    const faces = [0, 1, 2, 3]
+      .map((i) => {
+        const a = corners[i];
+        const b = corners[(i + 1) % 4];
+        return { a, b, depth: (a.z + b.z) / 2 };
+      })
+      .sort((p, q) => q.depth - p.depth);
+    for (const f of faces) {
+      const front = f.depth < 0;
+      const light = front ? 0.55 + 0.45 * -f.depth : 0.25;
+      ctx.beginPath();
+      ctx.moveTo(f.a.x, f.a.y);
+      ctx.lineTo(f.b.x, f.b.y);
+      ctx.lineTo(apex.x, apex.y);
+      ctx.closePath();
+      ctx.fillStyle = rgba(GOLD.map((v) => v * light), 0.92 * amt);
+      ctx.fill();
+      ctx.strokeStyle = rgba([255, 236, 180], 0.8 * amt);
+      ctx.lineWidth = 0.8;
+      ctx.stroke();
+    }
+    // The capstone glows, and lights run along the rim.
+    const cap = ctx.createRadialGradient(apex.x, apex.y + 2, 0, apex.x, apex.y + 2, 7);
+    cap.addColorStop(0, rgba([255, 255, 255], 0.95 * amt));
+    cap.addColorStop(1, rgba(BEAM, 0));
+    ctx.fillStyle = cap;
+    ctx.fillRect(apex.x - 7, apex.y - 5, 14, 14);
+    for (const c of corners) {
+      if (c.z > 0.2) continue;
+      ctx.beginPath();
+      ctx.arc(c.x, c.y, 1.6, 0, Math.PI * 2);
+      ctx.fillStyle = rgba(BEAM, amt * (0.6 + 0.4 * Math.sin(t * 5 + c.x)));
+      ctx.fill();
+    }
+  }
+
   function draw(now) {
     const t = now / 1000;
     const form = currentForm(now);
@@ -997,6 +1113,11 @@
     ctx.translate(cx, cy - 1);
     horusEye(eye * st.eye);
     ctx.restore();
+
+    upAmt = lerp(upAmt, transferDir === "up" && formTo === 1 ? 1 : 0, 0.06);
+    downAmt = lerp(downAmt, transferDir === "down" && formTo === 1 ? 1 : 0, 0.04);
+    if (upAmt > 0.01) drawLaserArray(cx, cy - r * 0.95, t, upAmt * st.wings);
+    if (downAmt > 0.01) drawMothership(cx, cy - r * 0.95, r, t, downAmt * st.wings);
 
     requestAnimationFrame(draw);
   }

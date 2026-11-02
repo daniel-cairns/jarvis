@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { activityDetail, activityGlyph, describeActivity } from "../src/activity.js";
+import { activityDetail, activityGlyph, describeActivity, transferKind } from "../src/activity.js";
 import { clampVolume, loadSettings, saveSettings } from "../src/settings.js";
 import { quickUiCommand, localCommand, commandWords } from "../src/ui/control.js";
 import { parseFromOrb } from "../src/ui/orb.js";
@@ -145,5 +145,29 @@ describe("localCommand", () => {
     expect(localCommand("mute the intro video in gymclaw")).toBeNull();
     expect(localCommand("/mute")).toBeNull();
     expect(commandWords("Um, Astra, just stack your windows now, thanks!")).toBe("stack your windows");
+  });
+});
+
+describe("transferKind", () => {
+  it("spots uploads", () => {
+    expect(transferKind("Bash", { command: "git push origin main" })).toBe("up");
+    expect(transferKind("Bash", { command: "cd app && npx wrangler pages deploy dist" })).toBe("up");
+    expect(transferKind("Bash", { command: "curl -X POST https://api.example.com/x -d @body.json" })).toBe("up");
+    expect(transferKind("Bash", { command: "scp build.zip pod:/workspace/" })).toBe("up");
+    expect(transferKind("mcp__aee__media_upload", {})).toBe("up");
+  });
+
+  it("spots downloads", () => {
+    expect(transferKind("Bash", { command: "git clone https://github.com/x/y" })).toBe("down");
+    expect(transferKind("Bash", { command: "curl -sL https://example.com/model.bin -o model.bin" })).toBe("down");
+    expect(transferKind("Bash", { command: "npm install three" })).toBe("down");
+    expect(transferKind("Bash", { command: "scp pod:/workspace/out.png ./" })).toBe("down");
+    expect(transferKind("WebFetch", { url: "https://x.dev" })).toBe("down");
+    expect(transferKind("mcp__x__download_file_content", {})).toBe("down");
+  });
+
+  it("ignores everything else", () => {
+    expect(transferKind("Bash", { command: "npm test" })).toBeNull();
+    expect(transferKind("Read", { file_path: "/a/push.ts" })).toBeNull();
   });
 });
