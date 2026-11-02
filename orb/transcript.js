@@ -7,6 +7,40 @@
   const meta = document.getElementById("meta");
   const stamp = document.getElementById("stamp");
   const STATUS = { running: "WORKING", done: "DONE", failed: "FAILED", stopped: "STOPPED" };
+  const runes = document.getElementById("runes");
+  const stateText = document.getElementById("state-text");
+  const { svg } = window.astraGlyphs;
+  const { frame, TICK, LABEL } = window.astraRunes;
+  const reduced = matchMedia("(prefers-reduced-motion: reduce)");
+
+  // The glyph row: rolls in the state's own rhythm, settles when the run ends. Fixed width, so nothing shifts.
+  let state = { phase: "thinking" };
+  let tick = 0;
+  let timer = null;
+  const draw = () => (runes.innerHTML = frame(state, tick).map((g) => svg(g.name, g.dim ? "dim" : "")).join(""));
+  const animate = () => {
+    clearInterval(timer);
+    timer = null;
+    draw();
+    const every = TICK[state.phase] ?? 0;
+    // Reduced motion: one still frame per state, no flicker.
+    if (!every || reduced.matches) return;
+    timer = setInterval(() => {
+      tick++;
+      draw();
+    }, every);
+  };
+  const setState = (next) => {
+    const changed = next.phase !== state.phase || next.glyph !== state.glyph;
+    if (next.phase !== state.phase) tick = 0;
+    state = next;
+    if (!changed && timer) return;
+    // Spoken once per change, not every frame.
+    const label = LABEL[next.phase] ?? "";
+    if (stateText.textContent !== label) stateText.textContent = label;
+    animate();
+  };
+  reduced.addEventListener("change", animate);
 
   onMessage((m) => {
     if (m.type !== "transcript") return;
@@ -16,6 +50,7 @@
     document.title = `Astra · Transcript · ${m.job.label}`;
     // Short enough to fit the narrow header, so the status always shows.
     meta.textContent = `RUN | ${STATUS[m.job.status] ?? "IDLE"}`;
+    setState(m.state ?? (m.job.status === "running" ? { phase: "thinking" } : { phase: m.job.status }));
     if (!m.lines.length) {
       const p = document.createElement("p");
       p.className = "empty";

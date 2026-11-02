@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { readdirSync, writeFileSync } from "node:fs";
+import { existsSync, readdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import readline from "node:readline";
 import { PassThrough } from "node:stream";
@@ -13,6 +13,8 @@ import { checkGraph, graphAsText, graphShape } from "./ui/graph.js";
 import { brainIndex, noteMap, readNote, saveNote } from "./tools/brain.js";
 import { openApp, realRunner } from "./tools/mac.js";
 import { ComputerControl, nativeHelper } from "./control/computer.js";
+import { CoffeeMode } from "./power/coffee.js";
+import type { RunPhase } from "./ui/orb.js";
 import { fileDiff, gitRoot, repoState, type RepoState } from "./tools/git.js";
 import { WorkLog, type ToolEvent } from "./ui/worklog.js";
 import { SessionRunner, type Job } from "./tools/runner.js";
@@ -985,12 +987,15 @@ async function main(): Promise<void> {
   type TranscriptKind = "prompt" | "text" | "tool" | "end";
   const transcripts = new Map<string, { kind: TranscriptKind; text: string }[]>();
   const transcriptTimers = new Map<string, NodeJS.Timeout>();
+  /** What each run is doing right now, for the glyph row at the top of its transcript. */
+  const runPhases = new Map<string, RunPhase>();
   /** Shows a run's transcript (now, or within 250 ms so a burst of steps is one update). */
   const showTranscript = (job: Job, owner?: "user") => {
     const send = () => {
       transcriptTimers.delete(job.id);
       const lines = transcripts.get(job.id) ?? [];
-      orb?.send({ type: "transcript", job: { id: job.id, label: job.label, status: job.status }, lines, ...(owner ? { owner } : {}) });
+      const state: RunPhase = job.status === "running" ? (runPhases.get(job.id) ?? { phase: "thinking" }) : { phase: job.status };
+      orb?.send({ type: "transcript", job: { id: job.id, label: job.label, status: job.status }, lines, state, ...(owner ? { owner } : {}) });
     };
     if (owner) return send();
     if (!transcriptTimers.has(job.id)) transcriptTimers.set(job.id, setTimeout(send, 250));
@@ -1014,10 +1019,23 @@ async function main(): Promise<void> {
     activity: (job, tool, input) => {
       console.log(`  [${job.id} ${job.label}] → ${tool}`);
       orb?.send({ type: "activity", text: `${job.label}: ${describeActivity(tool, input)}`, glyph: activityGlyph(tool) });
+      runPhases.set(job.id, { phase: "tool", glyph: activityGlyph(tool) });
       addLine(job, "tool", describeActivity(tool, input));
     },
-    said: (job, text) => addLine(job, "text", text),
-    ask: (_job, approval) => askApproval(approval),
+    said: (job, text) => {
+      runPhases.set(job.id, { phase: "thinking" });
+      addLine(job, "text", text);
+    },
+    ask: async (job, approval) => {
+      runPhases.set(job.id, { phase: "waiting" });
+      showTranscript(job);
+      try {
+        return await askApproval(approval);
+      } finally {
+        runPhases.set(job.id, { phase: "thinking" });
+        showTranscript(job);
+      }
+    },
     toolEvent: (job, e) => onToolEvent(job.label, job.folder, e),
     guard: (_job, phase) => onGuard(phase),
     security: (job, text) => {
@@ -1191,11 +1209,17 @@ async function main(): Promise<void> {
     },
   };
 
+  // Coffee mode: the Mac stays awake. Picked back up after a restart; the orb hears every change.
+  const coffee = new CoffeeMode(path.join(cfg.home, "coffee.json"));
+  coffee.onChange = (on, until) => orb?.send({ type: "coffee", on, until });
+  if (coffee.resume()) console.log(`  ☀︎ ${coffee.status()}`);
+
   const jarvis = new Jarvis(cfg, {
     say,
     sessions,
     windows: windowTools,
     computer,
+    coffee,
     toolEvent: (e) => onToolEvent("Astra", cfg.workspaceDir, e),
     graph: (title, graph) => {
       if (orb?.alive) {
@@ -1357,6 +1381,8 @@ async function main(): Promise<void> {
   quitting = true;
   await wakeListener.cancel();
   speaker.stop();
+  // A restart (its flag file is there) keeps coffee mode for the next start; quitting ends it.
+  coffee.shutdown(existsSync(path.join(cfg.home, "restart")));
   orb?.close();
   stopServing();
   rl.close();

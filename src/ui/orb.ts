@@ -16,6 +16,11 @@ import type { TermEntry } from "./worklog.js";
 import type { Position, UiAction } from "./control.js";
 import type { TeardownGraph } from "./graph.js";
 
+/** A background run's state, shown as a row of ring glyphs in its transcript (orb/runes.js). */
+export type RunPhase =
+  | { phase: "thinking" | "waiting" | "done" | "failed" | "stopped" }
+  | { phase: "tool"; glyph: ActivityGlyph };
+
 export type OrbState = "idle" | "listening" | "thinking" | "speaking";
 
 export type ToOrb =
@@ -37,6 +42,8 @@ export type ToOrb =
       type: "transcript";
       job: { id: string; label: string; status: string };
       lines: { kind: "prompt" | "text" | "tool" | "end"; text: string }[];
+      /** What the run is doing, for the transcript's glyph row. */
+      state?: RunPhase;
       owner?: "user";
     }
   | { type: "graph"; title: string; graph: TeardownGraph; owner?: "user" }
@@ -49,6 +56,7 @@ export type ToOrb =
   | { type: "terminal"; entries: TermEntry[]; force?: boolean; owner?: "user" }
   | { type: "git"; repos: RepoState[]; force?: boolean; owner?: "user" }
   | { type: "git-diff-result"; root: string; path: string; diff: string }
+  | { type: "coffee"; on: boolean; until: number | null }
   | { type: "brain-note"; path: string; title: string; html: string; hasMap: boolean }
   | { type: "quit" };
 

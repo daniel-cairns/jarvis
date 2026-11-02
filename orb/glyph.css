@@ -1,0 +1,34 @@
+/* Astra's glyphs (glyphs.js): gold line art at any size. Motion is decoration only and stops for reduced motion. */
+.glyph {
+  width: 1em;
+  height: 1em;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vertical-align: -0.15em;
+  overflow: visible;
+}
+
+/* Water clock: one drop at a time, every 2.4 s, while the level sinks very slowly. */
+.glyph.is-live .g-drop { animation: g-drip 2.4s ease-in infinite; }
+.glyph.is-live .g-level { animation: g-sink 24s linear infinite; }
+@keyframes g-drip {
+  0%, 35% { transform: translateY(-1.6px) scale(0.4); opacity: 0; }
+  50% { transform: translateY(-0.6px) scale(1); opacity: 1; }
+  85% { transform: translateY(1.8px); opacity: 0.9; }
+  100% { transform: translateY(2.6px); opacity: 0; }
+}
+@keyframes g-sink { from { transform: translateY(0); } to { transform: translateY(5px); } }
+.g-drop, .g-level { transform-box: fill-box; transform-origin: center; }
+
+/* Sun disc: rays turn once a minute and shimmer. */
+.glyph.is-live .g-rays { animation: g-turn 60s linear infinite, g-shimmer 3.2s ease-in-out infinite; }
+.g-rays { transform-box: view-box; transform-origin: 12px 12px; }
+@keyframes g-turn { to { transform: rotate(360deg); } }
+@keyframes g-shimmer { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .glyph .g-drop, .glyph .g-level, .glyph .g-rays { animation: none !important; }
+}

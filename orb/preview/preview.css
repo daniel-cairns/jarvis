@@ -1,0 +1,23 @@
+:root { --gold: #ecbc52; --ink: #e9e2cf; --dim: #8d8571; color-scheme: dark; }
+body { margin: 0; background: #0d0b08; color: var(--ink); font: 15px/1.5 -apple-system, "Helvetica Neue", sans-serif; }
+main { max-width: 980px; margin: 0 auto; padding: 36px 28px 60px; }
+h1 { font-weight: 500; letter-spacing: 0.02em; color: var(--gold); margin: 0 0 6px; }
+h2 { font-weight: 500; font-size: 17px; margin: 0 0 4px; color: var(--gold); }
+.lede, section p { color: var(--dim); margin: 0 0 16px; }
+.options { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; }
+section { border: 1px solid rgba(236, 188, 82, 0.25); border-radius: 6px; padding: 18px 20px; background: rgba(255, 255, 255, 0.02); }
+.row { display: flex; gap: 22px; margin-bottom: 14px; }
+figure { margin: 0; text-align: center; }
+figcaption { font-size: 12px; color: var(--dim); margin-top: 6px; }
+.tile { display: grid; place-items: center; color: var(--gold); background: #17130d; border: 1px solid rgba(236, 188, 82, 0.15); border-radius: 4px; }
+.tile.small { width: 64px; height: 40px; font-size: 16px; }
+.tile.big { width: 150px; height: 150px; font-size: 104px; }
+.tile.big .glyph { stroke-width: 0.9; }
+.context { margin-top: 28px; }
+.ring { font-size: 22px; color: var(--gold); display: flex; gap: 14px; align-items: center; }
+.ring .new { padding-left: 14px; border-left: 1px solid rgba(236, 188, 82, 0.3); }
+.note { font-size: 12px; }
+.runes-demo { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; }
+.runes-demo li { display: flex; align-items: center; gap: 14px; color: var(--ink); }
+.runes-demo .runes { display: inline-flex; gap: 3px; width: 92px; font-size: 15px; color: var(--gold); }
+.runes .dim { opacity: 0.35; }

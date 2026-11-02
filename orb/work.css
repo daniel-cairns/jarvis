@@ -101,3 +101,9 @@
 .transcript .t-end { color: var(--gold); font-weight: 600; }
 .transcript .t-prompt { color: #fff1c9; font-style: italic; }
 .transcript .t-prompt::before { content: "Asked: "; color: var(--gold); font-style: normal; }
+
+/* The transcript's glyph row (runes.js): a fixed width, so it never pushes the status about. */
+.runes { display: inline-flex; gap: 3px; width: 6.4em; margin-right: 0.4em; color: var(--gold); font-size: 1.05em; vertical-align: middle; }
+.runes .glyph { flex: 0 0 auto; transition: opacity 120ms; }
+.runes .glyph.dim { opacity: 0.35; }
+@media (prefers-reduced-motion: reduce) { .runes .glyph { transition: none; } }

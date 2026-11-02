@@ -8,6 +8,7 @@ import { checkGraph, graphShape, type TeardownGraph } from "../ui/graph.js";
 import type { QuestionAnswer, QuestionSpec } from "../voice/answers.js";
 import { POSITIONS, UI_ACTIONS, type Position, type UiAction } from "../ui/control.js";
 import type { ComputerControl } from "../control/computer.js";
+import type { CoffeeMode } from "../power/coffee.js";
 
 export const SERVER_NAME = "jarvis";
 
@@ -41,6 +42,7 @@ export type ServerHooks = {
   sessions?: SessionTools;
   windows?: WindowTools;
   computer?: ComputerControl;
+  coffee?: CoffeeMode;
 };
 
 /** Bringing back windows she showed recently; see src/index.ts. */
@@ -60,7 +62,7 @@ export type SessionTools = {
 };
 
 export function createJarvisServer(cfg: JarvisConfig, runner: Runner = realRunner, hooks: ServerHooks = {}) {
-  const { showDetail, showGraph, askQuestion, uiControl, sessions, windows } = hooks;
+  const { showDetail, showGraph, askQuestion, uiControl, sessions, windows, coffee } = hooks;
   const noSessions = "Session control isn't available here.";
   return createSdkMcpServer({
     name: SERVER_NAME,
@@ -185,6 +187,18 @@ export function createJarvisServer(cfg: JarvisConfig, runner: Runner = realRunne
         "Work your own interface when the user asks: minimise (you fold away into the menu bar) or show (you unfold back), stop speaking/working, close your panels, collapse or expand your thinking window, show your terminal (show_terminal) or git changes (show_git) panels, re-open the last detail panel or map, open the brain browser (all notes and teardowns), or change your speaking volume (volume_up, volume_down, or set_volume with level 0-100), or move yourself on screen (move with a position: a spot like top_left or centre, or a nudge_left/right/up/down), or start long transcript mode (start_transcript: once this reply ends you record everything said until the user says 'stop recording', then save it to the brain under transcripts), or switch to type-only mode (type_only: microphone off and you stay silent, replies on screen only) or back (voice_mode), or give a sit rep of every session (sitrep: shows a panel and returns the summary to tell the user), or turn god mode on or off (god_mode_on / god_mode_off: you command the user's sessions and announce when they finish), or tidy up your panels (stack_windows: they're laid out automatically so none overlap; this also brings back into the layout any the user dragged or resized by hand), or pick up your previous conversation after a restart (continue_session: only when the user asks; it resumes once this reply ends), or restart yourself (restart: you quit and start again with your latest code, once this reply and any background sessions you're running have finished). Use this rather than shell commands to move your window.",
         { action: z.enum(UI_ACTIONS), level: z.number().int().min(0).max(100).optional(), position: z.enum(POSITIONS).optional() },
         (args) => guarded(async () => (uiControl ? uiControl(args.action, args.level, args.position) : "No screen is attached.")),
+      ),
+      tool(
+        "coffee_mode",
+        "Coffee mode keeps the Mac awake (no sleep) while it's on. Use when the user says coffee mode (on), coffee mode off / stop coffee mode (off), optionally for a time ('coffee mode for two hours': minutes 120), or asks whether it's on (status). It carries on through a restart; quitting you ends it.",
+        { action: z.enum(["on", "off", "status"]), minutes: z.number().int().min(1).max(24 * 60).optional() },
+        (args) =>
+          guarded(async () => {
+            if (!coffee) return "Coffee mode isn't available here.";
+            if (args.action === "on") return coffee.start(args.minutes);
+            if (args.action === "off") return coffee.stop();
+            return coffee.status();
+          }),
       ),
       tool(
         "show_graph",
