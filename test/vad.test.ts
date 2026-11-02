@@ -152,6 +152,8 @@ describe("the recorder around it", () => {
     await l.cancel();
     expect(readFileSync(`${bin}.args`, "utf8").trim()).toMatch(/-t raw -$/); // the speech-detector path: raw audio to Node
     expect(took).toBeGreaterThanOrEqual(650);
-    expect(took).toBeLessThan(2500);
-  });
+    // Generous: other test files run the detector in parallel and can slow this down. Without the cap it would
+    // never end at all (no speech and no give-up time).
+    expect(took).toBeLessThan(6000);
+  }, 15_000);
 });

@@ -91,7 +91,9 @@ export function quickUiCommand(request: string): UiCommand | null {
     return { action: "continue_session" };
   }
   if (/^(show|reopen|bring back|open)( me)?( all)?( your| my| the)?( recent| last| latest)? (windows|panels)( back| again)?$|^bring (your |the )?(windows|panels) back$/.test(s)) return { action: "reopen_windows" };
-  if (/^(stack|arrange|tidy( up)?|organi[sz]e|line up|sort out)( all)?( your| the| my)? (windows|panels)( nicely)?( please)?$/.test(s)) return { action: "stack_windows" };
+  if (/^(stack|arrange|tidy( up)?|organi[sz]e|line up|sort out)( all)?( your| the| my)? (windows|panels)( nicely)?( please)?$|^tidy up$/.test(s)) {
+    return { action: "stack_windows" };
+  }
   if (/^(go |switch to |turn on )?(type|typing|text) (only )?mode( on)?( please)?$|^type only( please)?$/.test(s)) return { action: "type_only" };
   if (/^(give me |get me |what s the |what is the )?(a |the |your )?(sit ?rep|situation report|status report)( please)?$|^what (s|is) everyone (doing|up to)$/.test(s)) return { action: "sitrep" };
   if (/^(go into |enter |switch to |turn on |activate )?god mode( on)?( please)?$/.test(s)) return { action: "god_mode_on" };

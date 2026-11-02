@@ -614,7 +614,7 @@ async function main(): Promise<void> {
       expand_panel: "Expanded the thinking window.",
       show_last_detail: "Re-opened the last detail panel (if there was one).",
       show_last_map: "Re-opened the last map (if there was one).",
-      stack_windows: "Stacked my windows beside me.",
+      stack_windows: "Tidied up my panels.",
     };
     return done[action];
   };

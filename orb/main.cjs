@@ -5,7 +5,7 @@
 const { app, BrowserWindow, Menu, Tray, ipcMain, nativeImage, screen, shell } = require("electron");
 const path = require("node:path");
 const readline = require("node:readline");
-const { stackLayout } = require("./stack.cjs");
+const { layoutPanels } = require("./layout.cjs");
 
 const ANSWERS = new Set(["yes", "always", "no"]);
 
@@ -157,7 +157,7 @@ app.whenReady().then(() => {
         { label: "Show last detail", enabled: slabs.detail.last !== null, click: () => openSlab("detail", slabs.detail.last, "user") },
         { label: "Show last map", enabled: slabs.graph.last !== null, click: () => openSlab("graph", slabs.graph.last, "user") },
         { label: "Open brain", click: () => send({ type: "brain-request" }) },
-        { label: "Stack windows", click: () => stackWindows() },
+        { label: "Tidy up panels", click: () => relayout(true) },
         { label: "Show terminal", click: () => openSlab("terminal", slabs.terminal.last ?? { type: "terminal", entries: [] }, "user") },
         { label: "Show git changes", click: () => openSlab("git", slabs.git.last ?? { type: "git", repos: [] }, "user") },
         {
@@ -236,6 +236,8 @@ app.whenReady().then(() => {
       slab.owner = "user";
       if (slab.collapsed) slab.win.webContents.send("jarvis", { type: "slab-expand" });
       slab.win.show();
+      slab.lastUsed = Date.now();
+      scheduleLayout();
       return;
     }
     openSlab(kind, slab.last, "user");
@@ -245,6 +247,7 @@ app.whenReady().then(() => {
     const slab = slabs[kind];
     slab.last = msg;
     slab.request = requestNo;
+    slab.lastUsed = Date.now();
     if (slab.win && !slab.win.isDestroyed()) {
       if (RANK[owner] > RANK[slab.owner ?? "auto"]) slab.owner = owner;
       slab.win.webContents.send("jarvis", msg);
@@ -285,11 +288,21 @@ app.whenReady().then(() => {
       webPreferences: WEB_PREFERENCES,
     });
     slab.win = w;
+    slab.pinned = false;
     // Clicking into a panel (or dragging it) makes it yours: she won't close it on you.
-    w.on("focus", () => (slab.owner = "user"));
+    w.on("focus", () => {
+      slab.owner = "user";
+      slab.lastUsed = Date.now();
+    });
+    // Resized by hand (not by the layout): it keeps the size and place you gave it until it closes or you tidy up.
+    w.on("resized", () => {
+      if (Date.now() > layingOutUntil) slab.pinned = true;
+    });
     w.on("closed", () => {
       slab.collapsed = false;
+      slab.pinned = false;
       sendPanels();
+      scheduleLayout();
     });
     w.setAlwaysOnTop(true, "floating");
     harden(w);
@@ -298,25 +311,51 @@ app.whenReady().then(() => {
       w.webContents.send("jarvis", msg);
       w.showInactive();
       sendPanels();
+      relayout();
     });
   };
 
-  /** Lays every open panel out tidily beside the orb (see stack.cjs), keeping the sizes you gave them where they fit. */
-  const stackWindows = () => {
-    const order = ["detail", "brain", "graph", "git", "terminal"];
-    const open = order
-      .map((kind) => ({ kind, win: slabs[kind].win }))
-      .filter((p) => p.win && !p.win.isDestroyed() && p.win.isVisible());
+  // Window moves and resizes before this time are the layout's own (it animates), not yours.
+  let layingOutUntil = 0;
+
+  /**
+   * Lays every visible panel out so none overlap (see layout.cjs) on the display the orb is on, skipping any you've
+   * dragged or resized by hand. `tidy` (the "tidy up" action) brings those back into the layout too.
+   */
+  const relayout = (tidy = false) => {
+    if (tidy) for (const s of Object.values(slabs)) s.pinned = false;
+    const open = Object.entries(slabs).filter(([, s]) => s.win && !s.win.isDestroyed() && s.win.isVisible() && !s.pinned);
     if (!open.length) return;
     const orb = win.getBounds();
     const { workArea } = screen.getDisplayMatching(orb);
-    const placed = stackLayout(workArea, orb, open.map((p) => ({ kind: p.kind, ...p.win.getBounds() })));
-    for (const p of open) if (placed[p.kind]) p.win.setBounds(placed[p.kind], true);
+    const { rects } = layoutPanels({
+      area: workArea,
+      orb,
+      panels: open.map(([kind, s]) => {
+        const b = s.win.getBounds();
+        // The size each panel wants is its own default; a folded one keeps its header height.
+        return { kind, width: s.width, height: s.collapsed ? b.height : s.height, folded: !!s.collapsed, lastUsed: s.lastUsed ?? 0 };
+      }),
+    });
+    layingOutUntil = Date.now() + 700;
+    for (const [kind, s] of open) {
+      if (!rects[kind]) continue;
+      // A folded panel's own minimum is lower; the layout never goes below either.
+      s.win.setMinimumSize(340, s.collapsed ? 60 : Math.min(220, rects[kind].height));
+      s.win.setBounds(rects[kind], true);
+    }
   };
+  let layoutTimer;
+  /** A re-layout once things settle (the orb gliding, a burst of panel changes, a display rearranging). */
+  const scheduleLayout = () => {
+    clearTimeout(layoutTimer);
+    layoutTimer = setTimeout(() => relayout(), 250);
+  };
+  for (const event of ["display-added", "display-removed", "display-metrics-changed"]) screen.on(event, scheduleLayout);
 
   /** Astra working her own interface (ui_control and quick spoken commands). */
   const runUi = (action) => {
-    if (action === "stack_windows") return stackWindows();
+    if (action === "stack_windows") return relayout(true);
     if (action === "minimise") void hideOrb();
     else if (action === "show") void show();
     // Closed on request, the work panels stay shut (like closing them by hand) until the next request or "show".
@@ -432,7 +471,11 @@ app.whenReady().then(() => {
     orbOffset = await orbTop();
     void arrange();
   });
-  win.on("moved", () => void arrange());
+  win.on("moved", () => {
+    void arrange();
+    // The panels follow the orb once it stops.
+    scheduleLayout();
+  });
 
   const fitHeight = (wanted) => {
     wantedHeight = wanted;
@@ -464,7 +507,9 @@ app.whenReady().then(() => {
       if (!slab) return;
       const [w] = sender.getSize();
       slab.collapsed = !!m.collapsed;
+      layingOutUntil = Date.now() + 700;
       sendPanels();
+      scheduleLayout();
       if (m.collapsed && Number.isFinite(m.height)) {
         slab.fullHeight = sender.getSize()[1];
         sender.setMinimumSize(340, 60);
@@ -484,6 +529,9 @@ app.whenReady().then(() => {
     }
     if (m?.type === "drag-end") {
       clearInterval(drag?.timer);
+      // A panel you've dragged keeps its place until it closes or you tidy up.
+      const moved = Object.values(slabs).find((s) => s.win && s.win === drag?.target);
+      if (moved) moved.pinned = true;
       drag = null;
       return;
     }
