@@ -156,7 +156,7 @@ export function createJarvisServer(cfg: JarvisConfig, runner: Runner = realRunne
       ),
       tool(
         "session_start",
-        "Start a new Claude Code session in one of the user's projects (a folder name like 'gymclaw', or a path). where='background' runs it for the user and reports back; where='app' opens it in the Claude app with the prompt filled in, ready for them to send.",
+        "Start a new Claude Code session in one of the user's projects (a folder name like 'gymclaw', or a path). where='background' runs it for the user and reports back; where='app' opens it in the Claude app and sends the prompt straight away, so it runs there and the user can watch it live (its approvals then appear as cards in the app, not through you). Prefer 'app' when the user wants to see the work.",
         { project: z.string().min(1).max(200), prompt: z.string().min(1).max(8000), where: z.enum(["background", "app"]) },
         (args) => guarded(async () => (sessions ? sessions.start(args.project, args.prompt, args.where) : noSessions)),
       ),

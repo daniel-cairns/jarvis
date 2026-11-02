@@ -1029,7 +1029,8 @@ async function main(): Promise<void> {
       if (!folder) throw new Error(`I couldn't find a project called "${project}".`);
       if (where === "app") {
         await realRunner.run("open", [appLinks.newSession(folder, prompt)]);
-        return `Opened a new session in ${path.basename(folder)} in the Claude app with the prompt filled in; press Enter there to send it.`;
+        // Verified: the app sends a new session's prompt by itself and runs it there (entrypoint claude-desktop).
+        return `Started a new session in ${path.basename(folder)} in the Claude app; it's running there now, so you can watch it.`;
       }
       const job = sessionRunner.start(folder, prompt, path.basename(folder));
       startTranscript(job);
