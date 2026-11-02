@@ -4,7 +4,6 @@
   const title = document.getElementById("title");
   const content = document.getElementById("content");
   const stamp = document.getElementById("stamp");
-  const bar = document.getElementById("bar");
 
   bridge.onMessage((m) => {
     if (m.type !== "detail") return;
@@ -22,13 +21,4 @@
     if (e.key === "Escape") close();
   });
 
-  // Drag by the top bar (the main process moves the window with the cursor).
-  bar.addEventListener("pointerdown", (e) => {
-    if (e.button !== 0 || e.target.closest("button")) return;
-    bar.setPointerCapture(e.pointerId);
-    bridge.send({ type: "drag-start" });
-  });
-  const end = () => bridge.send({ type: "drag-end" });
-  bar.addEventListener("pointerup", end);
-  bar.addEventListener("lostpointercapture", end);
 })();

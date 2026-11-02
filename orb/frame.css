@@ -130,3 +130,6 @@
 @media (prefers-reduced-motion: reduce) {
   .leds i.on { animation: none; }
 }
+
+/* The whole top strip drags the panel (drag.js), so it shows the grab hand. */
+.slab > .nub:not(.nub--foot), .slab > .rail:not(.rail--bot) { cursor: grab; }

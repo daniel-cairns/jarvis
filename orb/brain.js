@@ -7,7 +7,6 @@
   const note = document.getElementById("note");
   const meta = document.getElementById("meta");
   const stamp = document.getElementById("stamp");
-  const bar = document.getElementById("bar");
 
   const FOLDER_NAMES = { teardowns: "Teardowns", projects: "Projects", notes: "Notes" };
   const ORDER = ["teardowns", "projects", "notes"];
@@ -104,13 +103,4 @@
   window.addEventListener("keydown", (e) => {
     if (e.key === "Escape") close();
   });
-
-  bar.addEventListener("pointerdown", (e) => {
-    if (e.button !== 0 || e.target.closest("button")) return;
-    bar.setPointerCapture(e.pointerId);
-    bridge.send({ type: "drag-start" });
-  });
-  const endDrag = () => bridge.send({ type: "drag-end" });
-  bar.addEventListener("pointerup", endDrag);
-  bar.addEventListener("lostpointercapture", endDrag);
 })();

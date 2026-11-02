@@ -281,12 +281,3 @@ window.addEventListener("keydown", (e) => {
   else if (e.key === "0") fit();
 });
 
-const bar = document.getElementById("bar");
-bar.addEventListener("pointerdown", (e) => {
-  if (e.button !== 0 || e.target.closest("button")) return;
-  bar.setPointerCapture(e.pointerId);
-  bridge.send({ type: "drag-start" });
-});
-const endDrag = () => bridge.send({ type: "drag-end" });
-bar.addEventListener("pointerup", endDrag);
-bar.addEventListener("lostpointercapture", endDrag);
