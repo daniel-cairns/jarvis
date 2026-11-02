@@ -294,6 +294,12 @@ func bringForward(_ el: AXUIElement) {
   usleep(100_000)
 }
 
+/// Whether an element is a field that holds typed text (so reading its value back means something).
+func isTextInput(_ el: AXUIElement) -> Bool {
+  let role = str(el, kAXRoleAttribute) ?? ""
+  return ["AXTextField", "AXTextArea", "AXComboBox", "AXSearchField"].contains(role)
+}
+
 /// Refuses to type unless the keystrokes will reach the app that's meant to get them: the frontmost app owns the
 /// focused element, and, when the caller says which app it expects, it's that one. Typing blind is a safety risk,
 /// since a newline in the wrong app can send a message.
@@ -415,13 +421,18 @@ case "click":
 case "type":
   guard let text = input["text"] as? String else { fail("type needs text") }
   let expected = (input["pid"] as? NSNumber).map { pid_t($0.int32Value) }
-  let before = textValue(focusedElement())
+  let fieldBefore = focusedElement()
+  let before = textValue(fieldBefore)
   typeText(text, expected: expected)
   usleep(150_000)
-  let after = textValue(focusedElement())
+  let fieldAfter = focusedElement()
+  let after = textValue(fieldAfter)
   var out: [String: Any] = ["typed": text.count, "app": NSWorkspace.shared.frontmostApplication?.localizedName ?? "?"]
-  // Did it land? Only checkable when the field exposes its text; apps may autocorrect, so compare loosely.
-  if let b = before, let a = after {
+  // Did it land? Only judged when the same text field had focus before and after and exposes its text; apps may
+  // autocorrect, so compare loosely. Otherwise say nothing: Chrome's find bar reports a different element from the
+  // box the keys go into, which gave false "didn't show up" alarms for text that had arrived.
+  let sameField = fieldBefore != nil && fieldAfter != nil && CFEqual(fieldBefore!, fieldAfter!)
+  if sameField, isTextInput(fieldAfter!), let b = before, let a = after {
     out["landed"] = a.count > b.count && (text.count < 4 || a.lowercased().contains(text.lowercased().trimmingCharacters(in: .whitespaces)))
   }
   emit(out)
@@ -443,6 +454,10 @@ case "scroll":
                   wheel1: Int32(num("dy") ?? 0), wheel2: Int32(num("dx") ?? 0), wheel3: 0)
   post(e)
   emit(["scrolled": true])
+
+case "front":
+  guard let app = NSWorkspace.shared.frontmostApplication else { fail("no app is in front") }
+  emit(["pid": app.processIdentifier, "app": app.localizedName ?? "?"])
 
 case "activate":
   let name = (input["name"] as? String ?? "").lowercased()

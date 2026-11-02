@@ -40,6 +40,7 @@ import {
   parseVoiceApproval,
   speakQuestion,
   type QuestionAnswer,
+  type QuestionSpec,
 } from "./voice/answers.js";
 import { clock, splitStop, transcriptMarkdown, wordCount, type TranscriptLine } from "./voice/transcript.js";
 import { matchWake, matchWakeAnywhere, speechHint, stripOwnSpeech } from "./voice/wake.js";
@@ -209,6 +210,7 @@ async function main(): Promise<void> {
 
   // Operating Mac apps (src/control/): every action logged, risky ones confirmed on a card, all halted by "stop".
   const computer = new ComputerControl(nativeHelper(path.join(cfg.home, "bin")), {
+    ownPids: () => [process.pid, ...(orb?.pid ? [orb.pid] : [])],
     confirm: async (question) => {
       if (!orb?.alive) return false;
       const asked = new AbortController();
@@ -1031,6 +1033,25 @@ async function main(): Promise<void> {
     remember("transcript", `Transcript: ${job.label} (${job.id})`, () => showTranscript(job, "user"), `transcript:${job.id}`);
   };
 
+  /** A question card (ask_user, or a background run's AskUserQuestion), answerable by voice, click or typing. */
+  async function askQuestion(spec: QuestionSpec): Promise<QuestionAnswer | null> {
+    console.log(`\n  Question: ${spec.question}`);
+    spec.options.forEach((o, i) => console.log(`    ${i + 1}. ${o.label}${o.description ? ` (${o.description})` : ""}`));
+    const answer = await openDialog<QuestionAnswer>((signal) => {
+      const viaCard = orb?.alive ? orb.question(spec, signal) : Promise.resolve(null);
+      const spokenQ = speakQuestion(spec.question, spec.options);
+      if (speaker.busy) console.log(`  (on screen: ${spokenQ})`);
+      else void say(spokenQ);
+      const viaTyped = lines
+        .next(spec.options.length ? "[say it, click, or type a number (1,3 for several) or an answer] " : "[say or type your answer] ", signal)
+        .then((line) => (line === null ? null : parseTypedChoice(line, spec)));
+      const viaVoice = voiceAnswer((text) => parseSpokenChoice(text, spec), spec.options.length ? "Sorry, which one?" : "Sorry, say that again?", signal);
+      return firstAnswer<QuestionAnswer>([viaCard, viaTyped, viaVoice]);
+    });
+    console.log(`  → ${answer === null ? "(no answer)" : Array.isArray(answer) ? answer.join(", ") : answer}`);
+    return answer;
+  }
+
   // ── Your other Claude Code sessions: read them, start or continue them in the background, open them in the app ──
   const sessionRunner = new SessionRunner(cfg, {
     activity: (job, tool, input) => {
@@ -1042,6 +1063,18 @@ async function main(): Promise<void> {
     said: (job, text) => {
       runPhases.set(job.id, { phase: "thinking" });
       addLine(job, "text", text);
+    },
+    // Its own questions come to Dan as Astra's question cards, named for the run, and his answers go back to it.
+    question: async (job, spec) => {
+      runPhases.set(job.id, { phase: "waiting" });
+      showTranscript(job);
+      try {
+        if (!orb?.alive && !voiceMode) return null;
+        return await askQuestion({ ...spec, question: `${job.label} (${job.id}) asks: ${spec.question}` });
+      } finally {
+        runPhases.set(job.id, { phase: "thinking" });
+        showTranscript(job);
+      }
     },
     ask: async (job, approval) => {
       runPhases.set(job.id, { phase: "waiting" });
@@ -1069,7 +1102,12 @@ async function main(): Promise<void> {
             ? `I stopped the ${job.label} session`
             : `The ${job.label} session ran into a problem`;
       console.log(`\n  [${job.id} ${job.label}] ${job.status} · $${job.costUsd.toFixed(3)}\n${job.lastText}\n`);
-      void say(first ? `${what}. ${first}` : `${what}.`);
+      // A question it couldn't put to Dan: say so, so it isn't lost in the report.
+      const asked = job.unanswered.length
+        ? ` It had ${job.unanswered.length === 1 ? "a question" : `${job.unanswered.length} questions`} for you that I couldn't put on screen: ${job.unanswered.join(" ")}`
+        : "";
+      if (asked) console.log(`  [${job.id} ${job.label}] unanswered: ${job.unanswered.join(" | ")}`);
+      void say(`${first ? `${what}. ${first}` : `${what}.`}${asked}`);
       tidyWindows();
       restartIfDue();
     },
@@ -1316,23 +1354,7 @@ async function main(): Promise<void> {
     },
     ask: (approval) => askApproval(approval),
     // ask_user: a question card with options, answerable by voice, click or typing.
-    question: async (spec) => {
-      console.log(`\n  Question: ${spec.question}`);
-      spec.options.forEach((o, i) => console.log(`    ${i + 1}. ${o.label}${o.description ? ` (${o.description})` : ""}`));
-      const answer = await openDialog<QuestionAnswer>((signal) => {
-        const viaCard = orb?.alive ? orb.question(spec, signal) : Promise.resolve(null);
-        const spokenQ = speakQuestion(spec.question, spec.options);
-        if (speaker.busy) console.log(`  (on screen: ${spokenQ})`);
-        else void say(spokenQ);
-        const viaTyped = lines
-          .next(spec.options.length ? "[say it, click, or type a number (1,3 for several) or an answer] " : "[say or type your answer] ", signal)
-          .then((line) => (line === null ? null : parseTypedChoice(line, spec)));
-        const viaVoice = voiceAnswer((text) => parseSpokenChoice(text, spec), spec.options.length ? "Sorry, which one?" : "Sorry, say that again?", signal);
-        return firstAnswer<QuestionAnswer>([viaCard, viaTyped, viaVoice]);
-      });
-      console.log(`  → ${answer === null ? "(no answer)" : Array.isArray(answer) ? answer.join(", ") : answer}`);
-      return answer;
-    },
+    question: (spec) => askQuestion(spec),
     // ui_control: Astra working her own interface (panels, minimise, stop).
     ui: (action, level, position) => runUi({ action, level, position }),
   });

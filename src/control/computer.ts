@@ -29,6 +29,8 @@ export type ComputerHooks = {
   indicator(on: boolean): void;
   /** Opens a URL or app (for the System Settings panes). */
   open(target: string): Promise<void>;
+  /** Astra's own process ids (her orb and its windows), which never count as the app she's working in. */
+  ownPids?(): number[];
 };
 
 /** Builds the helper from source if it's missing or older than the source, and returns a runner for it. */
@@ -66,6 +68,8 @@ export class ComputerControl {
   private indicatorOff?: NodeJS.Timeout;
   /** The app (pid) Astra last focused a field in: typing and keys refuse to go anywhere else. */
   private target?: number;
+  /** The last app other than Astra's own windows that was in front while she acted: where the keyboard goes back to. */
+  private lastApp?: number;
 
   constructor(
     private readonly helper: Helper,
@@ -122,6 +126,7 @@ export class ComputerControl {
       }
     }
     this.hooks.log(description);
+    await this.noteFront();
     this.indicatorNow(true);
     try {
       return await run(this.stopper.signal);
@@ -132,6 +137,28 @@ export class ComputerControl {
       clearTimeout(this.indicatorOff);
       this.indicatorOff = setTimeout(() => this.indicatorNow(false), 2500);
     }
+  }
+
+  /** Remembers the app in front, unless it's Astra herself (her orb or a card Dan just answered). */
+  private async noteFront(): Promise<void> {
+    const front = (await this.helper("front").catch(() => null)) as { pid?: number } | null;
+    if (front?.pid && !this.isOwn(front.pid)) this.lastApp = front.pid;
+  }
+
+  private isOwn(pid: number): boolean {
+    return (this.hooks.ownPids?.() ?? []).includes(pid);
+  }
+
+  /**
+   * Before typing or a key press: if one of Astra's own windows is in front (Dan just clicked a card, which makes her
+   * the active app), hand the keyboard back to the app she was working in. Without this the keys were refused with
+   * "nothing in Electron has keyboard focus", or worse, typed into her.
+   */
+  private async refocus(signal: AbortSignal): Promise<void> {
+    const back = this.target ?? this.lastApp;
+    if (!back) return;
+    const front = (await this.helper("front", undefined, signal).catch(() => null)) as { pid?: number } | null;
+    if (front?.pid && this.isOwn(front.pid)) await this.helper("activate", { pid: back }, signal).catch(() => undefined);
   }
 
   private indicatorNow(on: boolean): void {
@@ -204,6 +231,7 @@ export class ComputerControl {
     const preview = text.length > 60 ? `${text.slice(0, 60)}…` : text;
     const pid = this.target;
     return this.act(`type "${preview}"${focused?.app ? ` in ${focused.app}` : ""}`, { kind: "type", text, focused }, async (signal) => {
+      await this.refocus(signal);
       let typed = 0;
       let missed = 0;
       let app = focused?.app;
@@ -235,6 +263,7 @@ export class ComputerControl {
     const focused = (await this.helper("focused").catch(() => undefined)) as UiElement | undefined;
     const pid = this.target;
     return this.act(`press ${normal}${focused?.app ? ` in ${focused.app}` : ""}`, { kind: "key", combo: normal, focused }, async (signal) => {
+      await this.refocus(signal);
       try {
         return await this.helper("key", { combo: normal, pid }, signal);
       } catch (err) {

@@ -4,13 +4,14 @@
  * reports it. Each run is a normal Claude Code session on disk, so it can be opened in the app afterwards.
  */
 import { existsSync } from "node:fs";
-import { query, type CanUseTool, type SDKMessage } from "@anthropic-ai/claude-agent-sdk";
+import { query, type CanUseTool, type PermissionResult, type SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 import type { JarvisConfig } from "../config.js";
 import type { BackgroundPermissionMode } from "../settings.js";
 import type { Approval } from "../agent.js";
 import { allowKey, describeCall, parseAnswer } from "../permissions.js";
 import { createFetchGuard } from "../security/fetchGuard.js";
 import { toolEvents, type ToolEvent } from "../ui/worklog.js";
+import type { QuestionAnswer, QuestionSpec } from "../voice/answers.js";
 
 export type JobStatus = "running" | "done" | "failed" | "stopped";
 
@@ -27,6 +28,8 @@ export type Job = {
   startedAt: string;
   /** The permission mode it started with (see BackgroundPermissionMode). */
   permissionMode: BackgroundPermissionMode;
+  /** Questions it asked (AskUserQuestion) that never reached Dan, for Astra to raise when it finishes. */
+  unanswered: string[];
   abort: AbortController;
 };
 
@@ -35,6 +38,8 @@ export type RunnerEvents = {
   activity(job: Job, toolName: string, input: Record<string, unknown>): void;
   /** A background session needs permission; resolves with the raw answer (yes / always / no). */
   ask(job: Job, approval: Approval): Promise<string>;
+  /** A background session asked Dan a question (AskUserQuestion): his answer, or null if it couldn't be asked. */
+  question?(job: Job, spec: QuestionSpec): Promise<QuestionAnswer | null>;
   /** Something the session said (top-level text), for the live transcript panel. */
   said?(job: Job, text: string): void;
   /** A run ended (done, failed or stopped). */
@@ -111,10 +116,36 @@ export class SessionRunner {
       startedAt: new Date().toISOString(),
       permissionMode: this.permissionMode(),
       abort: new AbortController(),
+      unanswered: [],
     };
     this.jobs.set(job.id, job);
     void this.run(job, resume);
     return job;
+  }
+
+  /**
+   * A run's AskUserQuestion: each question goes to Dan as one of Astra's question cards, and his answers go back in
+   * the tool's `answers` (question text → answer), which is how the SDK hands a tool its user's replies. Before this
+   * it went through as a plain "may it use AskUserQuestion?" approval: Dan never saw the question and the run got no
+   * answer. If a question can't be put to him, the tool is denied with instructions to report it instead, and the
+   * question is kept on the job so Astra mentions it when the run ends.
+   */
+  private async askQuestions(job: Job, input: Record<string, unknown>): Promise<PermissionResult> {
+    const questions = parseQuestions(input);
+    const answers: Record<string, string> = {};
+    for (const q of questions) {
+      const answer = this.events.question ? await this.events.question(job, q.spec).catch(() => null) : null;
+      if (answer === null || (Array.isArray(answer) && !answer.length)) {
+        job.unanswered.push(...questions.map((x) => x.text).filter((t) => !(t in answers)));
+        return {
+          behavior: "deny",
+          message:
+            "The user couldn't be asked this here, so they haven't seen it. Don't ask again: carry on with what doesn't depend on it, and put the question (with your recommended answer) at the top of your final report.",
+        };
+      }
+      answers[q.text] = Array.isArray(answer) ? answer.join(", ") : answer;
+    }
+    return { behavior: "allow", updatedInput: { ...input, answers } };
   }
 
   private async run(job: Job, resume?: string): Promise<void> {
@@ -126,6 +157,7 @@ export class SessionRunner {
     );
     // Claude Code's own settings (your allow-lists) decide first; anything it would ask about comes to you via Astra.
     const canUseTool: CanUseTool = async (toolName, input) => {
+      if (toolName === "AskUserQuestion") return this.askQuestions(job, input);
       const flagged = guard.takeFlags(toolName, input);
       if (!flagged && sessionAllowed.has(allowKey(toolName, input))) return { behavior: "allow", updatedInput: input };
       const action = toolName === "Bash" ? "run a shell command" : toolName === "WebFetch" ? "fetch a web page" : `use ${toolName.replace(/^mcp__([^_]+)__/, "$1 ").replace(/_/g, " ")}`;
@@ -188,4 +220,18 @@ export class SessionRunner {
       }
     }
   }
+}
+
+/** AskUserQuestion's input as Astra's question cards (question, options, multi-select); malformed entries are skipped. */
+export function parseQuestions(input: Record<string, unknown>): { text: string; spec: QuestionSpec }[] {
+  const list = Array.isArray(input.questions) ? input.questions : [];
+  return list.flatMap((raw) => {
+    const q = raw as { question?: unknown; options?: unknown; multiSelect?: unknown };
+    if (typeof q.question !== "string" || !q.question.trim()) return [];
+    const options = (Array.isArray(q.options) ? q.options : [])
+      .map((o) => o as { label?: unknown; description?: unknown })
+      .filter((o) => typeof o.label === "string")
+      .map((o) => ({ label: o.label as string, ...(typeof o.description === "string" ? { description: o.description } : {}) }));
+    return [{ text: q.question, spec: { question: q.question, options, multiSelect: q.multiSelect === true, allowOther: true } }];
+  });
 }

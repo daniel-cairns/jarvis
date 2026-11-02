@@ -168,3 +168,45 @@ describe("SessionRunner", () => {
     expect(job).toMatchObject({ status: "done", sessionId: ID(9), lastText: "All 12 tests pass.", costUsd: 0.12 });
   });
 });
+
+describe("a background run's own questions (AskUserQuestion)", () => {
+  type Result = { behavior: string; updatedInput?: Record<string, unknown>; message?: string };
+  const input = {
+    questions: [
+      { question: "Which GitHub client ID?", header: "Client ID", options: [{ label: "Use the new app" }, { label: "Keep the old one" }], multiSelect: false },
+      { question: "Ship M4 now?", header: "M4", options: [{ label: "Yes" }, { label: "Wait" }], multiSelect: false },
+    ],
+  };
+  /** Runs one AskUserQuestion through the runner's permission check and returns what the SDK would get. */
+  async function ask(question?: (spec: { question: string }) => Promise<unknown>) {
+    let result!: Result;
+    const fake = (async function* ({ options: o }: { options: Record<string, unknown> }) {
+      result = await (o.canUseTool as (n: string, i: object, x: object) => Promise<Result>)("AskUserQuestion", input, {});
+    }) as never;
+    const approvals: string[] = [];
+    const runner = new SessionRunner(
+      loadConfig({}),
+      { activity: () => {}, ask: async (_j, a) => (approvals.push(a.detail), "yes"), finished: () => {}, ...(question ? { question: (_j, s) => question(s) as never } : {}) },
+      fake,
+    );
+    const job = runner.start(os.tmpdir(), "go", "hierogitics");
+    await new Promise((r) => setTimeout(r, 20));
+    return { result, job, approvals };
+  }
+
+  it("puts each question to Dan and hands his answers back, not a bare approval", async () => {
+    const asked: string[] = [];
+    const { result, approvals } = await ask(async (s) => (asked.push(s.question), s.question.startsWith("Which") ? ["Use the new app"] : "Wait"));
+    expect(asked).toEqual(["Which GitHub client ID?", "Ship M4 now?"]);
+    expect(approvals).toEqual([]);
+    expect(result.behavior).toBe("allow");
+    expect(result.updatedInput?.answers).toEqual({ "Which GitHub client ID?": "Use the new app", "Ship M4 now?": "Wait" });
+  });
+
+  it("when it can't ask, denies with report-it instructions and remembers the question for the end", async () => {
+    const { result, job } = await ask(async () => null);
+    expect(result.behavior).toBe("deny");
+    expect(result.message).toMatch(/final report/);
+    expect(job.unanswered).toEqual(["Which GitHub client ID?", "Ship M4 now?"]);
+  });
+});

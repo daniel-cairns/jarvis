@@ -196,6 +196,11 @@ export class Orb {
     return new Orb(child, handlers);
   }
 
+  /** The orb's Electron process: the app macOS sees whenever one of Astra's windows is in front. */
+  get pid(): number | undefined {
+    return this.child.pid;
+  }
+
   get alive(): boolean {
     return !this.exited;
   }

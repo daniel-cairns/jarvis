@@ -14,7 +14,7 @@ function fakeHelper(answers: Record<string, (input: any) => unknown> = {}) {
   return { helper, calls, did: (command: string) => calls.filter((c) => c.command === command) };
 }
 
-function control(helper: Helper, confirmAnswer = true) {
+function control(helper: Helper, confirmAnswer = true, ownPids: number[] = []) {
   const asked: string[] = [];
   const log: string[] = [];
   const indicator: boolean[] = [];
@@ -23,6 +23,7 @@ function control(helper: Helper, confirmAnswer = true) {
     log: (l) => log.push(l),
     indicator: (on) => indicator.push(on),
     open: async () => {},
+    ownPids: () => ownPids,
   });
   return { c, asked, log, indicator };
 }
@@ -205,5 +206,31 @@ describe("after an approval card", () => {
     const order = h.calls.map((x) => x.command).filter((x) => x === "activate" || x === "type");
     expect(order[0]).toBe("activate");
     expect(h.did("activate")[0]!.input).toEqual({ pid: 777 });
+  });
+});
+
+describe("handing the keyboard back after a card", () => {
+  const field = { role: "AXTextField", app: "Google Chrome" };
+
+  it("re-activates the app she was working in when one of Astra's own windows is in front", async () => {
+    // Chrome (16914) was in front for the first action; then Dan clicked a card, so Astra's orb (777) is.
+    let front = 16914;
+    const h = fakeHelper({ focused: () => field, front: () => ({ pid: front }), at: () => field, type: () => ({ landed: true }) });
+    const { c } = control(h.helper, true, [777]);
+    await c.click(10, 10);
+    front = 777;
+    await c.type("hello");
+    expect(h.did("activate").map((x) => x.input)).toEqual([{ pid: 16914 }]);
+    const order = h.calls.map((x) => x.command).filter((x) => x === "activate" || x === "type");
+    expect(order).toEqual(["activate", "type"]);
+  });
+
+  it("leaves focus alone when the working app is already in front", async () => {
+    const h = fakeHelper({ focused: () => field, front: () => ({ pid: 16914 }), at: () => field, type: () => ({ landed: true }) });
+    const { c } = control(h.helper, true, [777]);
+    await c.click(10, 10);
+    await c.key("cmd+f");
+    await c.type("hello");
+    expect(h.did("activate")).toHaveLength(0);
   });
 });

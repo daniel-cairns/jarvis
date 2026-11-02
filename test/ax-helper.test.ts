@@ -62,4 +62,10 @@ describe("the orb", () => {
     // A background run's transcript (no owner) never reopens a closed panel.
     expect(main).toMatch(/m\.type === "transcript" && m\.owner !== "user" && closed\.has\("transcript"\)/);
   });
+
+  it("only judges whether typing landed in the same text field it started in", () => {
+    const typeCase = source.slice(source.indexOf('case "type":'), source.indexOf('case "key":'));
+    expect(typeCase).toMatch(/CFEqual\(fieldBefore!, fieldAfter!\)/);
+    expect(typeCase).toMatch(/sameField, isTextInput\(fieldAfter!\)/);
+  });
 });
