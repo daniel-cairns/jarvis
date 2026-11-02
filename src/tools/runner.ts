@@ -6,7 +6,8 @@
 import { query, type CanUseTool, type SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 import type { JarvisConfig } from "../config.js";
 import type { Approval } from "../agent.js";
-import { describeCall, parseAnswer } from "../permissions.js";
+import { allowKey, describeCall, parseAnswer } from "../permissions.js";
+import { createFetchGuard } from "../security/fetchGuard.js";
 import { toolEvents, type ToolEvent } from "../ui/worklog.js";
 
 export type JobStatus = "running" | "done" | "failed" | "stopped";
@@ -34,6 +35,8 @@ export type RunnerEvents = {
   finished(job: Job): void;
   /** Each tool call and its result in a background session, for the terminal and git panels. */
   toolEvent?(job: Job, e: ToolEvent): void;
+  /** The page-fetch security check did something (blocked a site, cleaned a page). */
+  security?(job: Job, text: string): void;
 };
 
 type QueryFn = typeof query;
@@ -103,15 +106,21 @@ export class SessionRunner {
 
   private async run(job: Job, resume?: string): Promise<void> {
     const sessionAllowed = new Set<string>();
+    // The same page-fetch security check as Astra's own: before every fetch (even ones your settings allow) and after.
+    const guard = createFetchGuard({ safeBrowsing: this.cfg.safeBrowsingKey, urlhaus: this.cfg.urlhausKey }, (text) =>
+      this.events.security?.(job, text),
+    );
     // Claude Code's own settings (your allow-lists) decide first; anything it would ask about comes to you via Astra.
     const canUseTool: CanUseTool = async (toolName, input) => {
-      if (sessionAllowed.has(toolName)) return { behavior: "allow", updatedInput: input };
+      const flagged = guard.takeFlags(toolName, input);
+      if (!flagged && sessionAllowed.has(allowKey(toolName, input))) return { behavior: "allow", updatedInput: input };
+      const action = toolName === "Bash" ? "run a shell command" : toolName === "WebFetch" ? "fetch a web page" : `use ${toolName.replace(/^mcp__([^_]+)__/, "$1 ").replace(/_/g, " ")}`;
       const raw = await this.events.ask(job, {
-        spoken: `The ${job.label} session wants to ${toolName === "Bash" ? "run a shell command" : `use ${toolName.replace(/^mcp__([^_]+)__/, "$1 ").replace(/_/g, " ")}`}.`,
-        detail: `${job.label} session: I'd like to ${describeCall(toolName, input)}.`,
+        spoken: `The ${job.label} session wants to ${action}.${flagged ? " The security check flagged it." : ""}`,
+        detail: `${job.label} session: I'd like to ${describeCall(toolName, input)}.${flagged ? `\n\nSecurity check: ${flagged.join("; ")}.` : ""}`,
       });
       const answer = parseAnswer(raw);
-      if (answer === "always") sessionAllowed.add(toolName);
+      if (answer === "always") sessionAllowed.add(allowKey(toolName, input));
       return answer === "no" ? { behavior: "deny", message: "The user declined this action." } : { behavior: "allow", updatedInput: input };
     };
     try {
@@ -124,6 +133,7 @@ export class SessionRunner {
           maxBudgetUsd: this.cfg.maxBudgetUsd,
           permissionMode: "default",
           canUseTool,
+          hooks: guard.hooks,
           env: sessionEnv(),
           ...(resume ? { resume } : {}),
         },

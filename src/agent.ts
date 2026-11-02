@@ -2,15 +2,13 @@ import fs from "node:fs/promises";
 import {
   query,
   type CanUseTool,
-  type HookCallback,
   type Options,
   type SDKMessage,
 } from "@anthropic-ai/claude-agent-sdk";
 import type { JarvisConfig } from "./config.js";
 import { allowKey, decide, describeCall, parseAnswer, spokenQuestion } from "./permissions.js";
-import { hostOf, loadSafeSites } from "./safeSites.js";
-import { scanContent } from "./security/contentScan.js";
-import { checkUrl } from "./security/urlCheck.js";
+import { loadSafeSites } from "./safeSites.js";
+import { createFetchGuard, type FetchGuard } from "./security/fetchGuard.js";
 import { jarvisInstructions } from "./prompt.js";
 import { sessionEnv } from "./tools/runner.js";
 import { createJarvisServer, SERVER_NAME, type SessionTools } from "./tools/server.js";
@@ -49,8 +47,8 @@ type QueryFn = typeof query;
 export class Jarvis {
   private sessionId: string | undefined;
   private readonly sessionAllowed = new Set<string>();
-  /** Page fetches the security check flagged, with why: these always ask, safe site or not. */
-  private readonly flaggedUrls = new Map<string, string[]>();
+  /** The security check on every page fetch (before and after); flagged fetches always ask, safe site or not. */
+  private readonly fetchGuard: FetchGuard;
   private readonly reportedServers = new Set<string>();
   private abort: AbortController | null = null;
 
@@ -58,7 +56,9 @@ export class Jarvis {
     private readonly cfg: JarvisConfig,
     private readonly io: JarvisIO,
     private readonly runQuery: QueryFn = query,
-  ) {}
+  ) {
+    this.fetchGuard = createFetchGuard({ safeBrowsing: cfg.safeBrowsingKey, urlhaus: cfg.urlhausKey }, (text) => io.status(text));
+  }
 
   async init(): Promise<void> {
     await fs.mkdir(this.cfg.brainDir, { recursive: true });
@@ -103,10 +103,7 @@ export class Jarvis {
       },
       permissionMode: "default",
       // Every page fetch is checked before it runs (even for sites your Claude Code settings allow) and after.
-      hooks: {
-        PreToolUse: [{ matcher: "WebFetch", hooks: [this.checkFetch] }],
-        PostToolUse: [{ matcher: "WebFetch", hooks: [this.scanFetch] }],
-      },
+      hooks: this.fetchGuard.hooks,
       env: sessionEnv(),
       // Claude Code's question dialog has no voice or orb front end here; Astra asks out loud instead.
       disallowedTools: ["AskUserQuestion"],
@@ -115,48 +112,8 @@ export class Jarvis {
     };
   }
 
-  /** Before a page fetch: blocks addresses a threat index lists, and makes risky-looking ones ask with the reason. */
-  private readonly checkFetch: HookCallback = async (input) => {
-    if (input.hook_event_name !== "PreToolUse") return {};
-    const url = (input.tool_input as { url?: unknown }).url;
-    if (typeof url !== "string") return {};
-    const result = await checkUrl(url, { safeBrowsing: this.cfg.safeBrowsingKey, urlhaus: this.cfg.urlhausKey });
-    const host = hostOf(url) ?? "that address";
-    if (result.verdict === "block") {
-      this.io.status(`Security check blocked ${host}: ${result.reasons[0]}`);
-      return {
-        hookSpecificOutput: {
-          hookEventName: "PreToolUse",
-          permissionDecision: "deny",
-          permissionDecisionReason: `The security check blocked ${host}: ${result.reasons.join("; ")}. Don't try to reach it another way; tell the user.`,
-        },
-      };
-    }
-    if (result.verdict === "warn") {
-      this.flaggedUrls.set(url, result.reasons);
-      return {
-        hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "ask", permissionDecisionReason: `Security check: ${result.reasons.join("; ")}` },
-      };
-    }
-    return {};
-  };
-
-  /** After a page fetch, before she reads it: hidden text and AI-directed instructions are removed, and it's labelled. */
-  private readonly scanFetch: HookCallback = async (input) => {
-    if (input.hook_event_name !== "PostToolUse") return {};
-    const response = input.tool_response;
-    const result = typeof response === "string" ? response : (response as { result?: unknown } | null)?.result;
-    if (typeof result !== "string") return {};
-    const source = hostOf((input.tool_input as { url?: unknown }).url) ?? "the web";
-    const scan = scanContent(result, source);
-    if (scan.findings.length) this.io.status(`Security check cleaned ${source}: removed ${scan.findings.join("; ")}`);
-    const updatedToolOutput = typeof response === "string" ? scan.text : { ...(response as object), result: scan.text };
-    return { hookSpecificOutput: { hookEventName: "PostToolUse", updatedToolOutput } };
-  };
-
   private readonly canUseTool: CanUseTool = async (toolName, input) => {
-    const flagged = toolName === "WebFetch" && typeof input.url === "string" ? this.flaggedUrls.get(input.url) : undefined;
-    if (flagged) this.flaggedUrls.delete(input.url as string);
+    const flagged = this.fetchGuard.takeFlags(toolName, input);
     const decision = flagged ? "ask" : decide(toolName, input, {
       workspaceDir: this.cfg.workspaceDir,
       brainDir: this.cfg.brainDir,

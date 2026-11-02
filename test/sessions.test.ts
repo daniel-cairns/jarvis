@@ -96,6 +96,10 @@ describe("SessionRunner", () => {
     });
     const job = await finished;
     expect(options).toMatchObject({ cwd: "/w/gymclaw", resume: ID(9) });
+    // Background runs get the same page-fetch security check as Astra.
+    const hooks = options.hooks as Record<string, { matcher: string }[]>;
+    expect(hooks.PreToolUse?.[0]?.matcher).toBe("WebFetch");
+    expect(hooks.PostToolUse?.[0]?.matcher).toBe("WebFetch");
     expect(seen).toEqual(["activity:Bash", "ask:gymclaw session: I'd like to run the command: npm test.", "permission:allow"]);
     expect(job).toMatchObject({ status: "done", sessionId: ID(9), lastText: "All 12 tests pass.", costUsd: 0.12 });
   });

@@ -819,6 +819,10 @@ async function main(): Promise<void> {
     },
     ask: (_job, approval) => askApproval(approval),
     toolEvent: (job, e) => onToolEvent(job.label, job.folder, e),
+    security: (job, text) => {
+      console.log(`  [${job.id} ${job.label}] ${text}`);
+      orb?.send({ type: "activity", text: `${job.label}: ${text}`, glyph: "eye" });
+    },
     finished: (job) => {
       const first = job.lastText.split(/(?<=[.!?])\s/)[0]?.slice(0, 220) ?? "";
       const what =
