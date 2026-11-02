@@ -99,6 +99,10 @@ Website teardowns only need Google Chrome.
 
 ## Run it
 
+Without typing a command: run `sh scripts/make-app.sh` once to build `Astra.app` in this folder, then double-click it
+(or drag it to your Dock). It opens a Terminal window that starts her, or tells you she's already running. To
+restart her, use **Restart Astra** in her menu-bar menu or say "Astra, restart".
+
 ```bash
 npm start            # voice: press Enter to talk, Enter again to send
 npm run text         # typed mode
