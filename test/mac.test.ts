@@ -9,10 +9,11 @@ import {
   openPath,
   validateAppName,
   validateWebUrl,
+  type PortProbe,
   type Runner,
 } from "../src/tools/mac.js";
 
-function fakeRunner() {
+function fakeRunner(pid?: number) {
   const calls: { cmd: string; args: string[]; detached: boolean }[] = [];
   const runner: Runner = {
     async run(cmd, args) {
@@ -20,9 +21,22 @@ function fakeRunner() {
     },
     launchDetached(cmd, args) {
       calls.push({ cmd, args, detached: true });
+      return pid;
     },
   };
   return { runner, calls };
+}
+
+/** Ports in `taken` are busy (held by `stalePid`); the new Chrome listens on whatever port it was given. */
+function fakeProbe(taken: number[], stalePid = 93900, launchedPid = 4242, opens = true) {
+  const killed: number[] = [];
+  let listening: number | undefined;
+  const probe: PortProbe = {
+    isFree: async (p) => !taken.includes(p),
+    owner: async (p) => (taken.includes(p) ? stalePid : opens && p === listening ? launchedPid : undefined),
+    kill: (p) => void killed.push(p),
+  };
+  return { probe, killed, listenOn: (p: number) => (listening = p) };
 }
 
 describe("validateAppName", () => {
@@ -78,8 +92,11 @@ describe("isInside", () => {
 
 describe("launchCleanBrowser", () => {
   it("starts Chrome with a temp profile and loopback DevTools port", async () => {
-    const { runner, calls } = fakeRunner();
-    const res = await launchCleanBrowser("https://igloo.inc", { chromeBin: "/chrome", port: 9333 }, runner, "darwin");
+    const { runner, calls } = fakeRunner(4242);
+    const p = fakeProbe([]);
+    p.listenOn(9333);
+    const res = await launchCleanBrowser("https://igloo.inc", { chromeBin: "/chrome", port: 9333 }, runner, "darwin", p.probe);
+    expect(res.pid).toBe(4242);
     expect(res.cdp_endpoint).toBe("http://127.0.0.1:9333");
     expect(calls[0]?.detached).toBe(true);
     expect(calls[0]?.args).toContain("--remote-debugging-port=9333");
@@ -89,6 +106,36 @@ describe("launchCleanBrowser", () => {
     // Without it, Chrome shows Astra's computer_read_ui an empty page.
     expect(calls[0]?.args).toContain("--force-renderer-accessibility");
     await fs.rm(res.profileDir, { recursive: true, force: true });
+  });
+
+  it("skips a port an earlier clean Chrome still holds, and returns the new pid with its own endpoint", async () => {
+    const { runner, calls } = fakeRunner(4242);
+    const p = fakeProbe([9222, 9223]);
+    p.listenOn(9224);
+    const res = await launchCleanBrowser("https://jira.example.com", { chromeBin: "/chrome", port: 9222 }, runner, "darwin", p.probe);
+    expect(calls[0]?.args).toContain("--remote-debugging-port=9224");
+    expect(res).toMatchObject({ cdp_endpoint: "http://127.0.0.1:9224", port: 9224, pid: 4242 });
+    await fs.rm(res.profileDir, { recursive: true, force: true });
+  });
+
+  it("refuses, and closes its Chrome, when the port turns out to belong to someone else", async () => {
+    const { runner } = fakeRunner(4242);
+    // Free when checked, then taken by the stale browser before ours could bind it.
+    const p = fakeProbe([]);
+    p.probe.owner = async () => 93900;
+    await expect(launchCleanBrowser("https://jira.example.com", { chromeBin: "/chrome", port: 9222 }, runner, "darwin", p.probe)).rejects.toThrow(
+      /belongs to another process \(pid 93900\)/,
+    );
+    expect(p.killed).toEqual([4242]);
+  });
+
+  it("refuses, and closes its Chrome, when it never opens the DevTools port", async () => {
+    const { runner } = fakeRunner(4242);
+    const p = fakeProbe([], 1, 4242, false);
+    await expect(
+      launchCleanBrowser("https://jira.example.com", { chromeBin: "/chrome", port: 9222, readyMs: 300 }, runner, "darwin", p.probe),
+    ).rejects.toThrow(/never opened its DevTools port 9222/);
+    expect(p.killed).toEqual([4242]);
   });
 
   it("rejects non-web URLs", () => {
