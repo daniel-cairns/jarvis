@@ -9,7 +9,8 @@ import path from "node:path";
 import { hostOf, isSafeHost } from "./safeSites.js";
 import { isInside } from "./tools/mac.js";
 
-export type Decision = "allow" | "ask" | "deny";
+/** What happens to a tool call: go ahead, or ask Dan. (Refusals come from hooks, e.g. the egress gate, not here.) */
+export type Decision = "allow" | "ask";
 
 const ALWAYS_ALLOWED = new Set(["Read", "Glob", "Grep", "WebSearch", "TodoWrite", "ToolSearch"]);
 /** Astra's own tools that still need Dan's yes on a card. */
