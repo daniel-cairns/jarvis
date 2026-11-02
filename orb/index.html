@@ -29,7 +29,9 @@
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12.5l2.4-2.6 2.4 2.6 2.4-2.6 2.4 2.6 2.4-2.6 2.4 2.6 2.4-2.6 2.4 2.6"/></svg>
       </button>
     </div>
-    <p id="state" class="state" aria-live="polite" role="button" tabindex="0" aria-expanded="true" title="Show or hide her thinking window">Idle</p>
+    <p id="state" class="state" role="button" tabindex="0" aria-haspopup="menu" aria-controls="panel-menu" aria-expanded="false" title="Show her panels">Idle</p>
+    <!-- The status indicator's dropdown: brings back her thinking window and any panel that's closed or folded. -->
+    <div id="panel-menu" class="panel-menu" role="menu" aria-label="Her panels" hidden></div>
 
     <section id="card" class="card" hidden>
       <button id="card-toggle" type="button" class="card-toggle" aria-expanded="true" aria-controls="card" aria-label="Collapse her thinking window" title="Collapse">▾</button>
@@ -73,6 +75,7 @@
       <p class="hint">say it, click, or press 1–9</p>
     </section>
   </main>
+  <script src="panel-menu.js"></script>
   <script src="orb.js"></script>
 </body>
 </html>

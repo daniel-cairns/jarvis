@@ -83,6 +83,9 @@ send({
   ],
 });
 await wait(800);
+send({ type: "panels", panels: [{ kind: "transcript", state: "collapsed" }, { kind: "git", state: "closed" }] });
+send({ type: "collapse", collapsed: true });
+send({ type: "collapse", collapsed: false });
 send({ type: "request-done" });
 send({ type: "ui", action: "stack_windows" });
 await wait(800);

@@ -215,7 +215,6 @@
   function setCollapsed(collapsed) {
     card.classList.toggle("collapsed", collapsed);
     document.body.classList.toggle("collapsed", collapsed);
-    stateLabel.setAttribute("aria-expanded", String(!collapsed));
     cardToggle.setAttribute("aria-expanded", String(!collapsed));
     cardToggle.setAttribute("aria-label", collapsed ? "Expand her thinking window" : "Collapse her thinking window");
     cardToggle.title = collapsed ? "Expand" : "Collapse";
@@ -226,16 +225,89 @@
       // Storage unavailable: the choice just won't persist.
     }
   }
-  cardToggle.addEventListener("click", () => setCollapsed(!card.classList.contains("collapsed")));
+  cardToggle.addEventListener("click", () => (card.classList.contains("collapsed") ? showCard() : foldCard()));
   // The state label under the orb toggles the panel too: with it collapsed, it's the way back.
-  const toggleFromLabel = () => setCollapsed(!card.classList.contains("collapsed"));
-  stateLabel.addEventListener("click", toggleFromLabel);
+  // Shown on request (the dropdown or "expand your panel"), her thinking window stays up until you fold it; otherwise
+  // it hides itself 12 s after she goes quiet. (It used to unfold while still hidden, so nothing appeared.)
+  let cardPinned = false;
+  function showCard() {
+    cardPinned = true;
+    clearTimeout(captionTimer);
+    card.hidden = false;
+    setCollapsed(false);
+  }
+  function foldCard() {
+    cardPinned = false;
+    setCollapsed(true);
+  }
+
+  // ── The status indicator's dropdown: her thinking window, and any panel that's closed or folded ──
+  const panelMenu = document.getElementById("panel-menu");
+  let panels = []; // [{ kind, state }] from the main process
+  const menuOpen = () => !panelMenu.hidden;
+  function closeMenu(refocus = false) {
+    if (!menuOpen()) return;
+    panelMenu.hidden = true;
+    stateLabel.setAttribute("aria-expanded", "false");
+    if (refocus) stateLabel.focus();
+  }
+  function openMenu() {
+    const cardShown = !card.hidden && !card.classList.contains("collapsed");
+    const items = window.astraPanelMenu.menuItems({ cardShown, panels });
+    panelMenu.replaceChildren(
+      ...items.map((item) => {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.setAttribute("role", "menuitem");
+        b.tabIndex = -1;
+        b.dataset.id = item.id;
+        b.textContent = item.label;
+        return b;
+      }),
+    );
+    panelMenu.hidden = false;
+    stateLabel.setAttribute("aria-expanded", "true");
+    panelMenu.querySelector("button")?.focus();
+  }
+  function choose(id) {
+    closeMenu(true);
+    if (id === "card") return card.hidden || card.classList.contains("collapsed") ? showCard() : foldCard();
+    bridge.send({ type: "panel-restore", kind: id });
+  }
+  stateLabel.addEventListener("click", () => (menuOpen() ? closeMenu() : openMenu()));
   stateLabel.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" || e.key === " ") {
+    if (e.key === "Enter" || e.key === " " || e.key === "ArrowDown") {
       e.preventDefault();
-      toggleFromLabel();
+      openMenu();
+    } else if (e.key === "Escape" && menuOpen()) {
+      // Only closes the menu: Esc elsewhere on the orb stops her.
+      e.stopPropagation();
+      closeMenu(true);
     }
   });
+  panelMenu.addEventListener("click", (e) => {
+    const id = e.target.closest("button")?.dataset.id;
+    if (id) choose(id);
+  });
+  panelMenu.addEventListener("keydown", (e) => {
+    const items = [...panelMenu.querySelectorAll("button")];
+    const i = items.indexOf(document.activeElement);
+    const go = (n) => items[(n + items.length) % items.length]?.focus();
+    if (e.key === "ArrowDown") go(i + 1);
+    else if (e.key === "ArrowUp") go(i - 1);
+    else if (e.key === "Home") go(0);
+    else if (e.key === "End") go(items.length - 1);
+    else if (e.key === "Escape") closeMenu(true);
+    else if (e.key === "Tab") closeMenu();
+    else return;
+    e.preventDefault();
+    e.stopPropagation();
+  });
+  // A click anywhere else, or switching away from the orb, closes it.
+  document.addEventListener("pointerdown", (e) => {
+    if (menuOpen() && !panelMenu.contains(e.target) && e.target !== stateLabel) closeMenu();
+  });
+  window.addEventListener("blur", () => closeMenu());
   try {
     setCollapsed(localStorage.getItem("astra.cardCollapsed") === "1");
   } catch {
@@ -255,7 +327,7 @@
 
   function keepCard() {
     clearTimeout(captionTimer);
-    if (typeOnlyMode) return;
+    if (typeOnlyMode || cardPinned) return;
     captionTimer = setTimeout(() => {
       if (state === "idle") card.hidden = true;
     }, 12000);
@@ -280,6 +352,7 @@
       return;
     }
     typeOut(caption, text);
+    if (cardPinned) return;
     captionTimer = setTimeout(() => {
       if (state === "idle") card.hidden = true;
     }, 12000);
@@ -405,7 +478,8 @@
       recordButton.setAttribute("aria-label", recording ? "Stop the transcript" : "Start a transcript");
     }
     else if (m.type === "layout") document.body.classList.toggle("top", !!m.top);
-    else if (m.type === "collapse") setCollapsed(!!m.collapsed);
+    else if (m.type === "collapse") (m.collapsed ? foldCard() : showCard());
+    else if (m.type === "panels") panels = Array.isArray(m.panels) ? m.panels : [];
     else if (m.type === "transform") transformTo(m.to);
     else if (m.type === "volume-level" && !m.quiet) showVolume(m.level);
   });

@@ -22,5 +22,10 @@
     if (e.key === "Escape") close();
   });
 
+  // Unfolded from the orb's dropdown.
+  bridge.onMessage((m) => {
+    if (m.type === "slab-expand" && slab.classList.contains("collapsed")) setCollapsed(false);
+  });
+
   window.slab = { bridge, onMessage: (fn) => bridge.onMessage(fn) };
 })();

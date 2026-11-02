@@ -218,6 +218,28 @@ app.whenReady().then(() => {
     }, TIDY_MS);
   };
 
+  /** Tells the orb which panels she has shown and whether each is open, folded or closed (for its dropdown). */
+  const sendPanels = () => {
+    if (win.isDestroyed()) return;
+    const panels = Object.entries(slabs)
+      .filter(([, s]) => s.last)
+      .map(([kind, s]) => ({ kind, state: !s.win || s.win.isDestroyed() ? "closed" : s.collapsed ? "collapsed" : "open" }));
+    win.webContents.send("jarvis", { type: "panels", panels });
+  };
+
+  /** From the orb's dropdown: unfold a folded panel, or reopen a closed one as yours (so she won't tidy it away). */
+  const restoreSlab = (kind) => {
+    const slab = slabs[kind];
+    if (!slab?.last) return;
+    if (slab.win && !slab.win.isDestroyed()) {
+      slab.owner = "user";
+      if (slab.collapsed) slab.win.webContents.send("jarvis", { type: "slab-expand" });
+      slab.win.show();
+      return;
+    }
+    openSlab(kind, slab.last, "user");
+  };
+
   const openSlab = (kind, msg, owner = "astra") => {
     const slab = slabs[kind];
     slab.last = msg;
@@ -229,6 +251,7 @@ app.whenReady().then(() => {
       return;
     }
     slab.owner = owner;
+    slab.collapsed = false;
     const bounds = win.getBounds();
     const { workArea } = screen.getDisplayMatching(bounds);
     const { width, height } = slab;
@@ -263,12 +286,17 @@ app.whenReady().then(() => {
     slab.win = w;
     // Clicking into a panel (or dragging it) makes it yours: she won't close it on you.
     w.on("focus", () => (slab.owner = "user"));
+    w.on("closed", () => {
+      slab.collapsed = false;
+      sendPanels();
+    });
     w.setAlwaysOnTop(true, "floating");
     harden(w);
     w.loadFile(path.join(__dirname, slab.file));
     w.webContents.once("did-finish-load", () => {
       w.webContents.send("jarvis", msg);
       w.showInactive();
+      sendPanels();
     });
   };
 
@@ -422,6 +450,7 @@ app.whenReady().then(() => {
   ipcMain.on("orb", (event, m) => {
     const sender = BrowserWindow.fromWebContents(event.sender);
     if (m?.type === "minimise") return void hideOrb();
+    if (m?.type === "panel-restore" && sender === win && typeof m.kind === "string" && slabs[m.kind]) return restoreSlab(m.kind);
     if (m?.type === "transform-done" && sender === win) return transformWaiter?.();
     if (m?.type === "fit" && sender === win && Number.isFinite(m.height)) return void fitHeight(m.height);
     if (m?.type === "panel-close") {
@@ -433,6 +462,8 @@ app.whenReady().then(() => {
       const slab = Object.values(slabs).find((s) => s.win === sender);
       if (!slab) return;
       const [w] = sender.getSize();
+      slab.collapsed = !!m.collapsed;
+      sendPanels();
       if (m.collapsed && Number.isFinite(m.height)) {
         slab.fullHeight = sender.getSize()[1];
         sender.setMinimumSize(340, 60);
