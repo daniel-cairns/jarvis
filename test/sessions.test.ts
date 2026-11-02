@@ -19,6 +19,18 @@ describe("summarise", () => {
     expect(s).toMatchObject({ title: "Login fixes", project: "gymclaw", folder: "/w/gymclaw", source: "claude-desktop", status: "waiting", lastReply: "Done: tests pass." });
   });
 
+  it("uses the newest recorded folder that still exists (a moved project leaves its old path last)", () => {
+    const moved = [{ type: "user", cwd: "/old/Super Potato Fighter 2D", message: { content: "go" } }];
+    const s = summarise(ID(1), [{ ...head[0], cwd: "/w/super-potato" }], moved, new Date(), Date.now(), (d) => d === "/w/super-potato");
+    expect(s.folder).toBe("/w/super-potato");
+    expect(summarise(ID(1), head, moved, new Date(), Date.now(), () => false).folder).toBe("/old/Super Potato Fighter 2D");
+  });
+
+  it("refuses to launch in a folder that no longer exists, saying which", () => {
+    const runner = new SessionRunner(loadConfig({}), { activity: () => {}, ask: async () => "no", finished: () => {} });
+    expect(() => runner.send(ID(9), "/no/such/folder", "go", "potato")).toThrow("The potato session's folder no longer exists (/no/such/folder)");
+  });
+
   it("is working when recently active mid-turn, idle when old", () => {
     const working = [assistant("Running the tests.", "tool_use"), { type: "user", message: { content: [{ type: "tool_result" }] } }];
     expect(summarise(ID(1), head, working, new Date()).status).toBe("working");
@@ -91,11 +103,11 @@ describe("SessionRunner", () => {
         ask: async (_j, a) => (seen.push(`ask:${a.detail}`), "yes"),
         finished: resolve,
       }, fakeQuery);
-      const job = runner.send(ID(9), "/w/gymclaw", "run the tests", "gymclaw");
+      const job = runner.send(ID(9), os.tmpdir(), "run the tests", "gymclaw");
       expect(job.id).toBe("s1");
     });
     const job = await finished;
-    expect(options).toMatchObject({ cwd: "/w/gymclaw", resume: ID(9) });
+    expect(options).toMatchObject({ cwd: os.tmpdir(), resume: ID(9) });
     // Background runs get the same page-fetch security check as Astra.
     const hooks = options.hooks as Record<string, { matcher: string }[]>;
     expect(hooks.PreToolUse?.[0]?.matcher).toBe("WebFetch");

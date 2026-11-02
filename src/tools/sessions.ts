@@ -2,6 +2,7 @@
  * Reading your other Claude Code sessions (desktop app and CLI alike) from their transcripts in
  * ~/.claude/projects/<project>/<session-id>.jsonl: title, project, status and latest reply. Read-only.
  */
+import { existsSync } from "node:fs";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -72,7 +73,7 @@ const textOf = (content: unknown): string =>
       : "";
 
 /** Summarises one transcript. Exported for tests. */
-export function summarise(id: string, head: Entry[], tail: Entry[], mtime: Date, now = Date.now()): SessionSummary {
+export function summarise(id: string, head: Entry[], tail: Entry[], mtime: Date, now = Date.now(), exists: (dir: string) => boolean = existsSync): SessionSummary {
   const all = [...head, ...tail];
   const lastOf = (type: string) => [...tail].reverse().find((e) => e.type === type) ?? [...head].reverse().find((e) => e.type === type);
   const title =
@@ -81,10 +82,12 @@ export function summarise(id: string, head: Entry[], tail: Entry[], mtime: Date,
     (lastOf("last-prompt")?.lastPrompt as string | undefined) ??
     textOf((all.find((e) => e.type === "user")?.message as { content?: unknown } | undefined)?.content).slice(0, 80) ??
     "Untitled session";
-  const folder =
-    (lastOf("relocated")?.relocatedCwd as string | undefined) ??
-    ([...all].reverse().find((e) => typeof e.cwd === "string")?.cwd as string | undefined) ??
-    "";
+  // Newest recorded folder that still exists: a project moved since leaves its old path in the latest entries.
+  const recorded = [
+    lastOf("relocated")?.relocatedCwd,
+    ...[...all].reverse().map((e) => e.cwd),
+  ].filter((c, i, list): c is string => typeof c === "string" && c !== "" && list.indexOf(c) === i);
+  const folder = recorded.find((c) => exists(c)) ?? recorded[0] ?? "";
   const source = (all.find((e) => typeof e.entrypoint === "string")?.entrypoint as string | undefined) ?? "unknown";
   const turns = tail.filter((e) => e.type === "assistant" || e.type === "user");
   const last = turns.at(-1);

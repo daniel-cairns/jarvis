@@ -3,6 +3,7 @@
  * to an existing (idle) session, resumed by id. Progress and approvals come back through Astra; when a run ends she
  * reports it. Each run is a normal Claude Code session on disk, so it can be opened in the app afterwards.
  */
+import { existsSync } from "node:fs";
 import { query, type CanUseTool, type SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 import type { JarvisConfig } from "../config.js";
 import type { Approval } from "../agent.js";
@@ -89,6 +90,8 @@ export class SessionRunner {
   }
 
   private launch(folder: string, prompt: string, label: string, resume?: string): Job {
+    // A missing folder makes the launch fail as "binary failed to launch" (spawn ENOENT), which blames the wrong thing.
+    if (!existsSync(folder)) throw new Error(`The ${label} session's folder no longer exists (${folder}), so I can't run it there.`);
     const job: Job = {
       id: `s${++this.seq}`,
       label,
