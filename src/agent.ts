@@ -6,7 +6,7 @@ import {
   type SDKMessage,
 } from "@anthropic-ai/claude-agent-sdk";
 import type { JarvisConfig } from "./config.js";
-import { allowKey, decide, describeCall, parseAnswer, spokenQuestion } from "./permissions.js";
+import { allowKey, decide, describeCall, parseAnswer, spokenQuestion, bringsInWebContent } from "./permissions.js";
 import { loadSafeSites } from "./safeSites.js";
 import { createFetchGuard, type FetchGuard } from "./security/fetchGuard.js";
 import { jarvisInstructions } from "./prompt.js";
@@ -54,6 +54,11 @@ type QueryFn = typeof query;
 export class Jarvis {
   private sessionId: string | undefined;
   private readonly sessionAllowed = new Set<string>();
+  /**
+   * Whether this conversation has read web content (see bringsInWebContent): false for a fresh one, undefined for a
+   * resumed one (what it read before can't be known), true once anything from the web comes in.
+   */
+  private webContent: boolean | undefined = false;
   /** The security check on every page fetch (before and after); flagged fetches always ask, safe site or not. */
   private readonly fetchGuard: FetchGuard;
   private readonly reportedServers = new Set<string>();
@@ -93,12 +98,14 @@ export class Jarvis {
   resumeFrom(sessionId: string | undefined): void {
     this.sessionId = sessionId;
     this.sessionAllowed.clear();
+    this.webContent = sessionId === undefined ? false : undefined;
   }
 
   /** Starts a fresh conversation; memory in the brain is kept. */
   reset(): void {
     this.sessionId = undefined;
     this.sessionAllowed.clear();
+    this.webContent = false;
   }
 
   buildOptions(abort: AbortController): Options {
@@ -143,6 +150,7 @@ export class Jarvis {
       sessionAllowed: this.sessionAllowed,
       // Read on each page fetch, so edits to the list apply without a restart.
       safeSites: () => loadSafeSites(this.cfg.home),
+      webContent: this.webContent,
     });
     if (decision === "allow") return { behavior: "allow", updatedInput: input };
 
@@ -192,6 +200,12 @@ export class Jarvis {
       return undefined;
     }
 
+    // Anything (including a subagent) reaching for the web taints the conversation for session_start/session_send.
+    if (msg.type === "assistant") {
+      for (const block of msg.message.content) {
+        if (block.type === "tool_use" && bringsInWebContent(block.name, block.input as Record<string, unknown>)) this.webContent = true;
+      }
+    }
     // Subagent output (parent_tool_use_id set) stays silent; only Astra's own voice is spoken.
     if (msg.type === "assistant" && msg.parent_tool_use_id === null) {
       for (const block of msg.message.content) {

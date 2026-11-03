@@ -117,6 +117,33 @@ describe("Jarvis", () => {
     await fs.rm(home, { recursive: true, force: true });
   });
 
+  it("sends to a session without a card until the conversation has read the web, then asks", async () => {
+    const { home, cfg, io, asked } = await setup(["yes"]);
+    const results: string[] = [];
+    const send = { session: "s1", prompt: "run the tests" };
+    const jarvis = new Jarvis(
+      cfg,
+      io,
+      fakeQuery(async function* (opts) {
+        const signal = new AbortController().signal;
+        const ask = async () => (await opts.canUseTool!("mcp__jarvis__session_send", send, { signal, toolUseID: "t" } as never))?.behavior ?? "none";
+        results.push(await ask());
+        // She fetches a page: anything after this could have been put up to it by that page.
+        yield msg({ type: "assistant", parent_tool_use_id: null, message: { content: [{ type: "tool_use", id: "w", name: "WebFetch", input: { url: "https://x.example" } }] } });
+        results.push(await ask());
+        yield msg({ type: "result", subtype: "success", session_id: "s", is_error: false, total_cost_usd: 0, result: "" });
+      }, { prompts: [] } as Captured),
+    );
+    await jarvis.handle("message s1 then read that page");
+    expect(results).toEqual(["allow", "allow"]);
+    expect(asked).toHaveLength(1);
+    expect(asked[0]).toContain("send the s1 session this message");
+    // A resumed conversation might have read anything: it asks.
+    jarvis.resumeFrom("older");
+    expect((jarvis as unknown as { webContent: boolean | undefined }).webContent).toBeUndefined();
+    await fs.rm(home, { recursive: true, force: true });
+  });
+
   it("explains budget stops in plain words", async () => {
     const { home, cfg, io, said } = await setup();
     const jarvis = new Jarvis(

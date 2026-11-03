@@ -13,7 +13,18 @@ import { isInside } from "./tools/mac.js";
 export type Decision = "allow" | "ask";
 
 const ALWAYS_ALLOWED = new Set(["Read", "Glob", "Grep", "WebSearch", "TodoWrite", "ToolSearch"]);
-/** Astra's own tools that still need Dan's yes on a card. */
+/**
+ * Whether a tool call brings web content into the conversation: page fetches and searches, the clean browser, REA's
+ * browser and page tools, and anything else given a url.
+ */
+export function bringsInWebContent(toolName: string, input: Record<string, unknown> = {}): boolean {
+  if (toolName === "WebFetch" || toolName === "WebSearch") return true;
+  if (toolName === "mcp__jarvis__launch_clean_browser" || toolName.startsWith("mcp__rea__")) return true;
+  if (/browser|web_?page|fetch|scrape/i.test(toolName)) return true;
+  return typeof input.url === "string" && /^https?:/i.test(input.url);
+}
+
+/** Astra's own tools that need Dan's yes on a card once web content is in play. */
 const CONFIRM_FIRST = new Set(["mcp__jarvis__session_start", "mcp__jarvis__session_send"]);
 const WRITE_TOOLS = new Set(["Write", "Edit", "MultiEdit", "NotebookEdit"]);
 
@@ -26,12 +37,15 @@ export function decide(
     sessionAllowed: ReadonlySet<string>;
     /** The safe-site list, read only when a page fetch needs it. */
     safeSites?: () => readonly string[];
+    /** Whether this conversation has read web content: true, false, or undefined when it can't be known. */
+    webContent?: boolean;
   },
 ): Decision {
-  // Starting or messaging a background session sets work going with its own tools and permissions. Whether the call
-  // came straight from Dan's words or from something injected into a page she read in the same turn can't be told
-  // apart reliably, so these always ask.
-  if (CONFIRM_FIRST.has(toolName)) return "ask";
+  // Starting or messaging a background session sets work going with its own tools and permissions. A prompt injected
+  // into a web page could ask for that, so once this conversation has read web content these ask Dan first. Before
+  // then nothing she has read can be an attacker's, so they go straight through. Unknown (a resumed conversation)
+  // asks, to be safe.
+  if (CONFIRM_FIRST.has(toolName) && ctx.webContent !== false) return "ask";
   if (toolName.startsWith("mcp__jarvis__")) return "allow";
   if (ALWAYS_ALLOWED.has(toolName)) return "allow";
   // A page fetch could carry your data to its host, so it's checked by host before the per-tool "always".

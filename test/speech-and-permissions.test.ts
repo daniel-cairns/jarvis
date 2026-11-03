@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { describe, expect, it } from "vitest";
-import { allowKey, decide, describeCall, parseAnswer, spokenQuestion } from "../src/permissions.js";
+import { allowKey, bringsInWebContent, decide, describeCall, parseAnswer, spokenQuestion } from "../src/permissions.js";
 import { parseDialogResult } from "../src/ui/dialog.js";
 import { cleanTranscript, stopGracefully } from "../src/voice/listener.js";
 import { chunkForSpeech, toSpeakable } from "../src/voice/speechText.js";
@@ -66,8 +66,13 @@ describe("decide", () => {
 
   it("allows Jarvis tools and read-only built-ins", () => {
     expect(decide("mcp__jarvis__brain_save", {}, ctx)).toBe("allow");
-    // Starting or messaging a session sets work going: an injected page mustn't be able to do it unasked.
-    expect(decide("mcp__jarvis__session_start", { project: "jarvis", prompt: "x", where: "background" }, ctx)).toBe("ask");
+    // Starting or messaging a session sets work going: once she has read web content, an injected page mustn't be
+    // able to do it unasked. Before that they go straight through; not knowing (a resumed conversation) asks.
+    const start = { project: "jarvis", prompt: "x", where: "background" };
+    expect(decide("mcp__jarvis__session_start", start, { ...ctx, webContent: false })).toBe("allow");
+    expect(decide("mcp__jarvis__session_send", { session: "s1", prompt: "x" }, { ...ctx, webContent: false })).toBe("allow");
+    expect(decide("mcp__jarvis__session_start", start, { ...ctx, webContent: true })).toBe("ask");
+    expect(decide("mcp__jarvis__session_send", { session: "s1", prompt: "x" }, { ...ctx, webContent: true })).toBe("ask");
     expect(decide("mcp__jarvis__session_send", { session: "s1", prompt: "x" }, ctx)).toBe("ask");
     expect(decide("mcp__jarvis__sessions_list", {}, ctx)).toBe("allow");
     expect(describeCall("mcp__jarvis__session_send", { session: "hierogitics", prompt: "Run the tests." })).toBe("send the hierogitics session this message:\n\nRun the tests.");
@@ -156,5 +161,24 @@ describe("parseDialogResult", () => {
     expect(parseDialogResult(0, "timeout\n", "")).toBeNull();
     expect(parseDialogResult(1, "", "execution error: User canceled. (-128)")).toBe("no");
     expect(parseDialogResult(1, "", "some other failure")).toBeNull();
+  });
+});
+
+describe("what counts as reading web content", () => {
+  it("covers fetches, searches, the clean browser, REA and anything given a web address", () => {
+    for (const [tool, input] of [
+      ["WebFetch", { url: "https://x.example" }],
+      ["WebSearch", { query: "nuxt" }],
+      ["mcp__jarvis__launch_clean_browser", { url: "https://x.example" }],
+      ["mcp__rea__inspect_web_page", {}],
+      ["mcp__other__get_page", { url: "http://x.example/a" }],
+    ] as const) {
+      expect(bringsInWebContent(tool, input as Record<string, unknown>)).toBe(true);
+    }
+  });
+
+  it("doesn't count local work", () => {
+    for (const tool of ["Read", "Bash", "Edit", "mcp__jarvis__brain_save", "mcp__jarvis__sessions_list"]) expect(bringsInWebContent(tool, {})).toBe(false);
+    expect(bringsInWebContent("mcp__jarvis__open_path", { path: "/tmp/index.html" })).toBe(false);
   });
 });
