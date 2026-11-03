@@ -52,7 +52,7 @@ output.
 8. **Repeat guard.** Before speaking a sentence, compare it with her last 20 utterances (already kept in `spoken`). A
    near-duplicate from the last 10 minutes is shown as a caption, not spoken.
 
-### Phase 3: an EA who keeps track
+### Phase 3: an EA who keeps track — built 4 Nov (the brief is instructions only, no new code)
 9. **Open loops.** Keep a small store (~/.jarvis/loops.json) of what's pending: decisions put to Dan, runs in flight,
    and "later" items he named. Cards and runs open and close loops automatically, so an answered question is closed
    and can't come back. She reads the store before any status update. An "On your plate" panel lists it, and "what's

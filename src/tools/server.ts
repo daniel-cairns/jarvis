@@ -10,6 +10,7 @@ import { POSITIONS, UI_ACTIONS, type Position, type UiAction } from "../ui/contr
 import type { ComputerControl } from "../control/computer.js";
 import type { CoffeeMode } from "../power/coffee.js";
 import { egress } from "../security/egress.js";
+import { Loops, type LoopKind } from "../loops.js";
 
 export const SERVER_NAME = "jarvis";
 
@@ -69,6 +70,25 @@ export function createJarvisServer(cfg: JarvisConfig, runner: Runner = realRunne
     name: SERVER_NAME,
     version: "0.1.0",
     tools: [
+      tool(
+        "loops_list",
+        "What's waiting, for Dan or on him: decisions put to him on cards, background runs in flight, and things he said to do later. Cards and runs open and close their own loops; answered questions are closed with his answer. Check this before any status update or before asking him something, so you never ask what he's already answered. include_closed shows the last week's closed loops with how each ended.",
+        { include_closed: z.boolean().optional() },
+        (args) => guarded(async () => (args.include_closed ? new Loops(cfg.home).all() : new Loops(cfg.home).open())),
+        { annotations: { readOnlyHint: true } },
+      ),
+      tool(
+        "loops_add",
+        "Note something waiting: a thing Dan said to do later (kind 'later'), or a decision he still owes you (kind 'decision') that isn't on a card. A few words, with the project or session in source.",
+        { kind: z.enum(["later", "decision"]), text: z.string().min(1).max(300), source: z.string().max(80).optional() },
+        (args) => guarded(async () => new Loops(cfg.home).add(args.kind as LoopKind, args.text, args.source)),
+      ),
+      tool(
+        "loops_close",
+        "Close an open loop (its id, like l12) once it's done or Dan has decided, with how it ended in a few words.",
+        { id: z.string().regex(/^l\d+$/), outcome: z.string().min(1).max(300) },
+        (args) => guarded(async () => (new Loops(cfg.home).close(args.id, args.outcome) ? "Closed." : `No open loop ${args.id}.`)),
+      ),
       tool(
         "brain_save",
         "Save a markdown note to the second brain. Use folder 'teardowns' for REA reports, 'notes' otherwise. Returns the saved path.",
@@ -185,7 +205,7 @@ export function createJarvisServer(cfg: JarvisConfig, runner: Runner = realRunne
       ),
       tool(
         "ui_control",
-        "Work your own interface when the user asks: minimise (you fold away into the menu bar) or show (you unfold back), stop speaking/working, close your panels, collapse or expand your thinking window, show your terminal (show_terminal) or git changes (show_git) panels, re-open the last detail panel or map, open the brain browser (all notes and teardowns), or change your speaking volume (volume_up, volume_down, or set_volume with level 0-100), or move yourself on screen (move with a position: a spot like top_left or centre, or a nudge_left/right/up/down), or start long transcript mode (start_transcript: once this reply ends you record everything said until the user says 'stop recording', then save it to the brain under transcripts), or switch to type-only mode (type_only: microphone off and you stay silent, replies on screen only) or back (voice_mode), or give a sit rep of every session (sitrep: shows a panel and returns the summary to tell the user), or show Tallyline, Dan's work ledger (show_tallyline: a compact panel with the active sprint, today's filed time and the latest issues, which expands to the full app; it starts Tallyline if needed), or show the live open-sessions panel (show_sessions: every session and background run, kept up to date while it's open; Dan can open, read, message or stop them from it), or turn god mode on or off (god_mode_on / god_mode_off: you command the user's sessions and announce when they finish), or bring every open panel in front of other apps' windows (panels_front: your panels are normal windows that other apps can cover), or tidy up your panels (stack_windows: they're laid out automatically so none overlap; this also brings back into the layout any the user dragged or resized by hand), or pick up your previous conversation after a restart (continue_session: only when the user asks; it resumes once this reply ends), or restart yourself (restart: you quit and start again with your latest code, once this reply and any background sessions you're running have finished). Use this rather than shell commands to move your window.",
+        "Work your own interface when the user asks: minimise (you fold away into the menu bar) or show (you unfold back), stop speaking/working, close your panels, collapse or expand your thinking window, show your terminal (show_terminal) or git changes (show_git) panels, re-open the last detail panel or map, open the brain browser (all notes and teardowns), or change your speaking volume (volume_up, volume_down, or set_volume with level 0-100), or move yourself on screen (move with a position: a spot like top_left or centre, or a nudge_left/right/up/down), or start long transcript mode (start_transcript: once this reply ends you record everything said until the user says 'stop recording', then save it to the brain under transcripts), or switch to type-only mode (type_only: microphone off and you stay silent, replies on screen only) or back (voice_mode), or give a sit rep of every session (sitrep: shows a panel and returns the summary to tell the user), or show what's on Dan's plate (show_plate: his open loops on screen, with a one-line summary to tell him), or show Tallyline, Dan's work ledger (show_tallyline: a compact panel with the active sprint, today's filed time and the latest issues, which expands to the full app; it starts Tallyline if needed), or show the live open-sessions panel (show_sessions: every session and background run, kept up to date while it's open; Dan can open, read, message or stop them from it), or turn god mode on or off (god_mode_on / god_mode_off: you command the user's sessions and announce when they finish), or bring every open panel in front of other apps' windows (panels_front: your panels are normal windows that other apps can cover), or tidy up your panels (stack_windows: they're laid out automatically so none overlap; this also brings back into the layout any the user dragged or resized by hand), or pick up your previous conversation after a restart (continue_session: only when the user asks; it resumes once this reply ends), or restart yourself (restart: you quit and start again with your latest code, once this reply and any background sessions you're running have finished). Use this rather than shell commands to move your window.",
         { action: z.enum(UI_ACTIONS), level: z.number().int().min(0).max(100).optional(), position: z.enum(POSITIONS).optional() },
         (args) => guarded(async () => (uiControl ? uiControl(args.action, args.level, args.position) : "No screen is attached.")),
       ),

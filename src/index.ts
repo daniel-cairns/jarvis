@@ -36,6 +36,7 @@ import { askDialog } from "./ui/dialog.js";
 import { Orb, type ToOrb } from "./ui/orb.js";
 import { Listener } from "./voice/listener.js";
 import { answeredNote, Briefing, BRIEF_REQUEST, runFinishedNote } from "./briefing.js";
+import { Loops, loopsContext, plateHeadline, plateMarkdown } from "./loops.js";
 import { dropRepeats, headline, MoreQueue } from "./voice/brevity.js";
 import { Speaker } from "./voice/speaker.js";
 import { KokoroTts, SayTts } from "./voice/tts.js";
@@ -220,6 +221,11 @@ async function main(): Promise<void> {
   let transcribing: AbortController | null = null;
   // Background news for her next turn: Dan's answers on runs' cards, runs finishing (see Briefing).
   const briefing = new Briefing();
+  // What's waiting, for Dan or on him (see Loops). A restart ends her runs and closes her cards, so theirs close too.
+  const loops = new Loops(cfg.home);
+  loops.closeWhere((l) => l.kind === "run", "ended when Astra restarted");
+  loops.closeWhere((l) => l.kind === "decision", "its card closed when Astra restarted");
+  const runLoops = new Map<string, string>();
   let pendingTranscript: { title?: string } | null = null;
   let lastTranscript: string | null = null;
   // Asked to restart while working or running background sessions: she restarts once all of that has finished.
@@ -750,6 +756,14 @@ async function main(): Promise<void> {
       return "Recording starts as soon as this reply ends.";
     }
     if (action === "show_tallyline") return showTallyline();
+    if (action === "show_plate") {
+      const open = loops.open();
+      if (orb?.alive) showPanel({ type: "detail", title: "On your plate", html: renderDetail(plateMarkdown(open)) });
+      const spoken = plateHeadline(open);
+      if (busy) return `On your plate is on screen. Tell the user: ${spoken}`;
+      await say(spoken);
+      return "Plate shown.";
+    }
     if (action === "show_sessions") {
       if (!orb?.alive) return "No orb is open.";
       await refreshSessions("user");
@@ -757,7 +771,7 @@ async function main(): Promise<void> {
     }
     if (!orb?.alive) return "No orb is open.";
     orb.send({ type: "ui", action });
-    const done: Record<Exclude<UiAction, "show_tallyline" | "show_sessions" | "continue_session" | "reopen_windows" | "stop" | "show_brain" | "start_transcript" | "restart" | "type_only" | "voice_mode" | "sitrep" | "god_mode_on" | "god_mode_off" | "volume_up" | "volume_down" | "set_volume" | "move" | "show_terminal" | "show_git">, string> = {
+    const done: Record<Exclude<UiAction, "show_tallyline" | "show_plate" | "show_sessions" | "continue_session" | "reopen_windows" | "stop" | "show_brain" | "start_transcript" | "restart" | "type_only" | "voice_mode" | "sitrep" | "god_mode_on" | "god_mode_off" | "volume_up" | "volume_down" | "set_volume" | "move" | "show_terminal" | "show_git">, string> = {
       minimise: "Minimised to the menu bar.",
       show: "The orb is back.",
       close_panels: "Closed the panels.",
@@ -1136,6 +1150,7 @@ async function main(): Promise<void> {
   };
   /** A background run began: its transcript opens straight away and is remembered for show_window. */
   const startTranscript = (job: Job) => {
+    runLoops.set(job.id, loops.add("run", job.prompt.replace(/\s+/g, " ").slice(0, 120), job.label).id);
     transcripts.set(job.id, [{ kind: "prompt", text: job.prompt }]);
     showTranscript(job);
     remember("transcript", `Transcript: ${job.label} (${job.id})`, () => showTranscript(job, "user"), `transcript:${job.id}`);
@@ -1144,6 +1159,7 @@ async function main(): Promise<void> {
   /** A question card (ask_user, or a background run's AskUserQuestion), answerable by voice, click or typing. */
   async function askQuestion(spec: QuestionSpec): Promise<QuestionAnswer | null> {
     console.log(`\n  Question: ${spec.question}`);
+    const loop = loops.add("decision", spec.question);
     spec.options.forEach((o, i) => console.log(`    ${i + 1}. ${o.label}${o.description ? ` (${o.description})` : ""}`));
     const answer = await openDialog<QuestionAnswer>((signal) => {
       const viaCard = orb?.alive ? orb.question(spec, signal) : Promise.resolve(null);
@@ -1157,6 +1173,8 @@ async function main(): Promise<void> {
       return firstAnswer<QuestionAnswer>([viaCard, viaTyped, viaVoice]);
     });
     console.log(`  → ${answer === null ? "(no answer)" : Array.isArray(answer) ? answer.join(", ") : answer}`);
+    // Unanswered, it stays open: still waiting on Dan.
+    if (answer !== null) loops.close(loop.id, Array.isArray(answer) ? answer.join(", ") : answer);
     return answer;
   }
 
@@ -1210,6 +1228,9 @@ async function main(): Promise<void> {
       if (job.unanswered.length) console.log(`  [${job.id} ${job.label}] unanswered: ${job.unanswered.join(" | ")}`);
       // She tells Dan in her own words (see Briefing): straight away if she's free, else as soon as she is.
       briefing.add(runFinishedNote(job), true);
+      const loopId = runLoops.get(job.id);
+      if (loopId) loops.close(loopId, job.status);
+      runLoops.delete(job.id);
       if (!busy && !asking && !listening && !transcribing) lines.inject("/brief");
       tidyWindows();
     },
@@ -1621,7 +1642,8 @@ async function main(): Promise<void> {
       const context =
         (settings.godMode ? GOD_MODE : "") +
         (lastTranscript ? `(I just recorded a transcript; it's in your brain at ${lastTranscript}.)\n\n` : "") +
-        briefing.take();
+        briefing.take() +
+        loopsContext(loops.open());
       lastTranscript = null;
       // A new request: what was held for "more" belonged to the last one.
       more.clear();
