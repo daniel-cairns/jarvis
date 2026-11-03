@@ -24,7 +24,7 @@ output.
 
 ## The plan
 
-### Phase 1: stop stale and meta speech (code, tested)
+### Phase 1: stop stale and meta speech (code, tested) — built 4 Nov
 1. **Answering a card silences that card.** Tag the utterances a dialog queues. When the dialog ends, drop them from
    the speech queue and cut one that's playing. Test: answer mid-question, and the rest isn't spoken.
 2. **Filter meta replies.** Drop "No response requested." and similar text before it's spoken or shown, in one place

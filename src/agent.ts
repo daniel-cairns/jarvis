@@ -18,6 +18,7 @@ import type { Position, UiAction } from "./ui/control.js";
 import { toolEvents, type ToolEvent } from "./ui/worklog.js";
 import type { TeardownGraph } from "./ui/graph.js";
 import type { QuestionAnswer, QuestionSpec } from "./voice/answers.js";
+import { isMetaReply } from "./voice/speechText.js";
 
 export type JarvisIO = {
   /** Called with each piece of top-level assistant text as it arrives. */
@@ -211,7 +212,7 @@ export class Jarvis {
       for (const block of msg.message.content) {
         // Queued, not waited on: the stream keeps being read, so a panel her next step opens takes its place right
         // after these words (see Speaker.cue) instead of popping up before them or long after.
-        if (block.type === "text" && block.text.trim()) void this.io.say(block.text).catch(() => {});
+        if (block.type === "text" && block.text.trim() && !isMetaReply(block.text)) void this.io.say(block.text).catch(() => {});
         if (block.type === "tool_use") this.io.status(`→ ${block.name}`, block.input as Record<string, unknown>);
         if (block.type === "thinking") this.io.status("… thinking");
       }

@@ -35,6 +35,7 @@ import { clampVolume, loadSettings, saveSettings } from "./settings.js";
 import { askDialog } from "./ui/dialog.js";
 import { Orb, type ToOrb } from "./ui/orb.js";
 import { Listener } from "./voice/listener.js";
+import { answeredNote, Briefing, BRIEF_REQUEST, runFinishedNote } from "./briefing.js";
 import { Speaker } from "./voice/speaker.js";
 import { KokoroTts, SayTts } from "./voice/tts.js";
 import {
@@ -216,6 +217,8 @@ async function main(): Promise<void> {
   // Long transcript mode: the recording in progress, a transcript asked for mid-request (it starts when the request
   // ends), and the last one saved, which the next request is told about so "summarise that" works.
   let transcribing: AbortController | null = null;
+  // Background news for her next turn: Dan's answers on runs' cards, runs finishing (see Briefing).
+  const briefing = new Briefing();
   let pendingTranscript: { title?: string } | null = null;
   let lastTranscript: string | null = null;
   // Asked to restart while working or running background sessions: she restarts once all of that has finished.
@@ -348,10 +351,11 @@ async function main(): Promise<void> {
   };
 
   // Queued: lines never overlap (see Speaker). Resolves when this line has been spoken.
-  const say = async (text: string) => {
+  /** Says `text` (or captions it when she's silent); `signal` drops it if it aborts first, as a card answered does. */
+  const say = async (text: string, signal?: AbortSignal) => {
     console.log(`\nAstra: ${text}\n`);
     if (muted || settings.typeOnly || !speechEnabled) orb?.send({ type: "caption", role: "jarvis", text });
-    else await speaker.speak(text);
+    else await speaker.speak(text, { signal });
   };
 
   let lastInputWasVoice = false;
@@ -932,7 +936,8 @@ async function main(): Promise<void> {
     return waitingMessage(state);
   };
   const restartIfDue = () => {
-    if (!pendingRestart || quitting) return;
+    // A run's report she hasn't passed on yet goes first: the brief that delivers it checks again after.
+    if (!pendingRestart || quitting || briefing.due) return;
     const state = restartState();
     if (!restartBlocker(state)) {
       cancelPendingRestart();
@@ -990,7 +995,7 @@ async function main(): Promise<void> {
     const answer = await openDialog<Answer>((signal) => {
       const viaCard = orb?.alive ? orb.ask(spoken, detail, signal) : askDialog(detail, signal);
       if (speaker.busy) console.log(`  (on screen: ${spoken})`);
-      else void say(spoken);
+      else void say(spoken, signal);
       const where = orb?.alive ? "the orb" : "the pop-up";
       const viaTyped = lines
         .next(voiceMode ? `[say yes, always or no, click ${where}, or type y / a / n] ` : `[click ${where}, or type y / a / n] `, signal)
@@ -1122,7 +1127,7 @@ async function main(): Promise<void> {
       const viaCard = orb?.alive ? orb.question(spec, signal) : Promise.resolve(null);
       const spokenQ = speakQuestion(spec.question, spec.options);
       if (speaker.busy) console.log(`  (on screen: ${spokenQ})`);
-      else void say(spokenQ);
+      else void say(spokenQ, signal);
       const viaTyped = lines
         .next(spec.options.length ? "[say it, click, or type a number (1,3 for several) or an answer] " : "[say or type your answer] ", signal)
         .then((line) => (line === null ? null : parseTypedChoice(line, spec)));
@@ -1151,7 +1156,9 @@ async function main(): Promise<void> {
       showTranscript(job);
       try {
         if (!orb?.alive && !voiceMode) return null;
-        return await askQuestion({ ...spec, question: `${job.label} (${job.id}) asks: ${spec.question}` });
+        const answer = await askQuestion({ ...spec, question: `${job.label} (${job.id}) asks: ${spec.question}` });
+        if (answer !== null) briefing.add(answeredNote(job.label, spec.question, Array.isArray(answer) ? answer.join(", ") : answer));
+        return answer;
       } finally {
         runPhases.set(job.id, { phase: "thinking" });
         showTranscript(job);
@@ -1161,7 +1168,9 @@ async function main(): Promise<void> {
       runPhases.set(job.id, { phase: "waiting" });
       showTranscript(job);
       try {
-        return await askApproval(approval);
+        const answer = await askApproval(approval);
+        briefing.add(`Dan answered "${answer}" to the ${job.label} session's request: ${approval.detail.slice(0, 200)}`);
+        return answer;
       } finally {
         runPhases.set(job.id, { phase: "thinking" });
         showTranscript(job);
@@ -1175,22 +1184,12 @@ async function main(): Promise<void> {
     },
     finished: (job) => {
       addLine(job, "end", job.status === "done" ? "Finished." : job.status === "stopped" ? "Stopped." : `Failed${job.lastText ? `: ${job.lastText.slice(0, 300)}` : "."}`);
-      const first = job.lastText.split(/(?<=[.!?])\s/)[0]?.slice(0, 220) ?? "";
-      const what =
-        job.status === "done"
-          ? `The ${job.label} session has finished`
-          : job.status === "stopped"
-            ? `I stopped the ${job.label} session`
-            : `The ${job.label} session ran into a problem`;
       console.log(`\n  [${job.id} ${job.label}] ${job.status} · $${job.costUsd.toFixed(3)}\n${job.lastText}\n`);
-      // A question it couldn't put to Dan: say so, so it isn't lost in the report.
-      const asked = job.unanswered.length
-        ? ` It had ${job.unanswered.length === 1 ? "a question" : `${job.unanswered.length} questions`} for you that I couldn't put on screen: ${job.unanswered.join(" ")}`
-        : "";
-      if (asked) console.log(`  [${job.id} ${job.label}] unanswered: ${job.unanswered.join(" | ")}`);
-      void say(`${first ? `${what}. ${first}` : `${what}.`}${asked}`);
+      if (job.unanswered.length) console.log(`  [${job.id} ${job.label}] unanswered: ${job.unanswered.join(" | ")}`);
+      // She tells Dan in her own words (see Briefing): straight away if she's free, else as soon as she is.
+      briefing.add(runFinishedNote(job), true);
+      if (!busy && !asking && !listening && !transcribing) lines.inject("/brief");
       tidyWindows();
-      restartIfDue();
     },
   }, undefined, () => settings.backgroundPermissionMode);
 
@@ -1493,6 +1492,27 @@ async function main(): Promise<void> {
     rl.close();
   });
 
+  /** Her turn for a background update nobody asked for (a run finished): she passes it on in her own words. */
+  const brief = async (): Promise<void> => {
+    busy = true;
+    syncOrb();
+    const notes = briefing.take();
+    try {
+      const result = await jarvis.handle(notes + BRIEF_REQUEST);
+      await speaker.whenIdle();
+      rememberSession();
+      console.log(`  (briefed · $${result.costUsd.toFixed(3)})`);
+    } catch (err) {
+      console.log(`  (briefing failed: ${(err as Error).message})`);
+      await say("A background session has finished; its report is in its transcript.");
+    } finally {
+      busy = false;
+      syncOrb();
+      tidyWindows();
+    }
+    restartIfDue();
+  };
+
   void wakeLoop();
 
   const howToTalk = wakeOn ? 'Say "Astra", press Enter, or click the orb to talk.' : "Press Enter or click the orb to talk.";
@@ -1502,6 +1522,7 @@ async function main(): Promise<void> {
   // After a spoken exchange Astra listens for your reply straight away, like a conversation.
   let followUp = false;
   for (;;) {
+    if (briefing.due && !quitting) await brief();
     const input = await getInput(voiceMode ? "\n[Enter to talk] > " : "\n> ", undefined, followUp);
     followUp = false;
     if (input === null) break;
@@ -1516,6 +1537,8 @@ async function main(): Promise<void> {
     }
     let request = input.trim();
     if (!request) continue;
+    // Woken to pass on a background update: the loop's top delivers it.
+    if (request === "/brief") continue;
     // Commands are recognised here, however they arrived and however they're phrased, before anything reaches Claude.
     const local = localCommand(request);
     if (local && "slash" in local) {
@@ -1562,7 +1585,8 @@ async function main(): Promise<void> {
       // Just after a transcript, tell her where it is, so "summarise that" or "action items" find it.
       const context =
         (settings.godMode ? GOD_MODE : "") +
-        (lastTranscript ? `(I just recorded a transcript; it's in your brain at ${lastTranscript}.)\n\n` : "");
+        (lastTranscript ? `(I just recorded a transcript; it's in your brain at ${lastTranscript}.)\n\n` : "") +
+        briefing.take();
       lastTranscript = null;
       const result = await jarvis.handle(context + request);
       // Her words are queued as they arrive rather than spoken before the next step is read; the turn is over when

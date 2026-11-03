@@ -49,3 +49,11 @@ export function chunkForSpeech(text: string, maxLen = 220): string[] {
   }
   return chunks;
 }
+
+/**
+ * Words the model writes to the harness rather than to Dan ("No response requested."), typically after a card answer
+ * or a remark that wasn't meant for her. Spoken, they sound like a malfunction, so they're dropped.
+ */
+const META_REPLY = /^[\s(*_]*(?:no (?:response|reply|answer|action) (?:is )?(?:requested|needed|required)|nothing (?:to (?:add|say|do)|further)|\(?no response\)?)[\s.)*_]*$/i;
+
+export const isMetaReply = (text: string): boolean => META_REPLY.test(text.trim());
