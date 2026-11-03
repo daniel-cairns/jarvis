@@ -14,6 +14,7 @@ import { brainIndex, noteMap, readNote, saveNote } from "./tools/brain.js";
 import { openApp, realRunner } from "./tools/mac.js";
 import { ComputerControl, nativeHelper } from "./control/computer.js";
 import { CoffeeMode } from "./power/coffee.js";
+import { ECHO_TAIL_MS, isEcho, recentSpeech } from "./voice/echo.js";
 import { Tallyline } from "./tools/tallyline.js";
 import { RESTART_CHECK_MS, RESTART_REPORT_MS, restartBlocker, stillBlockedMessage, waitingMessage, type RestartState } from "./ui/restart.js";
 import { buildSessionsView } from "./ui/sessionsPanel.js";
@@ -142,6 +143,15 @@ async function main(): Promise<void> {
   let orb: Orb | null = null;
   let ownSpeech = "";
   let lastSpokeAt = 0;
+  /** When her voice last stopped coming out of the speakers (the echo tail is measured from here). */
+  let lastSpeechEnd = 0;
+  /** Waits out the echo tail if she has only just stopped talking, so the mic doesn't catch the end of her. */
+  const echoTail = async () => {
+    const quietFor = Date.now() - lastSpeechEnd;
+    if (quietFor < ECHO_TAIL_MS) await sleep(ECHO_TAIL_MS - quietFor);
+  };
+  /** Whether something the mic heard is her own recent speech coming back (see voice/echo.ts). */
+  const herEcho = (heard: string) => isEcho(heard, recentSpeech(spoken));
   // Her recent sentences with when she said them, to cut her own voice out of what the mic heard.
   const spoken: { text: string; at: number }[] = [];
   let listening = false;
@@ -163,6 +173,7 @@ async function main(): Promise<void> {
     },
     onSpeaking: (on) => {
       speaking = on;
+      if (!on) lastSpeechEnd = Date.now();
       syncOrb();
     },
     onFallback: (from, to, err) => console.log(`  (The ${from} voice isn't available: ${err.message}. Using ${to}.)`),
@@ -405,10 +416,17 @@ async function main(): Promise<void> {
       if (!wakeListener.recording) continue;
       const heard = await wakeListener.stopAndTranscribe();
       // If she spoke at any point during the recording, her voice is in it, so the name may come anywhere.
-      const herVoice = talking || speaking || lastSpokeAt >= startedAt;
+      // Her voice is in the recording if she spoke during it, or had only just stopped when it began (the echo tail).
+      const herVoice = talking || speaking || lastSpokeAt >= startedAt || lastSpeechEnd >= startedAt - ECHO_TAIL_MS;
       const raw = herVoice ? matchWakeAnywhere(heard, ownSpeech) : matchWake(heard);
-      const request =
+      let request =
         raw !== null && herVoice ? stripOwnSpeech(raw, spoken.filter((s) => s.at >= startedAt - 15_000).map((s) => s.text)) : raw;
+      // Her own sentence coming back with a misheard "Astra" in it ("Astra's teardown was two days ago" from "the last
+      // teardown…"): not Dan. A bare "stop" always counts, so he can still halt her over her own voice.
+      if (request !== null && !isStopCommand(request) && herEcho(request)) {
+        if (process.env.JARVIS_DEBUG_WAKE) console.log(`  (wake: "${request}" is my own voice; ignored)`);
+        request = null;
+      }
       if (process.env.JARVIS_DEBUG_WAKE) console.log(`  (wake ${herVoice ? "over her voice" : "idle"} heard: "${heard}" → ${request === null ? "ignored" : `"${request}"`})`);
       if (request !== null) onWake(request);
       else if (dialogParses && heard.trim()) answerWithoutName(heard, herVoice, startedAt);
@@ -422,7 +440,7 @@ async function main(): Promise<void> {
    * stops talking and listens for it properly.
    */
   const answerWithoutName = (heard: string, herVoice: boolean, startedAt: number) => {
-    if (!dialogParses || !dialogWake) return;
+    if (!dialogParses || !dialogWake || herEcho(heard)) return;
     if (!herVoice) {
       if (dialogParses(heard)) {
         chime();
@@ -504,12 +522,13 @@ async function main(): Promise<void> {
         } else if (tries < 2 || woke === "") {
           woke = null;
           tries++;
+          await echoTail();
           console.log("  🎙  listening for your answer…");
           const startedAt = Date.now();
           heard = await listenOnce(12_000, signal);
-          // She started talking while this was recording (a line queued after the question): that's her voice,
-          // not an answer. Throw it away and listen again once she's done.
-          if (heard && lastSpokeAt >= startedAt) {
+          // She started talking while this was recording (a line queued after the question), or it's her question
+          // coming back: that's her voice, not an answer. Throw it away and listen again once she's done.
+          if (heard && (lastSpokeAt >= startedAt || herEcho(heard))) {
             console.log("  (that was my own voice; listening again)");
             tries--;
             continue;
@@ -561,7 +580,13 @@ async function main(): Promise<void> {
       .next("🎙  Listening... (I'll stop when you pause; Enter or click the orb to stop now) ",
         AbortSignal.any([early.signal, ...(signal ? [signal] : [])]))
       .then((line) => (line === null ? new Promise<never>(() => {}) : line));
-    const heard = await listenOnce(listenNow ? 8_000 : 15_000, signal, pressed);
+    // Straight after she has spoken, wait out the echo tail so the recording doesn't start with the end of her.
+    if (listenNow) await echoTail();
+    let heard = await listenOnce(listenNow ? 8_000 : 15_000, signal, pressed);
+    if (heard && !isStopCommand(heard) && herEcho(heard)) {
+      console.log("  (that was my own voice)");
+      heard = "";
+    }
     early.abort();
     if (lines.isClosed || signal?.aborted) return null;
     if (heard === null) return "";
