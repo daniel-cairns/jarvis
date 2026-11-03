@@ -35,7 +35,7 @@ output.
    If she's idle, give her a short turn to deliver it in her own words: what it means for Dan and whether he has to do
    anything. When several finish close together, they arrive as one note.
 
-### Phase 2: brief first, more on request
+### Phase 2: brief first, more on request — built 4 Nov (limit set to 30 words, not 40)
 5. **Rewrite "How you speak" as an EA brief** in src/prompt.ts:
    - Lead with the outcome or the decision. Usually one sentence, and never more than 25 words aloud.
    - Never repeat something already said this conversation, unless it changed or he asks.

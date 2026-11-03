@@ -36,6 +36,7 @@ import { askDialog } from "./ui/dialog.js";
 import { Orb, type ToOrb } from "./ui/orb.js";
 import { Listener } from "./voice/listener.js";
 import { answeredNote, Briefing, BRIEF_REQUEST, runFinishedNote } from "./briefing.js";
+import { dropRepeats, headline, MoreQueue } from "./voice/brevity.js";
 import { Speaker } from "./voice/speaker.js";
 import { KokoroTts, SayTts } from "./voice/tts.js";
 import {
@@ -356,6 +357,27 @@ async function main(): Promise<void> {
     console.log(`\nAstra: ${text}\n`);
     if (muted || settings.typeOnly || !speechEnabled) orb?.send({ type: "caption", role: "jarvis", text });
     else await speaker.speak(text, { signal });
+  };
+
+  // What "tell me more" reads next: the rest of her last long reply, or the detail panel she last opened.
+  const more = new MoreQueue();
+
+  /**
+   * Her own words (her replies, not system lines): spoken cut to the headline, with the rest on screen until Dan says
+   * "more", and without sentences she said in the last few minutes. Silent, she shows the whole reply.
+   */
+  const sayReply = async (text: string) => {
+    if (muted || settings.typeOnly || !speechEnabled) return say(text);
+    const { spoken: head, rest } = headline(text);
+    const fresh = dropRepeats(head, spoken);
+    if (fresh) await say(fresh);
+    else console.log(`\nAstra (already said, not repeated): ${head}\n`);
+    if (rest) {
+      more.setRest(rest);
+      console.log(`  (held for "more": ${rest})`);
+      orb?.send({ type: "caption", role: "jarvis", text: rest });
+      orb?.send({ type: "caption", role: "status", text: "Say “more” to hear the rest" });
+    }
   };
 
   let lastInputWasVoice = false;
@@ -1439,7 +1461,8 @@ async function main(): Promise<void> {
   if (coffee.resume()) console.log(`  ☀︎ ${coffee.status()}`);
 
   const jarvis = new Jarvis(cfg, {
-    say,
+    // Her replies (and briefs) go through the headline and repeat guards; system lines use `say` directly.
+    say: sayReply,
     sessions,
     windows: windowTools,
     computer,
@@ -1455,6 +1478,7 @@ async function main(): Promise<void> {
     },
     show: (title, markdown, sayAlong) => {
       if (orb?.alive) {
+        more.setPanel(markdown);
         showPanel({ type: "detail", title, html: renderDetail(markdown) }, sayAlong);
         return "Shown in the detail panel.";
       }
@@ -1565,6 +1589,17 @@ async function main(): Promise<void> {
       continue;
     }
     if (request === "/continue") { await continueLast(); continue; }
+    // "Tell me more": the next part of what she held back, without a round trip. With nothing held, it's a request.
+    if (request === "/more") {
+      const next = more.next();
+      if (next) {
+        await say(next);
+        if (more.empty) orb?.send({ type: "caption", role: "status", text: "That's all of it" });
+        followUp = lastInputWasVoice && !muted;
+        continue;
+      }
+      request = input.trim();
+    }
     if (request === "/new") { jarvis.reset(); console.log("Fresh conversation. Your brain notes are kept."); continue; }
     if (request === "/mute") { muted = true; speaker.stop(); continue; }
     if (request === "/unmute") { muted = false; continue; }
@@ -1588,6 +1623,8 @@ async function main(): Promise<void> {
         (lastTranscript ? `(I just recorded a transcript; it's in your brain at ${lastTranscript}.)\n\n` : "") +
         briefing.take();
       lastTranscript = null;
+      // A new request: what was held for "more" belonged to the last one.
+      more.clear();
       const result = await jarvis.handle(context + request);
       // Her words are queued as they arrive rather than spoken before the next step is read; the turn is over when
       // she has finished saying them (and only then does she listen for a follow-up).
