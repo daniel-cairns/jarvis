@@ -38,9 +38,9 @@ export type JarvisIO = {
   /** Asks the user a question (with options) and waits; null if they didn't answer. */
   question?(spec: QuestionSpec): Promise<QuestionAnswer | null>;
   /** Shows a teardown's 3D map (or a text version without the orb); returns where it went. */
-  graph?(title: string, graph: TeardownGraph): string;
+  graph?(title: string, graph: TeardownGraph, say?: string): string;
   /** Puts detail on screen (the orb's panel, or the terminal); returns where it went. */
-  show?(title: string, markdown: string): string;
+  show?(title: string, markdown: string, say?: string): string;
   /** Asks the user a yes/always/no question (spoken briefly, detail shown) and returns their raw answer. */
   ask(question: Approval): Promise<string>;
 };
@@ -209,7 +209,9 @@ export class Jarvis {
     // Subagent output (parent_tool_use_id set) stays silent; only Astra's own voice is spoken.
     if (msg.type === "assistant" && msg.parent_tool_use_id === null) {
       for (const block of msg.message.content) {
-        if (block.type === "text" && block.text.trim()) await this.io.say(block.text);
+        // Queued, not waited on: the stream keeps being read, so a panel her next step opens takes its place right
+        // after these words (see Speaker.cue) instead of popping up before them or long after.
+        if (block.type === "text" && block.text.trim()) void this.io.say(block.text).catch(() => {});
         if (block.type === "tool_use") this.io.status(`→ ${block.name}`, block.input as Record<string, unknown>);
         if (block.type === "thinking") this.io.status("… thinking");
       }

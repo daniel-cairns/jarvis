@@ -604,9 +604,20 @@ async function main(): Promise<void> {
   const remember = (kind: WindowKind, title: string, reopen: () => void | Promise<void>, key = `${kind}:${title}`) =>
     windows.record({ key, kind, title, at: Date.now(), request: requestCount, reopen });
 
-  /** Shows a detail panel or map and remembers it. Reopened on request, it's yours: she won't close it on you. */
-  const showPanel = (msg: Extract<ToOrb, { type: "detail" | "graph" }>) => {
-    orb?.send(msg);
+  /**
+   * Shows a detail panel or map and remembers it. Reopened on request, it's yours: she won't close it on you.
+   * It opens in its place in what she's saying (after the words queued before it), not the moment its tool ran, so
+   * she's talking about what's on screen. With `say`, those words are spoken and the panel opens as they start.
+   */
+  const showPanel = (msg: Extract<ToOrb, { type: "detail" | "graph" }>, sayAlong?: string) => {
+    const open = () => orb?.send(msg);
+    if (sayAlong?.trim() && !muted && !settings.typeOnly && speechEnabled) {
+      console.log(`\nAstra: ${sayAlong}\n`);
+      void speaker.speak(sayAlong, { onStart: open });
+    } else {
+      if (sayAlong?.trim()) orb?.send({ type: "caption", role: "jarvis", text: sayAlong });
+      speaker.cue(open);
+    }
     remember(msg.type, msg.title, () => orb?.send({ ...msg, owner: "user" }));
   };
 
@@ -870,6 +881,7 @@ async function main(): Promise<void> {
           "what you were last doing and what was next. Don't start any work until they say.",
       );
       if (!result.ok) throw new Error(result.summary);
+      await speaker.whenIdle();
       rememberSession();
       console.log(`  (continued session ${pick.id} · $${result.costUsd.toFixed(3)})`);
     } catch (err) {
@@ -1434,17 +1446,17 @@ async function main(): Promise<void> {
     computer,
     coffee,
     toolEvent: (e) => onToolEvent("Astra", cfg.workspaceDir, e),
-    graph: (title, graph) => {
+    graph: (title, graph, sayAlong) => {
       if (orb?.alive) {
-        showPanel({ type: "graph", title, graph });
+        showPanel({ type: "graph", title, graph }, sayAlong);
         return "Shown as a 3D map. The user can orbit it and click nodes for detail.";
       }
       console.log(`\n${graphAsText(title, graph)}\n`);
       return "Printed as text in the terminal (no orb is open).";
     },
-    show: (title, markdown) => {
+    show: (title, markdown, sayAlong) => {
       if (orb?.alive) {
-        showPanel({ type: "detail", title, html: renderDetail(markdown) });
+        showPanel({ type: "detail", title, html: renderDetail(markdown) }, sayAlong);
         return "Shown in the detail panel.";
       }
       console.log(`\n── ${title} ──\n${markdown}\n`);
@@ -1553,6 +1565,9 @@ async function main(): Promise<void> {
         (lastTranscript ? `(I just recorded a transcript; it's in your brain at ${lastTranscript}.)\n\n` : "");
       lastTranscript = null;
       const result = await jarvis.handle(context + request);
+      // Her words are queued as they arrive rather than spoken before the next step is read; the turn is over when
+      // she has finished saying them (and only then does she listen for a follow-up).
+      await speaker.whenIdle();
       rememberSession();
       console.log(`  (${result.ok ? "done" : result.summary} · $${result.costUsd.toFixed(3)})`);
       followUp = spoken && result.ok && !muted;
