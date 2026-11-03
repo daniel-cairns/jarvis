@@ -2,7 +2,7 @@
  * Astra's orb: a frameless, transparent, always-on-top window. Astra drives it with JSON lines on stdin and
  * hears back on stdout. Run by Electron as a child of the Astra CLI; quits when Astra closes stdin.
  */
-const { app, BrowserWindow, Menu, Tray, globalShortcut, ipcMain, nativeImage, screen, shell } = require("electron");
+const { app, BrowserWindow, Menu, Tray, clipboard, globalShortcut, ipcMain, nativeImage, screen, shell } = require("electron");
 const path = require("node:path");
 const readline = require("node:readline");
 const { layoutPanels, placeNew, minFor } = require("./layout.cjs");
@@ -637,6 +637,10 @@ app.whenReady().then(() => {
       const where = typeof m.path === "string" && /^\/[\w\-./?=&%]*$/.test(m.path) ? m.path : "/";
       closed.delete("tallyline-app");
       return void openSlab("tallyline-app", { type: "tallyline-app", path: where }, "user");
+    }
+    // A panel's Copy button: written here because the renderer's clipboard API needs focus and a secure context.
+    if (m?.type === "copy-text" && sender && sender !== win && typeof m.text === "string" && m.text.length <= 1_000_000) {
+      return clipboard.writeText(m.text);
     }
     if (m?.type === "panel-close") {
       // Closed by its ✕: it stays closed (see `closed`).

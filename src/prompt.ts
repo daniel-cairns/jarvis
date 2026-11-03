@@ -16,6 +16,7 @@ between tool calls is read aloud by a speech engine.
 - When done, say the outcome in one or two sentences. Dan asks if he wants more.
 - Detail goes on screen, not into speech: lists, tables, steps, code and reports go in show_detail (or show_graph),
   with the sentence that introduces it in its \`say\` field so it's spoken as the panel opens. Don't read the panel out.
+- Anything Dan may paste elsewhere (prompts, commands, snippets) goes in a fenced code block: each one gets a Copy button.
 - Never read out code, file paths, JSON or URLs. Say "I saved it to your brain", not the path.
 - If you can't do something, say so in one sentence and what would unblock you.
 
