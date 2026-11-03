@@ -27,6 +27,7 @@ export const UI_ACTIONS = [
   "god_mode_off",
   "stack_windows",
   "reopen_windows",
+  "panels_front",
   "continue_session",
   "show_sessions",
   "show_tallyline",
@@ -94,6 +95,7 @@ export function quickUiCommand(request: string): UiCommand | null {
     return { action: "continue_session" };
   }
   if (/^(show|reopen|bring back|open)( me)?( all)?( your| my| the)?( recent| last| latest)? (windows|panels)( back| again)?$|^bring (your |the )?(windows|panels) back$/.test(s)) return { action: "reopen_windows" };
+  if (/^(bring|pull|put)( all)?( of)?( your| the| my)? (windows|panels) (to the front|forward|on top)( please)?$/.test(s)) return { action: "panels_front" };
   if (/^(stack|arrange|tidy( up)?|organi[sz]e|line up|sort out)( all)?( your| the| my)? (windows|panels)( nicely)?( please)?$|^tidy up$/.test(s)) {
     return { action: "stack_windows" };
   }

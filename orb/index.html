@@ -29,17 +29,21 @@
         <!-- The "water" hieroglyph (N35): a ripple line, so it still reads as minimise. -->
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12.5l2.4-2.6 2.4 2.6 2.4-2.6 2.4 2.6 2.4-2.6 2.4 2.6 2.4-2.6 2.4 2.6"/></svg>
       </button>
+      <button id="front" type="button" aria-label="Bring all panels forward" title="Bring all panels forward">
+        <!-- The sun hieroglyph (N5): a disc with a dot, raising the panels over everything else. -->
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="7"/><circle class="core" cx="12" cy="12" r="1.8"/></svg>
+      </button>
     </div>
     <div class="state-wrap">
-      <p id="state" class="state" role="button" tabindex="0" aria-haspopup="menu" aria-controls="panel-menu" aria-expanded="false" title="Show her panels">Idle</p>
+      <p id="state" class="state" role="button" tabindex="0" aria-haspopup="menu" aria-controls="panel-menu" aria-expanded="false" title="Show panels">Idle</p>
       <!-- Coffee mode: the water clock (clepsydra), dripping while the Mac is kept awake. -->
       <p id="coffee" class="coffee" role="img" aria-label="Coffee mode is on" hidden></p>
     </div>
-    <!-- The status indicator's dropdown: brings back her thinking window and any panel that's closed or folded. -->
-    <div id="panel-menu" class="panel-menu" role="menu" aria-label="Her panels" hidden></div>
+    <!-- The status indicator's dropdown: the thinking window, and every panel (bring forward, unfold or reopen). -->
+    <div id="panel-menu" class="panel-menu" role="menu" aria-label="Panels" hidden></div>
 
     <section id="card" class="card" hidden>
-      <button id="card-toggle" type="button" class="card-toggle" aria-expanded="true" aria-controls="card" aria-label="Collapse her thinking window" title="Collapse">▾</button>
+      <button id="card-toggle" type="button" class="card-toggle" aria-expanded="true" aria-controls="card" aria-label="Collapse the thinking window" title="Collapse">▾</button>
       <div class="nub" aria-hidden="true"><svg viewBox="0 0 170 22" preserveAspectRatio="none"><polygon class="plate" points="0,22 170,22 170,10 156,0 0,0"/><polyline class="edge" points="0,0.8 156,0.8 169.5,10.5"/><polyline class="edge-inner" points="0,4 154,4 165,12"/></svg><p id="caption-label" class="nub-label" aria-hidden="false">Transmission</p></div>
       <div class="shelf" aria-hidden="true"></div>
       <p id="caption" class="caption" aria-hidden="true"></p>

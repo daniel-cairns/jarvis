@@ -11,12 +11,12 @@ const { menuItems } = sandbox.module.exports as {
 };
 
 describe("the status indicator's dropdown", () => {
-  it("always offers her thinking window, worded for its state", () => {
-    expect(menuItems({ cardShown: false, panels: [] })).toEqual([{ id: "card", label: "Show her thinking window" }]);
-    expect(menuItems({ cardShown: true, panels: [] })[0]).toEqual({ id: "card", label: "Fold her thinking window" });
+  it("always offers the thinking window, worded for its state, without gendered labels", () => {
+    expect(menuItems({ cardShown: false, panels: [] })).toEqual([{ id: "card", label: "Show the thinking window" }]);
+    expect(menuItems({ cardShown: true, panels: [] })[0]).toEqual({ id: "card", label: "Fold the thinking window" });
   });
 
-  it("lists closed and folded panels, transcript first, and leaves out open ones", () => {
+  it("lists every known panel, transcript first, worded for its state, with bring-all when any is showing", () => {
     const items = menuItems({
       cardShown: false,
       panels: [
@@ -27,11 +27,18 @@ describe("the status indicator's dropdown", () => {
         { kind: "unknown", state: "closed" },
       ],
     });
-    expect(items.map((i) => i.label)).toEqual([
-      "Show her thinking window",
-      "Unfold the transcript",
-      "Reopen the git changes",
-      "Reopen the last map",
+    expect(items).toEqual([
+      { id: "card", label: "Show the thinking window" },
+      { id: "front", label: "Bring all panels forward" },
+      { id: "transcript", label: "Unfold: transcript" },
+      { id: "terminal", label: "Bring forward: terminal" },
+      { id: "git", label: "Reopen: git changes" },
+      { id: "graph", label: "Reopen: map" },
     ]);
+  });
+
+  it("leaves out bring-all when every panel is closed", () => {
+    const ids = menuItems({ cardShown: true, panels: [{ kind: "detail", state: "closed" }] }).map((i) => i.id);
+    expect(ids).toEqual(["card", "detail"]);
   });
 });

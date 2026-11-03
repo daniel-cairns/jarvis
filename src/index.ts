@@ -704,6 +704,7 @@ async function main(): Promise<void> {
       show_last_detail: "Re-opened the last detail panel (if there was one).",
       show_last_map: "Re-opened the last map (if there was one).",
       stack_windows: "Tidied up my panels.",
+      panels_front: "Brought my panels to the front.",
     };
     return done[action];
   };

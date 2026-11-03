@@ -8,6 +8,7 @@
   const talk = document.getElementById("talk");
   const stopButton = document.getElementById("stop");
   const recordButton = document.getElementById("record");
+  const frontButton = document.getElementById("front");
   const typeOnlyButton = document.getElementById("type-only");
   const typeBox = document.getElementById("type-box");
   const typeText = document.getElementById("type-text");
@@ -223,7 +224,7 @@
     card.classList.toggle("collapsed", collapsed);
     document.body.classList.toggle("collapsed", collapsed);
     cardToggle.setAttribute("aria-expanded", String(!collapsed));
-    cardToggle.setAttribute("aria-label", collapsed ? "Expand her thinking window" : "Collapse her thinking window");
+    cardToggle.setAttribute("aria-label", collapsed ? "Expand the thinking window" : "Collapse the thinking window");
     cardToggle.title = collapsed ? "Expand" : "Collapse";
     cardToggle.textContent = collapsed ? "▸" : "▾";
     try {
@@ -279,6 +280,7 @@
   function choose(id) {
     closeMenu(true);
     if (id === "card") return card.hidden || card.classList.contains("collapsed") ? showCard() : foldCard();
+    if (id === "front") return bridge.send({ type: "panels-front" });
     bridge.send({ type: "panel-restore", kind: id });
   }
   stateLabel.addEventListener("click", () => (menuOpen() ? closeMenu() : openMenu()));
@@ -556,6 +558,7 @@
     if (value) answer(value);
   });
   stopButton.addEventListener("click", () => bridge.send({ type: "stop" }));
+  frontButton.addEventListener("click", () => bridge.send({ type: "panels-front" }));
   recordButton.addEventListener("click", () => bridge.send({ type: "record" }));
   typeOnlyButton.addEventListener("click", () => bridge.send({ type: "type-only", on: typeOnlyButton.getAttribute("aria-pressed") !== "true" }));
   // The glyphs on the lower wings glow under the pointer (the glow is drawn on the canvas, under the buttons).
@@ -1134,7 +1137,7 @@
     const controlsOpacity = Math.round(st.wings * 20) / 20;
     if (controlsOpacity !== shownOpacity) {
       shownOpacity = controlsOpacity;
-      for (const el of [stopButton, document.getElementById("minimise"), recordButton, typeOnlyButton, stateLabel]) el.style.opacity = String(controlsOpacity);
+      for (const el of [stopButton, document.getElementById("minimise"), recordButton, typeOnlyButton, frontButton, stateLabel]) el.style.opacity = String(controlsOpacity);
     }
     const cx = W / 2;
     const cy = H / 2 + 6;

@@ -21,6 +21,8 @@ describe("quickUiCommand", () => {
     expect(quickUiCommand("Show me your windows again")).toEqual({ action: "reopen_windows" });
     expect(quickUiCommand("bring the panels back")).toEqual({ action: "reopen_windows" });
     expect(quickUiCommand("tidy up the panels please")).toEqual({ action: "stack_windows" });
+    expect(quickUiCommand("Bring your panels to the front")).toEqual({ action: "panels_front" });
+    expect(quickUiCommand("bring all the windows forward")).toEqual({ action: "panels_front" });
     expect(quickUiCommand("give me a sitrep please")).toEqual({ action: "sitrep" });
     expect(quickUiCommand("What's everyone doing?")).toEqual({ action: "sitrep" });
     expect(quickUiCommand("God mode on")).toEqual({ action: "god_mode_on" });

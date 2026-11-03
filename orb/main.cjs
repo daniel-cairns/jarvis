@@ -305,7 +305,21 @@ app.whenReady().then(() => {
     openSlab(kind, slab.last, "user");
   };
 
-  const openSlab = (kind, msg, owner = "astra") => {
+  /**
+   * The sun glyph (or "bring your panels forward"): every open panel in front of other apps' windows, the one used
+   * most recently on top. Without focusing them, so typing stays where it was.
+   */
+  const raisePanels = () => {
+    const open = Object.values(slabs).filter((s) => s.win && !s.win.isDestroyed() && s.win.isVisible());
+    open.sort((a, b) => (a.lastUsed ?? 0) - (b.lastUsed ?? 0));
+    for (const slab of open) slab.win.showInactive();
+  };
+
+  /**
+   * Opens a panel, or updates the open one. `raise` false is a live update (a transcript ticking, the terminal
+   * scrolling): it refreshes the panel where it sits instead of pulling it over the one Dan is looking at.
+   */
+  const openSlab = (kind, msg, owner = "astra", raise = true) => {
     const slab = slabs[kind];
     slab.last = msg;
     slab.request = requestNo;
@@ -320,7 +334,8 @@ app.whenReady().then(() => {
         return;
       }
       slab.win.webContents.send("jarvis", msg);
-      slab.win.showInactive();
+      // showInactive orders the window to the front, so only a hidden panel or an explicit show gets it.
+      if (raise || !slab.win.isVisible()) slab.win.showInactive();
       return;
     }
     slab.owner = owner;
@@ -343,9 +358,10 @@ app.whenReady().then(() => {
       y: placed?.y ?? Math.max(workArea.y + 12, Math.min(bounds.y, workArea.y + workArea.height - height - 12)),
       minWidth: 340,
       minHeight: 220,
-      // The full Tallyline app is a normal window (title bar, native close, keyboard focus) that doesn't float.
+      // Panels are normal windows that other apps can cover (only the orb floats); the sun glyph brings them all back.
+      // The full Tallyline app also gets a title bar, native close and keyboard focus.
       ...(webApp
-        ? { title: "Tallyline", backgroundColor: "#0d0b08", fullscreenable: true, alwaysOnTop: false }
+        ? { title: "Tallyline", backgroundColor: "#0d0b08", fullscreenable: true }
         : {
             frame: false,
             // Frosted glass: macOS blurs whatever is behind the window; panel.css adds tint, rim light and sheen.
@@ -355,7 +371,6 @@ app.whenReady().then(() => {
             roundedCorners: true,
             fullscreenable: false,
             skipTaskbar: true,
-            alwaysOnTop: true,
           }),
       resizable: true,
       show: false,
@@ -363,10 +378,11 @@ app.whenReady().then(() => {
     });
     slab.win = w;
     slab.pinned = false;
-    // Clicking into a panel (or dragging it) makes it yours: she won't close it on you.
+    // Clicking into a panel (or dragging it) makes it yours: she won't close it on you, and it comes to the front.
     w.on("focus", () => {
       slab.owner = "user";
       slab.lastUsed = Date.now();
+      w.moveTop();
     });
     // Resized by hand (not by the layout): it keeps the size and place you gave it until it closes or you tidy up.
     w.on("resized", () => {
@@ -392,7 +408,6 @@ app.whenReady().then(() => {
       });
       return;
     }
-    w.setAlwaysOnTop(true, "floating");
     harden(w);
     w.loadFile(path.join(__dirname, slab.file));
     w.webContents.once("did-finish-load", () => {
@@ -468,6 +483,7 @@ app.whenReady().then(() => {
   /** Astra working her own interface (ui_control and quick spoken commands). */
   const runUi = (action) => {
     if (action === "stack_windows") return relayout("tidy");
+    if (action === "panels_front") return raisePanels();
     if (action === "minimise") void hideOrb();
     else if (action === "show") void show();
     // Every panel, whatever fed it, and they stay closed until something explicitly shows one again.
@@ -613,6 +629,7 @@ app.whenReady().then(() => {
     const sender = BrowserWindow.fromWebContents(event.sender);
     if (m?.type === "minimise") return void hideOrb();
     if (m?.type === "panel-restore" && sender === win && typeof m.kind === "string" && slabs[m.kind]) return restoreSlab(m.kind);
+    if (m?.type === "panels-front" && sender === win) return raisePanels();
     if (m?.type === "transform-done" && sender === win) return transformWaiter?.();
     if (m?.type === "fit" && sender === win && Number.isFinite(m.height)) return void fitHeight(m.height);
     // The compact Tallyline panel's expand control and issue links: open the full app at that page.
@@ -732,7 +749,8 @@ app.whenReady().then(() => {
       // Detail, map and brain come from Astra's show tools (or "show me…"): explicit, so they open even if closed.
       else if (m.type === "detail" || m.type === "graph" || m.type === "brain" || m.type === "transcript") {
         closed.delete(m.type);
-        openSlab(m.type, m, m.owner === "user" ? "user" : "astra");
+        // A background run's transcript ticks constantly (no owner): those updates don't raise it.
+        openSlab(m.type, m, m.owner === "user" ? "user" : "astra", m.type !== "transcript" || !!m.owner);
       }
       // Work panels open by themselves when there's something new, unless closed during this request (or asked for).
       else if (m.type === "terminal" || m.type === "git") {
@@ -745,7 +763,7 @@ app.whenReady().then(() => {
           slab.last = m;
           if (slab.win && !slab.win.isDestroyed()) slab.win.webContents.send("jarvis", m);
           sendPanels();
-        } else if (slab.win && !slab.win.isDestroyed()) openSlab(m.type, m, owner);
+        } else if (slab.win && !slab.win.isDestroyed()) openSlab(m.type, m, owner, owner !== "auto");
         else if (m.force || hasContent) {
           closed.delete(m.type);
           openSlab(m.type, m, owner);
