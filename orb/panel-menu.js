@@ -8,8 +8,11 @@
     detail: "last detail panel",
     graph: "last map",
     brain: "brain browser",
+    sessions: "sessions panel",
+    tallyline: "Tallyline panel",
+    "tallyline-app": "full Tallyline",
   };
-  const ORDER = ["transcript", "terminal", "git", "detail", "graph", "brain"];
+  const ORDER = ["transcript", "terminal", "git", "detail", "graph", "brain", "sessions", "tallyline", "tallyline-app"];
 
   /** cardShown: her thinking window is visible and unfolded. panels: [{ kind, state: "open" | "collapsed" | "closed" }]. */
   function menuItems({ cardShown, panels }) {

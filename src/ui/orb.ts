@@ -1,3 +1,4 @@
+import type { TallylineSummary } from "../tools/tallyline.js";
 import type { SessionsView } from "./sessionsPanel.js";
 /**
  * Talks to the orb window (orb/main.cjs, run by Electron) over JSON lines on stdin/stdout.
@@ -62,6 +63,7 @@ export type ToOrb =
   | { type: "git"; repos: RepoState[]; force?: boolean; owner?: "user" }
   | { type: "git-diff-result"; root: string; path: string; diff: string }
   | { type: "coffee"; on: boolean; until: number | null }
+  | { type: "tallyline"; summary?: TallylineSummary; error?: string; starting?: boolean; owner?: "user" }
   | ({ type: "sessions"; owner?: "user"; note?: string } & SessionsView)
   | { type: "brain-note"; path: string; title: string; html: string; hasMap: boolean }
   | { type: "quit" };

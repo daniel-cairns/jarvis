@@ -138,3 +138,21 @@
 .s-astra { flex: 0 0 auto; display: inline-flex; gap: 3px; align-items: center; font-size: 0.7em; letter-spacing: 0.08em; text-transform: uppercase; color: #7fe3da; border: 1px solid rgba(127, 227, 218, 0.4); border-radius: 3px; padding: 0 4px; }
 .s-mode { display: inline-flex; gap: 3px; align-items: center; color: var(--gold); }
 .s-mode-bypassPermissions { color: #d98a6a; }
+
+/* The compact Tallyline panel (tallyline.js). Colours meet AA contrast on the panel's dark glass. */
+.tallyline section { margin-bottom: 10px; }
+.t-counts, .t-today { margin: 4px 0; font-size: 0.86em; color: #ece4cd; }
+.t-bar { display: flex; height: 6px; border-radius: 3px; overflow: hidden; margin: 6px 0 8px; background: rgba(255, 255, 255, 0.08); }
+.t-seg { min-width: 0; }
+.t-to-do { background: #8d8571; }
+.t-in-progress { background: var(--gold); }
+.t-done { background: #7fe3da; }
+.t-issue-link { all: unset; box-sizing: border-box; display: grid; grid-template-columns: auto 1fr; gap: 0 8px; width: 100%; padding: 5px 8px; cursor: pointer; border-left: 2px solid rgba(236, 188, 82, 0.25); background: rgba(255, 255, 255, 0.025); border-radius: 0 4px 4px 0; }
+.t-issue-link:hover { border-left-color: var(--gold); }
+.t-issue-link:focus-visible, .t-expand:focus-visible { outline: 1px solid var(--gold); outline-offset: 1px; }
+.t-key { color: var(--gold); font-weight: 600; font-size: 0.82em; }
+.t-summary { color: #f1e7cf; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.86em; }
+.t-status { grid-column: 2; font-size: 0.76em; color: rgba(233, 226, 207, 0.72); }
+.t-error { color: #ffb59c; margin: 4px 0; }
+.t-expand { font: inherit; font-size: 1.1em; color: var(--gold); background: none; border: 0; cursor: pointer; padding: 0 6px; }
+@media (prefers-reduced-motion: reduce) { .t-issue-link { transition: none; } }

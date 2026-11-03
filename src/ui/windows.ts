@@ -1,6 +1,6 @@
 /** The windows Astra has shown recently, so you can ask for any of them again after she's tidied them away. */
 
-export type WindowKind = "detail" | "graph" | "brain" | "terminal" | "git" | "transcript";
+export type WindowKind = "detail" | "graph" | "brain" | "terminal" | "git" | "transcript" | "tallyline";
 
 export type WindowEntry = {
   /** Same key = same window: a newer one replaces the older entry. */
@@ -20,6 +20,7 @@ const KIND_WORDS: Record<WindowKind, string[]> = {
   terminal: ["terminal", "commands", "command", "shell"],
   git: ["git", "changes", "diff", "diffs"],
   transcript: ["transcript", "run", "session", "background", "log"],
+  tallyline: ["tallyline", "ledger", "sprint", "issues"],
 };
 
 const KIND_NAMES: Record<WindowKind, string> = {
@@ -29,6 +30,7 @@ const KIND_NAMES: Record<WindowKind, string> = {
   terminal: "terminal",
   git: "git changes",
   transcript: "transcript",
+  tallyline: "Tallyline panel",
 };
 
 const words = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, " ").split(/\s+/).filter((w) => w.length > 1);

@@ -29,6 +29,7 @@ export const UI_ACTIONS = [
   "reopen_windows",
   "continue_session",
   "show_sessions",
+  "show_tallyline",
 ] as const;
 export type UiAction = (typeof UI_ACTIONS)[number];
 /** Where "move" can put the orb: a spot on screen, or a nudge in one direction. */
@@ -98,6 +99,7 @@ export function quickUiCommand(request: string): UiCommand | null {
   }
   if (/^(go |switch to |turn on )?(type|typing|text) (only )?mode( on)?( please)?$|^type only( please)?$/.test(s)) return { action: "type_only" };
   if (isShowSessions(s)) return { action: "show_sessions" };
+  if (/^(show|open|bring up|pull up)( me)?( the| my)? tallyline( panel)?$|^tallyline$/.test(s)) return { action: "show_tallyline" };
   if (/^(give me |get me |what s the |what is the )?(a |the |your )?(sit ?rep|situation report|status report)( please)?$|^what (s|is) everyone (doing|up to)$/.test(s)) return { action: "sitrep" };
   if (/^(go into |enter |switch to |turn on |activate )?god mode( on)?( please)?$/.test(s)) return { action: "god_mode_on" };
   if (/^(leave |exit |turn off |deactivate |end )god mode|^god mode off$/.test(s)) return { action: "god_mode_off" };

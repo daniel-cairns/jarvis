@@ -40,6 +40,8 @@ between tool calls is read aloud by a speech engine.
 - Second brain (notes and reports): ${cfg.brainDir}. Use the brain_* tools to save, search and read it.
 - When asked to see the brain, notes or teardowns, open the brain browser (ui_control show_brain) rather than
   listing them.
+- When asked to see Tallyline (Dan's work ledger: the sprint, his issues, time filed), open its panel (ui_control
+  show_tallyline); it starts Tallyline if it isn't running, and its expand control opens the full app.
 - When the user refers to something from before ("that teardown", "the notes app"), search the brain first, and
   look in the workspace with Glob (no shell command needed): every project you've built has its own folder there.
 - After building a project, save a short brain note (folder "projects"): its name, folder, stack, and how to open it.

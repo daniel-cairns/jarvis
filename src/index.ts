@@ -14,6 +14,7 @@ import { brainIndex, noteMap, readNote, saveNote } from "./tools/brain.js";
 import { openApp, realRunner } from "./tools/mac.js";
 import { ComputerControl, nativeHelper } from "./control/computer.js";
 import { CoffeeMode } from "./power/coffee.js";
+import { Tallyline } from "./tools/tallyline.js";
 import { RESTART_CHECK_MS, RESTART_REPORT_MS, restartBlocker, stillBlockedMessage, waitingMessage, type RestartState } from "./ui/restart.js";
 import { buildSessionsView } from "./ui/sessionsPanel.js";
 import type { SessionAction } from "./ui/orb.js";
@@ -265,12 +266,17 @@ async function main(): Promise<void> {
       onGitDiff: (msg) => void onGitDiff(msg),
       onPanelClosed: (kind) => {
         if (kind === "sessions") sessionsPanelOpen = false;
+        if (kind === "tallyline") tallylineOpen = false;
       },
       onSessionAction: (msg) => void onSessionAction(msg),
       onPanelOpened: (kind) => {
         if (kind === "sessions") {
           sessionsPanelOpen = true;
           void refreshSessions();
+        }
+        if (kind === "tallyline") {
+          tallylineOpen = true;
+          void refreshTallyline();
         }
       },
       onVolume: (msg) => void setVolume(msg.level ?? settings.volume + (msg.delta ?? 0)),
@@ -681,6 +687,7 @@ async function main(): Promise<void> {
       pendingTranscript = {};
       return "Recording starts as soon as this reply ends.";
     }
+    if (action === "show_tallyline") return showTallyline();
     if (action === "show_sessions") {
       if (!orb?.alive) return "No orb is open.";
       await refreshSessions("user");
@@ -688,7 +695,7 @@ async function main(): Promise<void> {
     }
     if (!orb?.alive) return "No orb is open.";
     orb.send({ type: "ui", action });
-    const done: Record<Exclude<UiAction, "show_sessions" | "continue_session" | "reopen_windows" | "stop" | "show_brain" | "start_transcript" | "restart" | "type_only" | "voice_mode" | "sitrep" | "god_mode_on" | "god_mode_off" | "volume_up" | "volume_down" | "set_volume" | "move" | "show_terminal" | "show_git">, string> = {
+    const done: Record<Exclude<UiAction, "show_tallyline" | "show_sessions" | "continue_session" | "reopen_windows" | "stop" | "show_brain" | "start_transcript" | "restart" | "type_only" | "voice_mode" | "sitrep" | "god_mode_on" | "god_mode_off" | "volume_up" | "volume_down" | "set_volume" | "move" | "show_terminal" | "show_git">, string> = {
       minimise: "Minimised to the menu bar.",
       show: "The orb is back.",
       close_panels: "Closed the panels.",
@@ -1187,6 +1194,43 @@ async function main(): Promise<void> {
     return report.spoken;
   };
 
+  // ── The Tallyline panel: Dan's work ledger at a glance, live while it's open; it expands to the full app ──
+  const tallyline = new Tallyline(path.join(cfg.workspaceDir, "tallyline"), path.join(cfg.home, "logs", "tallyline.log"));
+  let tallylineOpen = false;
+  let tallylineTimer: NodeJS.Timeout | undefined;
+  /** Sends the panel Tallyline's summary (or why it can't). `owner: "user"` opens it; otherwise it only updates. */
+  const refreshTallyline = async (owner?: "user") => {
+    if (owner) tallylineOpen = true;
+    if (!tallylineOpen || !orb?.alive) return;
+    try {
+      orb.send({ type: "tallyline", summary: await tallyline.summary(), ...(owner ? { owner } : {}) });
+    } catch (err) {
+      orb.send({ type: "tallyline", error: `Tallyline isn't answering (${(err as Error).message}).`, ...(owner ? { owner } : {}) });
+    }
+    clearInterval(tallylineTimer);
+    tallylineTimer = setInterval(() => void refreshTallyline(), 20_000);
+    tallylineTimer.unref();
+  };
+  /** ui_control show_tallyline: open the panel, starting Tallyline first if it isn't running; failures are shown. */
+  const showTallyline = async (): Promise<string> => {
+    if (!orb?.alive) return "No orb is open.";
+    remember("tallyline", "Tallyline", () => void showTallyline(), "tallyline");
+    tallylineOpen = true;
+    if (!(await tallyline.up())) {
+      orb.send({ type: "tallyline", starting: true, owner: "user" });
+      try {
+        await tallyline.ensureRunning();
+      } catch (err) {
+        const why = (err as Error).message;
+        console.log(`  [tallyline] ${why}`);
+        orb.send({ type: "tallyline", error: `I couldn't start Tallyline. ${why}` });
+        return `I couldn't start Tallyline: ${why}`;
+      }
+    }
+    await refreshTallyline("user");
+    return tallyline.ownsServer ? "Started Tallyline and opened its panel." : "Showing Tallyline.";
+  };
+
   // ── The open sessions panel: live while it's open, refreshed by run events (and gently every 20 s for app sessions) ──
   let sessionsPanelOpen = false;
   let sessionsOrder: string[] = [];
@@ -1513,6 +1557,8 @@ async function main(): Promise<void> {
   speaker.stop();
   // A restart (its flag file is there) keeps coffee mode for the next start; quitting ends it.
   coffee.shutdown(existsSync(path.join(cfg.home, "restart")));
+  // A Tallyline server she started herself goes with her (one Dan started is left running).
+  tallyline.stop();
   orb?.close();
   stopServing();
   rl.close();

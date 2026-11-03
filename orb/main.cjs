@@ -80,6 +80,44 @@ const WEB_PREFERENCES = {
   sandbox: true,
 };
 
+/** Tallyline's own server: the only address the expanded Tallyline panel may show. */
+const TALLYLINE_ORIGIN = "http://127.0.0.1:4317";
+
+/** The expanded Tallyline panel shows a web app, so it gets no bridge at all, its own storage, and a sandbox. */
+const TALLYLINE_PREFERENCES = { contextIsolation: true, nodeIntegration: false, sandbox: true, partition: "persist:tallyline" };
+
+/** Whether an address is on Tallyline's local server (exact origin: not another port, host or scheme). */
+function isTallyline(url) {
+  try {
+    return new URL(url).origin === TALLYLINE_ORIGIN;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The expanded Tallyline panel: it may move around Tallyline itself, but any other address (a Jira link, say) opens
+ * in the user's browser, and it can't open windows or ask for permissions (camera, location, notifications...).
+ */
+function hardenTallyline(w) {
+  const elsewhere = (url) => {
+    if (/^https?:/i.test(url)) shell.openExternal(url);
+  };
+  w.webContents.setWindowOpenHandler(({ url }) => {
+    if (isTallyline(url)) w.loadURL(url);
+    else elsewhere(url);
+    return { action: "deny" };
+  });
+  const guard = (e, url) => {
+    if (isTallyline(url)) return;
+    e.preventDefault();
+    elsewhere(url);
+  };
+  w.webContents.on("will-navigate", guard);
+  w.webContents.on("will-redirect", guard);
+  w.webContents.session.setPermissionRequestHandler((_wc, _perm, done) => done(false));
+}
+
 /** No window may navigate or open new windows; web links go to the user's browser instead. */
 function harden(w) {
   const external = (url) => {
@@ -210,6 +248,9 @@ app.whenReady().then(() => {
     transcript: { file: "transcript.html", width: 380, height: 560, win: null, last: null },
     // Dan's open sessions: only ever opened on request; while open it keeps itself up to date.
     sessions: { file: "sessions.html", width: 440, height: 520, win: null, last: null },
+    // Tallyline at a glance (sprint, today's time, latest issues), refreshed while open; and the full app, expanded.
+    tallyline: { file: "tallyline.html", width: 400, height: 460, win: null, last: null },
+    "tallyline-app": { url: true, width: 1100, height: 760, win: null, last: null },
   };
   /**
    * Panels Dan closed (✕, or "close your panels"). They stay closed: updates only refresh the dropdown, and only an
@@ -252,7 +293,7 @@ app.whenReady().then(() => {
     if (!slab?.last) return;
     closed.delete(kind);
     // Reopened from the dropdown: Astra starts refreshing it again.
-    if (kind === "sessions") send({ type: "panel-opened", kind });
+    if (kind === "sessions" || kind === "tallyline") send({ type: "panel-opened", kind });
     if (slab.win && !slab.win.isDestroyed()) {
       slab.owner = "user";
       if (slab.collapsed) slab.win.webContents.send("jarvis", { type: "slab-expand" });
@@ -269,8 +310,15 @@ app.whenReady().then(() => {
     slab.last = msg;
     slab.request = requestNo;
     slab.lastUsed = Date.now();
+    const webApp = !!slab.url;
+    const appUrl = webApp ? `${TALLYLINE_ORIGIN}${typeof msg.path === "string" && msg.path.startsWith("/") ? msg.path : "/"}` : null;
     if (slab.win && !slab.win.isDestroyed()) {
       if (RANK[owner] > RANK[slab.owner ?? "auto"]) slab.owner = owner;
+      if (webApp) {
+        slab.win.loadURL(appUrl);
+        slab.win.show();
+        return;
+      }
       slab.win.webContents.send("jarvis", msg);
       slab.win.showInactive();
       return;
@@ -295,18 +343,23 @@ app.whenReady().then(() => {
       y: placed?.y ?? Math.max(workArea.y + 12, Math.min(bounds.y, workArea.y + workArea.height - height - 12)),
       minWidth: 340,
       minHeight: 220,
-      frame: false,
-      // Frosted glass: macOS blurs whatever is behind the window; panel.css adds tint, rim light and sheen.
-      vibrancy: "under-window",
-      visualEffectState: "active",
-      backgroundColor: "#00000000",
-      roundedCorners: true,
+      // The full Tallyline app is a normal window (title bar, native close, keyboard focus) that doesn't float.
+      ...(webApp
+        ? { title: "Tallyline", backgroundColor: "#0d0b08", fullscreenable: true, alwaysOnTop: false }
+        : {
+            frame: false,
+            // Frosted glass: macOS blurs whatever is behind the window; panel.css adds tint, rim light and sheen.
+            vibrancy: "under-window",
+            visualEffectState: "active",
+            backgroundColor: "#00000000",
+            roundedCorners: true,
+            fullscreenable: false,
+            skipTaskbar: true,
+            alwaysOnTop: true,
+          }),
       resizable: true,
-      fullscreenable: false,
-      skipTaskbar: true,
-      alwaysOnTop: true,
       show: false,
-      webPreferences: WEB_PREFERENCES,
+      webPreferences: webApp ? TALLYLINE_PREFERENCES : WEB_PREFERENCES,
     });
     slab.win = w;
     slab.pinned = false;
@@ -324,10 +377,21 @@ app.whenReady().then(() => {
       slab.pinned = false;
       slab.placed = false;
       // Astra stops refreshing a panel no one can see.
-      if (kind === "sessions") send({ type: "panel-closed", kind });
+      if (kind === "sessions" || kind === "tallyline") send({ type: "panel-closed", kind });
       sendPanels();
       scheduleLayout();
     });
+    if (webApp) {
+      hardenTallyline(w);
+      w.loadURL(appUrl);
+      // Opened on request, so it comes forward with the keyboard (unlike her panels, which never take focus).
+      w.once("ready-to-show", () => {
+        w.show();
+        sendPanels();
+        relayout();
+      });
+      return;
+    }
     w.setAlwaysOnTop(true, "floating");
     harden(w);
     w.loadFile(path.join(__dirname, slab.file));
@@ -551,6 +615,12 @@ app.whenReady().then(() => {
     if (m?.type === "panel-restore" && sender === win && typeof m.kind === "string" && slabs[m.kind]) return restoreSlab(m.kind);
     if (m?.type === "transform-done" && sender === win) return transformWaiter?.();
     if (m?.type === "fit" && sender === win && Number.isFinite(m.height)) return void fitHeight(m.height);
+    // The compact Tallyline panel's expand control and issue links: open the full app at that page.
+    if (m?.type === "tallyline-open" && sender && sender === slabs.tallyline.win) {
+      const where = typeof m.path === "string" && /^\/[\w\-./?=&%]*$/.test(m.path) ? m.path : "/";
+      closed.delete("tallyline-app");
+      return void openSlab("tallyline-app", { type: "tallyline-app", path: where }, "user");
+    }
     if (m?.type === "panel-close") {
       // Closed by its ✕: it stays closed (see `closed`).
       for (const [kind, slab] of Object.entries(slabs)) if (slab.win === sender) closed.add(kind);
@@ -643,13 +713,15 @@ app.whenReady().then(() => {
         lastCoffee = m;
         win.webContents.send("jarvis", m);
       }
-      else if (m.type === "sessions") {
+      // The sessions and Tallyline panels open only when asked for (owner "user"); live updates never reopen them.
+      else if (m.type === "sessions" || m.type === "tallyline") {
+        const slab = slabs[m.type];
         if (m.owner === "user") {
-          closed.delete("sessions");
-          openSlab("sessions", m, "user");
+          closed.delete(m.type);
+          openSlab(m.type, m, "user");
         } else {
-          slabs.sessions.last = m;
-          if (slabs.sessions.win && !slabs.sessions.win.isDestroyed()) slabs.sessions.win.webContents.send("jarvis", m);
+          slab.last = m;
+          if (slab.win && !slab.win.isDestroyed()) slab.win.webContents.send("jarvis", m);
         }
       }
       // A background run's transcript updates by itself (no owner); a closed one only refreshes the dropdown.
