@@ -1,6 +1,6 @@
 #!/bin/sh
 # Moves the Astra repo to a new folder (default ~/Code/jarvis -> ~/Workspace/jarvis) in one go: quits Astra, moves
-# the folder, rebuilds Astra.app (repo copy and /Applications) with the new path baked in, checks native modules,
+# the folder, rebuilds Astra.app in /Applications with the new path baked in, checks native modules,
 # runs typecheck and tests from the new place, and relaunches her. Every step is logged.
 #
 #   sh scripts/relocate.sh             do the move
@@ -72,7 +72,7 @@ quit_astra() {
 
 launch_astra() {
   [ "$NO_ASTRA" = 1 ] && { log "skipping launch (RELOCATE_NO_ASTRA=1)"; return 0; }
-  if [ -d "$APPS/Astra.app" ]; then run open "$APPS/Astra.app"; else run open "$1/Astra.app"; fi
+  run open "$APPS/Astra.app"
   [ "$MODE" = dry ] && return 0
   sleep 15
   pid="$(pids_matching 'node .*tsx.*src/index[.]ts' | tail -1)"

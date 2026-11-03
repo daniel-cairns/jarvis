@@ -103,11 +103,15 @@ Website teardowns only need Google Chrome.
 
 ## Run it
 
-Without typing a command: run `sh scripts/make-app.sh` once to build `Astra.app` in this folder (it also refreshes
-`/Applications/Astra.app` if you've copied it there), then open it like any app. She starts in the background, with
-no Terminal window, just her orb and menu-bar icon; her output goes to `~/.jarvis/logs/astra.log`. If she's already
-running you get a notification instead. The first time, macOS asks to let Astra use the microphone: allow it, or she
-hears nothing. To restart her, use **Restart Astra** in her menu-bar menu or say "Astra, restart".
+Without typing a command: run `npm run app` once to build `Astra.app` and install it in `/Applications`, then open
+it like any app. She starts in the background, with no Terminal window, just her orb and menu-bar icon; her output
+goes to `~/.jarvis/logs/astra.log`. If she's already running you get a notification instead.
+
+The app is a small native launcher (`native/astra-launcher.swift`, icon from `native/astra-icon.svg`) that stays
+running as the parent of everything she starts, so macOS grants permissions to Astra herself. It's signed with a
+local identity ("Astra Local Signing", created in your login keychain on the first build), so rebuilding never
+resets those permissions, and code changes never need a rebuild because the app runs this folder in place. The first
+time you open it, macOS asks for the microphone, Accessibility and Screen Recording: allow each once, and they stick. To restart her, use **Restart Astra** in her menu-bar menu or say "Astra, restart".
 
 **Operating Mac apps.** Astra can use any app the way you would (the `computer_*` tools): she reads its Accessibility
 tree, falling back to screenshots, and clicks, types, presses keys and scrolls through a small Swift helper
@@ -115,11 +119,11 @@ tree, falling back to screenshots, and clicks, types, presses keys and scrolls t
 types into password fields, asks on a card before anything that sends, buys, deletes, submits or changes system
 settings, logs every action, and shows an orange edge round the screen while she's in control. Say "stop" or press
 Control-Option-Escape to halt her. She needs **Accessibility** and, for screenshots, **Screen Recording** in System
-Settings → Privacy & Security, for Astra (or Terminal, if you start her there); she opens the right pane if either is
-missing.
+Settings → Privacy & Security, for Astra (or Terminal, if you start her there with `npm start`); she opens the right
+pane if either is missing.
 
 `Astra.app` has this folder's path baked in. To move the repo, use `scripts/relocate.sh` (it quits her, moves the
-folder, rebuilds both copies of the app, runs the checks and relaunches her; `--dry-run` to preview, `--rollback` to
+folder, rebuilds the app, runs the checks and relaunches her; `--dry-run` to preview, `--rollback` to
 undo). Set `RELOCATE_TO` for somewhere other than `~/Workspace/jarvis`.
 
 ```bash
