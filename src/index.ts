@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { existsSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import readline from "node:readline";
 import { PassThrough } from "node:stream";
@@ -14,6 +14,7 @@ import { brainIndex, noteMap, readNote, saveNote } from "./tools/brain.js";
 import { openApp, realRunner } from "./tools/mac.js";
 import { ComputerControl, nativeHelper } from "./control/computer.js";
 import { CoffeeMode } from "./power/coffee.js";
+import { RESTART_CHECK_MS, RESTART_REPORT_MS, restartBlocker, stillBlockedMessage, waitingMessage, type RestartState } from "./ui/restart.js";
 import { buildSessionsView } from "./ui/sessionsPanel.js";
 import type { SessionAction } from "./ui/orb.js";
 import type { RunPhase } from "./ui/orb.js";
@@ -252,6 +253,10 @@ async function main(): Promise<void> {
       },
       // "Quit Astra" from the menu bar: stop whatever is running, then leave the main loop.
       onQuit: () => {
+        // Quit means quit: a restart that was waiting must not fire when the interrupted reply ends (that's why
+        // "Quit Astra" used to restart her) and no restart flag may be left for the launcher to see.
+        cancelPendingRestart();
+        rmSync(path.join(cfg.home, "restart"), { force: true });
         interrupt();
         quitting = true;
         lines.inject("/quit");
@@ -843,9 +848,25 @@ async function main(): Promise<void> {
     }
   };
 
+  /** What a restart would be waiting on right now. */
+  const restartState = (): RestartState => ({
+    busy,
+    running: sessionRunner.list().filter((j) => j.status === "running").map((j) => `${j.id} (${j.label})`),
+  });
+  let restartTimer: NodeJS.Timeout | undefined;
+  let restartSince = 0;
+  let restartReported = false;
+  const cancelPendingRestart = () => {
+    pendingRestart = false;
+    clearInterval(restartTimer);
+    restartTimer = undefined;
+  };
+
   const requestRestart = (): string => {
-    const running = sessionRunner.list().filter((j) => j.status === "running");
-    if (!busy && !running.length) {
+    if (quitting) return "I'm already on my way out.";
+    const state = restartState();
+    if (!restartBlocker(state)) {
+      cancelPendingRestart();
       rememberSession();
       writeFileSync(path.join(cfg.home, "restart"), new Date().toISOString());
       console.log("\n(restarting)");
@@ -853,15 +874,30 @@ async function main(): Promise<void> {
       lines.inject("/quit");
       return "Restarting.";
     }
-    pendingRestart = true;
-    return running.length
-      ? `I'll restart once ${running.map((j) => j.label).join(" and ")} ${running.length === 1 ? "has" : "have"} finished.`
-      : "I'll restart as soon as this reply ends.";
+    // It has to wait. It used to be checked only when a reply or a run ended, so a restart asked for at other times
+    // could wait forever; now it's re-checked every few seconds, and if it's still blocked after a while she says by
+    // what, rather than having promised a restart that never comes.
+    if (!pendingRestart) {
+      pendingRestart = true;
+      restartSince = Date.now();
+      restartReported = false;
+      restartTimer = setInterval(restartIfDue, RESTART_CHECK_MS);
+      restartTimer.unref();
+    }
+    return waitingMessage(state);
   };
   const restartIfDue = () => {
-    if (pendingRestart && !busy && !sessionRunner.list().some((j) => j.status === "running")) {
-      pendingRestart = false;
+    if (!pendingRestart || quitting) return;
+    const state = restartState();
+    if (!restartBlocker(state)) {
+      cancelPendingRestart();
       void say("Restarting now.").then(requestRestart);
+    } else if (!restartReported && Date.now() - restartSince >= RESTART_REPORT_MS) {
+      restartReported = true;
+      const note = stillBlockedMessage(state);
+      console.log(`\n  ${note}`);
+      orb?.send({ type: "caption", role: "status", text: note });
+      void say(note);
     }
   };
 
@@ -1387,6 +1423,9 @@ async function main(): Promise<void> {
     const input = await getInput(voiceMode ? "\n[Enter to talk] > " : "\n> ", undefined, followUp);
     followUp = false;
     if (input === null) break;
+    // A quit or restart asked for while she was listening: its injected "/quit" can be taken as the Enter that ends
+    // the recording and never reach here, which left her running after promising a restart. The flag can't be lost.
+    if (quitting) break;
     if (pendingTranscript && !busy) {
       const { title } = pendingTranscript;
       pendingTranscript = null;
