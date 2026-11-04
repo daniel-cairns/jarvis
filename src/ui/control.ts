@@ -145,6 +145,8 @@ const SLASH: [RegExp, string][] = [
   [/^(?:quit|exit|shut down|shut yourself down|turn yourself off|close yourself completely)$/, "/quit"],
   [/^(?:turn off|stop|disable) (?:the )?wake word$/, "/wake off"],
   [/^(?:help|what can you do|what are your commands|list (?:your )?commands)$/, "/help"],
+  [/^(?:learn|enrol|enroll|train on|register|memori[sz]e|remember) (?:my|your) voice(?:print)?$|^only listen to (?:me|my voice)$/, "/voiceprint"],
+  [/^(?:forget|delete|remove|clear) my voice(?:print)?$|^listen to (?:everyone|anyone)(?: again)?$/, "/voiceprint off"],
   // Only unmistakable asks: "go on" or "carry on" can mean "yes, do it".
   [/^(?:more|tell me more|say more|more detail|more details|what else|tell me the rest|the rest|and the rest)$/, "/more"],
 ];

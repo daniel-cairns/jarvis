@@ -39,6 +39,7 @@ import { answeredNote, Briefing, BRIEF_REQUEST, runFinishedNote } from "./briefi
 import { Loops, loopsContext, plateHeadline, plateMarkdown } from "./loops.js";
 import { dropRepeats, headline, MoreQueue } from "./voice/brevity.js";
 import { Speaker } from "./voice/speaker.js";
+import { ENROL_SENTENCES, VoiceCheck, wavlmEmbedder, type VoiceVerdict } from "./voice/voiceprint.js";
 import { KokoroTts, SayTts } from "./voice/tts.js";
 import {
   parseSpokenChoice,
@@ -51,7 +52,7 @@ import {
 import { clock, splitStop, transcriptMarkdown, wordCount, type TranscriptLine } from "./voice/transcript.js";
 import { matchWake, matchWakeAnywhere, speechHint, stripOwnSpeech } from "./voice/wake.js";
 
-const HELP = `Say "Astra" to wake her. Commands: /new (fresh conversation), /continue (pick up the last one), /brain, /stack (tidy her windows), /sitrep, /god on|off, /restart, /type (type only: mic off, silent), /voice, /transcript [title] (record until "stop recording"), /mute, /unmute, /wake on|off, /help, /quit. Ctrl-C or Esc on the orb stops her.`;
+const HELP = `Say "Astra" to wake her. Commands: /new (fresh conversation), /continue (pick up the last one), /brain, /stack (tidy her windows), /sitrep, /god on|off, /restart, /type (type only: mic off, silent), /voice, /transcript [title] (record until "stop recording"), /mute, /unmute, /wake on|off, /voiceprint (learn your voice; /voiceprint off forgets it), /help, /quit. Ctrl-C or Esc on the orb stops her.`;
 // Prefixed to each request while god mode is on.
 const GOD_MODE =
   "(God mode is on: you command the user's Claude Code sessions. Hand project work to them rather than doing it yourself: " +
@@ -388,11 +389,46 @@ async function main(): Promise<void> {
 
   let lastInputWasVoice = false;
 
+  // Only Dan's voice (see VoiceCheck): once he has enrolled, phrases in other voices are ignored.
+  const voice = new VoiceCheck(cfg.home, wavlmEmbedder(path.join(cfg.home, "models", "speaker")));
+
+  /**
+   * A voice check for one recording. Eager, it starts as soon as the audio arrives, alongside transcription; lazy, only
+   * when asked (the always-on listener hears plenty that's never acted on, and needn't check it).
+   */
+  const voiceCheckFor = (eager: boolean) => {
+    let audio: Float32Array | null = null;
+    let pending: Promise<VoiceVerdict | null> | null = null;
+    const start = () => (pending ??= audio && voice.enrolled ? voice.verdict(audio).catch(() => null) : Promise.resolve(null));
+    return {
+      onAudio: (samples: Float32Array) => {
+        audio = samples;
+        if (eager) start();
+      },
+      result: start,
+    };
+  };
+
+  /** Whether a phrase may be acted on: Dan's voice, or one that can't be judged (no voiceprint, too short). */
+  const fromDan = async (check: ReturnType<typeof voiceCheckFor>): Promise<boolean> => {
+    const v = await check.result();
+    if (!v) return true;
+    console.log(`  (voice ${v.ok ? "is Dan's" : "isn't Dan's, ignored"}: ${v.score.toFixed(3)} against ${v.threshold.toFixed(3)} over ${v.seconds.toFixed(1)} s)`);
+    if (!v.ok) orb?.send({ type: "caption", role: "status", text: "That wasn't your voice, so I ignored it" });
+    return v.ok;
+  };
+
   /**
    * Records one spoken phrase and transcribes it. Ends when you pause or when `earlyStop` resolves (Enter or a click);
    * returns null if `signal` aborts or Astra is stopped. "Astra, …" at the start is stripped.
    */
-  const listenOnce = async (noSpeechMs: number, signal?: AbortSignal, earlyStop?: Promise<unknown>): Promise<string | null> => {
+  const listenOnce = async (
+    noSpeechMs: number,
+    signal?: AbortSignal,
+    earlyStop?: Promise<unknown>,
+    /** Hands over the recording and skips the voice check (enrolment records Dan before there's a voiceprint). */
+    onAudio?: (samples: Float32Array) => void,
+  ): Promise<string | null> => {
     refreshHint();
     await listener.start({ autoStop: true, pauseSec: cfg.pauseSec, gainDb: cfg.micGainDb, noSpeechMs });
     listening = true;
@@ -415,8 +451,12 @@ async function main(): Promise<void> {
       await listener.cancel();
       return null;
     }
-    const raw = await listener.stopAndTranscribe();
-    return matchWake(raw) ?? raw;
+    const check = voiceCheckFor(true);
+    const raw = await listener.stopAndTranscribe({ onAudio: onAudio ?? check.onAudio });
+    const text = matchWake(raw) ?? raw;
+    // Someone else: as if nothing was heard. "Stop" counts from anyone.
+    if (!onAudio && text.trim() && !isStopCommand(text) && !(await fromDan(check))) return "";
+    return text;
   };
 
   /**
@@ -446,7 +486,8 @@ async function main(): Promise<void> {
       await wakeListener.whenDone();
       clearInterval(watch);
       if (!wakeListener.recording) continue;
-      const heard = await wakeListener.stopAndTranscribe();
+      const check = voiceCheckFor(false);
+      const heard = await wakeListener.stopAndTranscribe({ onAudio: check.onAudio });
       // If she spoke at any point during the recording, her voice is in it, so the name may come anywhere.
       // Her voice is in the recording if she spoke during it, or had only just stopped when it began (the echo tail).
       const herVoice = talking || speaking || lastSpokeAt >= startedAt || lastSpeechEnd >= startedAt - ECHO_TAIL_MS;
@@ -460,6 +501,10 @@ async function main(): Promise<void> {
         request = null;
       }
       if (process.env.JARVIS_DEBUG_WAKE) console.log(`  (wake ${herVoice ? "over her voice" : "idle"} heard: "${heard}" → ${request === null ? "ignored" : `"${request}"`})`);
+      // Checked only when it would be acted on. Over her own voice the recording mixes two voices and can't be judged,
+      // so her echo filters above decide; a bare "stop" counts from anyone.
+      const acting = request !== null ? !isStopCommand(request) : Boolean(dialogParses && heard.trim());
+      if (acting && !herVoice && !(await fromDan(check))) continue;
       if (request !== null) onWake(request);
       else if (dialogParses && heard.trim()) answerWithoutName(heard, herVoice, startedAt);
     }
@@ -1537,6 +1582,43 @@ async function main(): Promise<void> {
     rl.close();
   });
 
+  /**
+   * "Learn my voice": Dan reads the enrolment sentences, one at a time, and they become his voiceprint. From then on
+   * she ignores other voices. Nothing is saved unless every sentence was heard.
+   */
+  const enrolVoice = async (): Promise<void> => {
+    if (!voiceMode) return void (await say("I need the microphone for that. Switch me to voice mode first."));
+    const panel = ENROL_SENTENCES.map((sentence, i) => `${i + 1}. ${sentence}`).join("\n");
+    if (orb?.alive) showPanel({ type: "detail", title: "Learn my voice", html: renderDetail(`Read each sentence when I say its number, in your normal voice.\n\n${panel}`) });
+    await say("I'll learn your voice. Read each sentence on screen when I say its number.");
+    const clips: Float32Array[] = [];
+    for (const [i, sentence] of ENROL_SENTENCES.entries()) {
+      let clip: Float32Array | null = null;
+      for (let attempt = 0; attempt < 2 && !clip; attempt++) {
+        orb?.send({ type: "caption", role: "status", text: `Read: ${sentence}` });
+        await say(attempt ? `Once more, number ${i + 1}.` : `Number ${i + 1}.`);
+        await speaker.whenIdle();
+        await echoTail();
+        let audio: Float32Array | null = null;
+        const heard = await listenOnce(8_000, undefined, undefined, (samples) => (audio = samples));
+        if (heard === null) return void (await say("Stopped. I haven't saved anything."));
+        // At least a second and a half of it: a cough or a half-read sentence would weaken the voiceprint.
+        const got = audio as Float32Array | null;
+        if (got && got.length >= 1.5 * 16_000) clip = got;
+      }
+      if (!clip) return void (await say("I couldn't hear that one, so I haven't saved anything. Say \"learn my voice\" to try again."));
+      clips.push(clip);
+    }
+    const { selfScores } = await voice.enrol(clips);
+    const weakest = Math.min(...selfScores);
+    console.log(`  (voiceprint saved; each reading against the rest: ${selfScores.map((s) => s.toFixed(3)).join(", ")})`);
+    await say(
+      weakest < 0.85
+        ? "Saved, though one reading didn't match the others well. If I start ignoring you, run this again somewhere quieter."
+        : "Got it. I'll only listen to you now. Say \"forget my voice\" to undo it.",
+    );
+  };
+
   /** Her turn for a background update nobody asked for (a run finished): she passes it on in her own words. */
   const brief = async (): Promise<void> => {
     busy = true;
@@ -1610,6 +1692,12 @@ async function main(): Promise<void> {
       continue;
     }
     if (request === "/continue") { await continueLast(); continue; }
+    if (request === "/voiceprint") { await enrolVoice(); continue; }
+    if (request === "/voiceprint off") {
+      voice.forget();
+      await say("Forgotten. I'll listen to anyone again.");
+      continue;
+    }
     // "Tell me more": the next part of what she held back, without a round trip. With nothing held, it's a request.
     if (request === "/more") {
       const next = more.next();
