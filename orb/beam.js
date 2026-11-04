@@ -1,7 +1,7 @@
 // Her beam on the control overlay: a gentle stream of ether from the orb's core to the window she's working in (see
 // sendBeam in main.cjs). Coordinates arrive in this window's own points. The stream ends on the window's edge nearest
-// the orb. A pale, slowly drifting haze (turbulence over soft wide strokes), a few faint wisps that sway smoothly
-// through it, and a soft glow breathing at each end. With reduced motion it's drawn once and stays still.
+// the orb, and flows round the window. A pale, slowly drifting haze (turbulence over soft wide strokes), faint wisps
+// that sway smoothly through it, and a soft glow breathing at each end. With reduced motion it's drawn once, still.
 (() => {
   const NS = "http://www.w3.org/2000/svg";
   const svg = document.getElementById("beam");
@@ -74,8 +74,16 @@
     const { from, to, end } = current;
     const breathe = still ? 1 : 0.85 + 0.15 * Math.sin(time * 1.3);
     layer.replaceChildren(
-      // The window she's in: a faint, soft rim.
-      el("rect", { x: to.x + 1, y: to.y + 1, width: Math.max(0, to.width - 2), height: Math.max(0, to.height - 2), rx: 12, fill: "rgba(150,200,255,0.03)", stroke: "rgba(170,210,255,0.32)", "stroke-width": 2, filter: "url(#wisp)" }),
+      // The window she's in: ether flowing round it. A soft haze along its edge, and two currents gliding round the
+      // border in opposite directions (pathLength 1000, so the dash pattern is the same on any size of window).
+      ...(() => {
+        const box = { x: to.x + 1, y: to.y + 1, width: Math.max(0, to.width - 2), height: Math.max(0, to.height - 2), rx: 12, fill: "none", pathLength: 1000 };
+        return [
+          el("rect", { ...box, fill: "rgba(150,200,255,0.03)", stroke: "rgba(165,205,255,0.22)", "stroke-width": 16, filter: "url(#ether)" }),
+          el("rect", { ...box, stroke: "#e6f5ff", "stroke-opacity": 0.5, "stroke-width": 1.6, "stroke-linecap": "round", "stroke-dasharray": "170 330", "stroke-dashoffset": (-time * 55).toFixed(1), filter: "url(#wisp)" }),
+          el("rect", { ...box, stroke: "#cfc2ff", "stroke-opacity": 0.38, "stroke-width": 1.2, "stroke-linecap": "round", "stroke-dasharray": "110 140 60 190", "stroke-dashoffset": (time * 32).toFixed(1), filter: "url(#wisp)" }),
+        ];
+      })(),
       // The haze: two wide, pale strokes, drifting.
       el("line", { x1: from.x, y1: from.y, x2: end.x, y2: end.y, stroke: "rgba(185,168,255,0.22)", "stroke-width": 64, "stroke-linecap": "round", filter: "url(#ether)" }),
       el("line", { x1: from.x, y1: from.y, x2: end.x, y2: end.y, stroke: "rgba(150,210,255,0.3)", "stroke-width": 26, "stroke-linecap": "round", filter: "url(#ether)" }),
