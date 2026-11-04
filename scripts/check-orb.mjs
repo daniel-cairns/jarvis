@@ -64,6 +64,26 @@ send({ type: "coffee", on: true, until: Date.now() + 3_600_000 });
 send({ type: "volume-level", level: 0.6 });
 await wait(300);
 send({ type: "coffee", on: false, until: null });
+// God mode commanding sessions: the glyph ring, a satellite each, the Eye on her wing; then a session newly waiting on
+// Dan pops the slate out, and with nobody pointing at it, it folds away after its six seconds.
+const at = Date.now();
+const entry = (key, glyph, meaning, satellite, needs = "Nothing") => ({
+  key, ref: `ref-${key}`, title: `Session ${key}`, status: satellite ?? "done", glyph, meaning, summary: `Doing ${key}`,
+  lastAction: "Edited a file", needs, at, onSlate: true, ...(satellite ? { satellite } : {}),
+});
+const commanded = [
+  entry("a", "working", "Working", "working"),
+  entry("b", "idle", "Idle", "idle"),
+  entry("c", "background", "Background run", "working"),
+  { ...entry("d", "done", "Done"), ref: undefined },
+];
+send({ type: "god-sessions", sessions: commanded });
+await wait(800);
+send({ type: "god-sessions", sessions: [entry("e", "waiting", "Waiting on you", "waiting", "Your next instruction"), ...commanded] });
+await wait(1500);
+// Untouched, it folds after 6 s, then gives the window its room back.
+await wait(6200);
+send({ type: "god-sessions", sessions: [] });
 send({ type: "mode", typeOnly: false, god: false });
 // Controlling the Mac: its overlay, and her ether beam to the app's window.
 send({ type: "control", on: true });
@@ -132,10 +152,14 @@ await new Promise((r) => child.on("exit", r));
 
 // Renderer console errors, and errors in the window process itself (a crash dialog there is just as broken).
 const errors = log.split("\n").filter((l) => /CONSOLE.*(Uncaught|Error)|Uncaught|TypeError|ReferenceError/i.test(l));
+// The slate logs when it opens and when it has folded (god.js): both must have happened.
+for (const [mark, what] of [["[slate] open", "pop out"], ["[slate] folded", "fold away"]]) {
+  if (!log.includes(mark)) errors.push(`God mode's slate didn't ${what} (no "${mark}" in the orb's log)`);
+}
 if (errors.length) {
   console.error(`Orb check failed:\n${errors.slice(0, 10).join("\n")}`);
   process.exit(1);
 }
 console.log(
-  "Orb check passed: every state, glyph and figure (Anubis, Thoth, god mode, the ether beam) and every panel played with no errors.",
+  "Orb check passed: every state, glyph and figure (Anubis, Thoth, god mode with its ring, satellites, Eye and slate, the ether beam) and every panel played with no errors.",
 );

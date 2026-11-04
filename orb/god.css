@@ -1,0 +1,258 @@
+/*
+ * God mode (god.js): the Eye on her left wing, the satellites orbiting her, the toast, and the glyph slate beside
+ * her. Colours are the prototype's, checked for WCAG AA (prototypes/god-slate/ACCESSIBILITY.md).
+ */
+:root {
+  --god-gold: #ecbc52;
+  --god-ink: #eef3ef;
+  --god-muted: #b9c7c1;
+  --god-amber: #ff9f1c;
+  --god-dim: #a88a4a;
+  --god-tip: #060a18;
+  --lapis-top: #1d3a8a;
+  --lapis-deep: #0d1c4a;
+}
+
+/* The window grows sideways for the slate (main.cjs setRoom). Pinned to the side it doesn't grow on, she stays put;
+   at the window's own width (main.cjs ORB_WIDTH) both pins are the same place. */
+main { width: 430px; }
+body.room-left main { margin-left: auto; }
+
+.svg-defs { position: absolute; width: 0; height: 0; overflow: hidden; }
+
+/* ── The Eye: on her left wing while God mode is on (the sun mirrors it on the right). Centred at (94, 190). ── */
+#eye {
+  position: absolute;
+  left: 81px;
+  top: 177px;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+#eye[hidden] { display: none; }
+#eye svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 3.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  filter: drop-shadow(0 0 2px rgba(236, 188, 82, 0.7));
+}
+#eye:hover svg, #eye:focus-visible svg, #eye[aria-expanded="true"] svg { filter: drop-shadow(0 0 5px rgba(236, 188, 82, 0.95)); }
+#eye:focus-visible { outline: 2px solid var(--reactor); outline-offset: 2px; }
+
+/* ── Satellites: one per commanded session, orbiting just outside her ring. ── */
+.satellites {
+  --sat-r: 106px;
+  position: absolute;
+  left: 160px;
+  top: 136px;
+  z-index: 3;
+  width: 0;
+  height: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  pointer-events: none;
+}
+.satellites[hidden] { display: none; }
+.orbit {
+  position: absolute;
+  width: 0;
+  height: 0;
+  transform: rotate(var(--start));
+  animation: god-orbit 60s linear infinite;
+}
+.arm { position: absolute; transform: translateY(calc(-1 * var(--sat-r))); }
+.upright {
+  position: absolute;
+  transform: rotate(calc(-1 * var(--start)));
+  animation: god-counter 60s linear infinite;
+}
+@keyframes god-orbit { from { transform: rotate(var(--start)); } to { transform: rotate(calc(var(--start) + 360deg)); } }
+@keyframes god-counter { from { transform: rotate(calc(-1 * var(--start))); } to { transform: rotate(calc(-1 * var(--start) - 360deg)); } }
+/* Hold still while Dan is pointing at or tabbing through them. */
+.satellites:hover .orbit, .satellites:hover .upright,
+.satellites:focus-within .orbit, .satellites:focus-within .upright { animation-play-state: paused; }
+
+.sat {
+  position: absolute;
+  width: 24px;
+  height: 24px;
+  margin: -12px 0 0 -12px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  pointer-events: auto;
+}
+.sat .dot { display: block; width: 9px; height: 9px; border-radius: 50%; }
+.sat.working .dot { background: #ffd978; box-shadow: 0 0 7px 2px rgba(236, 188, 82, 0.9); animation: god-pulse 1.6s ease-in-out infinite; }
+.sat.idle .dot { background: var(--god-dim); }
+.sat.waiting .dot { background: var(--god-amber); box-shadow: 0 0 0 3px rgba(255, 159, 28, 0.4), 0 0 9px rgba(255, 159, 28, 0.8); }
+@keyframes god-pulse { 50% { transform: scale(1.35); box-shadow: 0 0 12px 4px rgba(255, 217, 120, 0.95); } }
+.sat:focus-visible { outline: 3px solid #fff; outline-offset: 1px; box-shadow: 0 0 0 6px rgba(4, 8, 20, 0.9); }
+
+.sat + .tip {
+  position: absolute;
+  top: 14px;
+  left: 0;
+  z-index: 2;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 3px 8px;
+  border: 1px solid rgba(236, 188, 82, 0.6);
+  border-radius: 6px;
+  background: var(--god-tip);
+  color: var(--god-ink);
+  font-size: 12px;
+  white-space: nowrap;
+  transform: translateX(-50%);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s;
+}
+.upright:hover .tip, .sat:focus-visible + .tip { opacity: 1; }
+
+/* ── The toast: one line, across the top of her frame, for a few seconds. ── */
+.god-toast {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  z-index: 6;
+  max-width: 410px;
+  margin: 0;
+  padding: 5px 12px;
+  border: 1px solid rgba(236, 188, 82, 0.7);
+  border-radius: 999px;
+  background: var(--god-tip);
+  color: var(--god-ink);
+  font-size: 12px;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
+  transform: translateX(-50%);
+  pointer-events: none;
+  animation: god-fade 0.4s ease;
+}
+.god-toast[hidden] { display: none; }
+@keyframes god-fade { from { opacity: 0; } }
+
+/* ── The slate: a small wing of carved, gilded cartouches unfolding from her side. ── */
+.slate-wing {
+  position: absolute;
+  z-index: 4;
+  pointer-events: none;
+  transition: transform 0.5s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.35s ease, clip-path 0.5s cubic-bezier(0.2, 0.8, 0.2, 1);
+  clip-path: inset(-220px -150px -40px -150px);
+}
+.slate-wing[hidden] { display: none; }
+.slate-wing.to-left { transform-origin: right 54px; }
+.slate-wing.to-right { transform-origin: left 54px; }
+.slate-wing.folded { opacity: 0; transition-duration: 0.35s; }
+.slate-wing.to-left.folded { transform: rotate(-14deg) scaleX(0.12); clip-path: inset(-60px 0 -20px 90%); }
+.slate-wing.to-right.folded { transform: rotate(14deg) scaleX(0.12); clip-path: inset(-60px 90% -20px 0); }
+
+.slate-wing .wing-art { position: absolute; top: 0; overflow: visible; filter: drop-shadow(0 6px 10px rgba(0, 0, 0, 0.55)); }
+.slate-wing .wing-art * { pointer-events: visiblePainted; }
+.slate-wing.to-right .wing-art { left: 0; }
+.slate-wing.to-left .wing-art { right: -16px; transform: scaleX(-1); }
+.wing-band { fill: url(#slate-lapis); stroke: var(--god-gold); stroke-width: 1.6; stroke-linejoin: round; }
+
+.slate-cells { position: absolute; inset: 0; margin: 0; padding: 0; list-style: none; }
+.slate-cell { position: absolute; width: 0; height: 0; transition: left 0.4s ease, top 0.4s ease; }
+
+.slate-wing .cartouche {
+  position: absolute;
+  left: -15px;
+  top: -20px;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 40px;
+  padding: 0;
+  border: 1.5px solid rgba(236, 188, 82, 0.95);
+  border-radius: 15px / 20px;
+  background: rgba(3, 8, 24, 0.45);
+  box-shadow: inset 2px 2px 3px rgba(0, 0, 0, 0.8), inset -1px -1px 2px rgba(214, 232, 222, 0.18);
+  cursor: pointer;
+  pointer-events: auto;
+}
+/* The tie-bar at the foot of a cartouche. */
+.slate-wing .cartouche::after {
+  content: "";
+  position: absolute;
+  bottom: -5px;
+  left: 28%;
+  right: 28%;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--god-gold);
+  box-shadow: 1px 1px 0 rgba(0, 0, 0, 0.7);
+}
+.slate-wing .cartouche:hover { background: rgba(236, 188, 82, 0.16); }
+.slate-wing .cartouche:focus-visible { outline: 3px solid var(--reactor); outline-offset: 2px; }
+
+/* Help text: the cartouche's visible label, on hover and on keyboard focus (and it can be hovered itself). */
+.slate-tip {
+  position: absolute;
+  bottom: 26px;
+  left: 0;
+  z-index: 5;
+  width: 240px;
+  padding: 7px 11px 9px;
+  border: 1px solid rgba(236, 188, 82, 0.75);
+  border-radius: 8px;
+  background: var(--god-tip);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.55);
+  color: var(--god-ink);
+  font-size: 12px;
+  line-height: 1.4;
+  text-shadow: none;
+  user-select: text;
+  transform: translateX(-50%);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: auto;
+  transition: opacity 0.15s, visibility 0s linear 0.15s;
+}
+.slate-cell:hover .slate-tip, .slate-cell:focus-within .slate-tip { opacity: 1; visibility: visible; transition: opacity 0.15s; }
+.slate-tip p { margin: 0; overflow-wrap: anywhere; }
+.tip-head { font-weight: 600; }
+.tip-meaning { color: var(--god-gold); text-transform: uppercase; letter-spacing: 0.06em; font-size: 11px; }
+.tip-line { color: var(--god-muted); margin-bottom: 5px !important; }
+.tip-detail { display: grid; gap: 2px; margin: 0; }
+.tip-detail div { display: flex; gap: 6px; }
+.tip-detail dt { color: var(--god-muted); white-space: nowrap; }
+.tip-detail dt::after { content: ":"; }
+.tip-detail dd { margin: 0; overflow-wrap: anywhere; }
+.tip-detail .needs { padding-left: 6px; border-left: 3px solid var(--god-amber); }
+
+/* Glyphs: carved and gilded (god-glyphs.js glyphSvg). */
+.god-glyph { display: block; overflow: visible; }
+.god-glyph path { fill: none; stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; }
+.god-glyph .leaf path { stroke: url(#gold-leaf); }
+.god-glyph .cut-shadow path { stroke: #030504; stroke-width: 3.2; opacity: 0.9; }
+.god-glyph .cut-light path { stroke: rgba(214, 232, 222, 0.3); stroke-width: 3; }
+
+/* Reduced motion: no orbiting, pulsing or unfolding; the slate only fades. (The ring stays still: orb.js.) */
+@media (prefers-reduced-motion: reduce) {
+  .orbit, .upright, .sat.working .dot, .god-toast { animation: none; }
+  .slate-cell { transition: none; }
+  .slate-wing { transition: opacity 0.35s ease; }
+  .slate-wing.to-left.folded, .slate-wing.to-right.folded { transform: none; clip-path: inset(-220px -150px -40px -150px); }
+}

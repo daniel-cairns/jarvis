@@ -287,8 +287,9 @@ body.type-only .card .caption { max-height: 18em; color: #e2f9ff; text-shadow: 0
 /* Record and type-only sit further out on the same wing arc (OUTER_ANGLE in orb.js): centred at (116, 209), (204, 209). */
 #record { left: 103px; top: 196px; }
 #type-only { left: 191px; top: 196px; }
-/* The sun (bring all panels forward) sits centred just under them, above the status label: centred at (160, 243). */
-#front { left: 147px; top: 230px; }
+/* The sun (bring all panels forward) sits further out on her right wing (SUN_ANGLE in orb.js), mirroring God mode's
+   Eye on her left: centred at (226, 190). */
+#front { left: 213px; top: 177px; }
 #stop:disabled { cursor: default; }
 #stop svg, #minimise svg, #record svg, #type-only svg, #front svg {
   width: 16px;

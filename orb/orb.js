@@ -30,6 +30,9 @@
   const captionSpoken = document.getElementById("caption-spoken");
 
   const bridge = window.jarvis ?? { onMessage() {}, send() {} };
+  /** God mode's Eye, satellites and slate (god.js); the ring is drawn here. */
+  const god = window.astraGod;
+  const eyeButton = document.getElementById("eye");
   const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
   // Arc reactor meets the winged sun: turquoise reactor light, lapis and gold.
@@ -63,8 +66,10 @@
 
   let state = "idle";
   let colour = [...COLOURS.idle];
-  /** God mode: drawn as a gold halo over the ring (see draw), in every state. */
+  /** God mode: a ring of carved glyphs turning slowly round her (see drawGodRing), in every state. */
   let godMode = false;
+  /** 0..1: the ring fades in and out with God mode. */
+  let godAmt = 0;
   let level = 0;
   let spin = 0;
   let wingOpen = 0.6;
@@ -546,6 +551,7 @@
       document.body.classList.toggle("god-mode", !!m.god);
       godMode = !!m.god;
       godBadge.hidden = !godMode;
+      god.setMode(godMode);
       // The status says what she's doing; god mode has its own crown and halo, so idle reads as idle.
       LABELS.idle = on ? "Type only" : "Idle";
       if (state === "idle") stateLabel.textContent = LABELS.idle;
@@ -559,6 +565,7 @@
       document.body.classList.toggle("split", !!m.split);
     }
     else if (m.type === "collapse") (m.collapsed ? foldCard() : showCard());
+    else if (m.type === "god-sessions") god.setEntries(m.sessions);
     else if (m.type === "panels") panels = Array.isArray(m.panels) ? m.panels : [];
     else if (m.type === "transform") transformTo(m.to);
     else if (m.type === "volume-level" && !m.quiet) showVolume(m.level);
@@ -577,6 +584,8 @@
       el.setPointerCapture(e.pointerId);
       press = { x: e.screenX, y: e.screenY, moved: false };
       canvas.classList.add("dragging");
+      // The slate's room goes first, so the drag starts from the window's own size.
+      god.foldNow();
       bridge.send({ type: "drag-start" });
     });
     el.addEventListener("pointermove", (e) => {
@@ -634,7 +643,7 @@
   // The glyphs on the lower wings glow under the pointer (the glow is drawn on the canvas, under the buttons).
   let hovered = null;
   let recording = false;
-  for (const [el, id] of [[stopButton, "stop"], [document.getElementById("minimise"), "minimise"], [recordButton, "record"], [typeOnlyButton, "type-only"]]) {
+  for (const [el, id] of [[stopButton, "stop"], [document.getElementById("minimise"), "minimise"], [recordButton, "record"], [typeOnlyButton, "type-only"], [frontButton, "front"], [eyeButton, "eye"]]) {
     el.addEventListener("pointerenter", () => (hovered = id));
     el.addEventListener("pointerleave", () => (hovered = null));
     el.addEventListener("focus", () => (hovered = id));
@@ -664,10 +673,16 @@
       const fromCore = Math.hypot(e.clientX - (core.left + core.width / 2), e.clientY - (core.top + core.height / 2));
       // Her ring and core, gaps included, are her body; past them, whether a pixel of her (wings, a figure) is drawn.
       alpha = fromCore <= BODY_RADIUS ? 255 : ctx.getImageData(Math.floor((e.clientX - r.left) * dpr), Math.floor((e.clientY - r.top) * dpr), 1, 1).data[3];
+      // In God mode, pointing at her body pops the slate out.
+      god.pointer(fromCore <= BODY_RADIUS);
     } else if (el && el !== document.body && el !== document.documentElement && !el.matches("main, .orb-wrap, .state-wrap")) target = "control";
+    if (target !== "canvas") god.pointer(false);
     setClickThrough(!window.astraHit.isSolid({ target, alpha }));
   });
-  document.addEventListener("mouseleave", () => setClickThrough(true));
+  document.addEventListener("mouseleave", () => {
+    god.pointer(false);
+    setClickThrough(true);
+  });
 
   typeBox.addEventListener("submit", (e) => {
     e.preventDefault();
@@ -678,6 +693,8 @@
   });
 
   window.addEventListener("keydown", (e) => {
+    // Escape on the slate (or on her, with it out) folds it and stays there; anywhere else it folds it and stops her.
+    if (e.key === "Escape" && god.escape()) return e.preventDefault();
     // Typing to her: letters and digits are text, not answer shortcuts; Esc still stops her.
     if (e.target === typeText) {
       if (e.key === "Escape") bridge.send({ type: "stop" });
@@ -784,6 +801,49 @@
     ctx.stroke();
   }
 
+  // God mode's ring: the slate's own glyphs (god-glyphs.js), carved twice round a thin gold band just outside the
+  // chevrons, turning once every 90 s (still with reduced motion). Where her wings wrap the ring, its glyphs fade out.
+  const GOD_PATHS = new Map(Object.entries(window.astraGodGlyphs.GLYPHS).map(([name, g]) => [name, g.strokes.map((d) => new Path2D(d))]));
+  const GOD_RING = [...window.astraGodGlyphs.RING_GLYPHS, ...window.astraGodGlyphs.RING_GLYPHS];
+  function drawGodRing(cx, cy, gr, t, amt) {
+    const inner = gr + 19;
+    const outer = gr + 33;
+    const mid = (inner + outer) / 2;
+    ctx.save();
+    ctx.strokeStyle = rgba(GOLD, 0.75 * amt);
+    ctx.lineWidth = 1;
+    for (const rr of [inner, outer]) {
+      ctx.beginPath();
+      ctx.arc(cx, cy, rr, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    const turn = reducedMotion ? 0 : (t * Math.PI * 2) / 90;
+    const size = 10;
+    for (let i = 0; i < GOD_RING.length; i++) {
+      const a = -Math.PI / 2 + turn + (i / GOD_RING.length) * Math.PI * 2;
+      // How far round from straight down (0) to straight up (π): under her wings (about 1.1 either side) they fade.
+      const fromDown = Math.abs(((((a - Math.PI / 2) % (Math.PI * 2)) + Math.PI * 3) % (Math.PI * 2)) - Math.PI);
+      const show = Math.max(0, Math.min(1, (fromDown - 1.05) / 0.3)) * amt;
+      if (show <= 0.01) continue;
+      ctx.save();
+      ctx.translate(cx + Math.cos(a) * mid, cy + Math.sin(a) * mid);
+      ctx.rotate(a + Math.PI / 2);
+      ctx.scale(size / 48, size / 48);
+      ctx.translate(-24, -24);
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+      ctx.lineWidth = 4.4;
+      // Carved: a dark cut up and to the left of the gold leaf.
+      ctx.shadowColor = rgba([0, 0, 0], 0.9 * show);
+      ctx.shadowOffsetX = -1;
+      ctx.shadowOffsetY = -1;
+      ctx.strokeStyle = rgba([240, 200, 104], 0.95 * show);
+      for (const path of GOD_PATHS.get(GOD_RING[i])) ctx.stroke(path);
+      ctx.restore();
+    }
+    ctx.restore();
+  }
+
   /**
    * Lower wings that wrap the bottom of the glyph ring: three tiers of gold feathers laid along arcs concentric with the
    * ring, so they meet it cleanly and sweep up towards their tips. Stop (left) and minimise (right) sit on them; the
@@ -792,6 +852,8 @@
   const GLYPH_ANGLE = 0.24;
   // Record and type-only, further out along the wings.
   const OUTER_ANGLE = 0.55;
+  // The sun (right) and God mode's Eye (left), further out still (orb.css #front, god.css #eye).
+  const SUN_ANGLE = 0.88;
   function lowerWings(cx, cy, ringR, t, busy, hover, glow = 0) {
     const base = ringR + 9; // just outside the ring's outer line
     const tiers = [
@@ -829,7 +891,8 @@
       }
     }
     const glyphR = base + 11;
-    for (const [id, side, angle] of [["stop", -1, GLYPH_ANGLE], ["minimise", 1, GLYPH_ANGLE], ["record", -1, OUTER_ANGLE], ["type-only", 1, OUTER_ANGLE]]) {
+    const wingGlyphs = [["stop", -1, GLYPH_ANGLE], ["minimise", 1, GLYPH_ANGLE], ["record", -1, OUTER_ANGLE], ["type-only", 1, OUTER_ANGLE], ["front", 1, SUN_ANGLE], ["eye", -1, SUN_ANGLE]];
+    for (const [id, side, angle] of wingGlyphs) {
       const busyStop = (id === "stop" && busy) || (id === "record" && recording);
       const lit = (hover === id ? 1 : 0) + (busyStop ? 0.55 + 0.3 * Math.sin(t * 4) : 0);
       if (lit <= 0) continue;
@@ -1318,7 +1381,7 @@
     const controlsOpacity = Math.round(st.wings * 20) / 20;
     if (controlsOpacity !== shownOpacity) {
       shownOpacity = controlsOpacity;
-      for (const el of [stopButton, document.getElementById("minimise"), recordButton, typeOnlyButton, frontButton, stateLabel]) el.style.opacity = String(controlsOpacity);
+      for (const el of [stopButton, document.getElementById("minimise"), recordButton, typeOnlyButton, frontButton, eyeButton, stateLabel]) el.style.opacity = String(controlsOpacity);
     }
     const cx = W / 2;
     const cy = H / 2 + 6;
@@ -1383,6 +1446,10 @@
         ctx.stroke();
       }
     }
+
+    // God mode's ring goes under all her wings: the side wings cross it, and the lower ones wrap its lower half.
+    godAmt = lerp(godAmt, godMode ? 1 : 0, reducedMotion ? 1 : 0.06);
+    if (godAmt > 0.01) drawGodRing(cx, cy, r * 1.72, t, godAmt * Math.min(st.wings, st.rings));
 
     // Wings (glowing turquoise while she listens)
     const listenGlow = state === "listening" ? 0.65 + (reducedMotion ? 0 : 0.35 * Math.sin(t * 3)) : 0;
@@ -1538,22 +1605,6 @@
       ctx.lineWidth = 3;
       ctx.lineCap = "round";
       ctx.stroke();
-    }
-
-    // God mode: a gold halo flowing over the top of the ring, in every state, so it never hides what she's doing.
-    if (godMode) {
-      ctx.save();
-      ctx.beginPath();
-      ctx.arc(cx, cy, gr + 20, Math.PI * 1.12, Math.PI * 1.88);
-      ctx.setLineDash([2, 7]);
-      ctx.lineDashOffset = reducedMotion ? 0 : -t * 14;
-      ctx.strokeStyle = rgba(GOLD, 0.85);
-      ctx.lineWidth = 2.4;
-      ctx.lineCap = "round";
-      ctx.shadowColor = rgba(GOLD, 0.9);
-      ctx.shadowBlur = 8;
-      ctx.stroke();
-      ctx.restore();
     }
 
     // Core: white-hot sun disc
