@@ -37,6 +37,14 @@ describe("dropRepeats", () => {
     expect(dropRepeats("Done.", [{ text: "Done.", at: now }], now)).toBe("Done.");
   });
 
+  it("drops a god-mode finish announcement for the same session, but not for another one", () => {
+    const told = [{ text: "Jarvis local setup and verification has finished and is waiting on you.", at: now - 3 * 60_000 }];
+    expect(dropRepeats("Jarvis local setup and verification has finished and is waiting on you.", told, now)).toBe("");
+    expect(dropRepeats("Quench epic planning has finished and is waiting on you.", told, now)).toBe("Quench epic planning has finished and is waiting on you.");
+    const quench = [{ text: "Quench has finished and is waiting on you.", at: now - 60_000 }];
+    expect(dropRepeats("Temper has finished and is waiting on you.", quench, now)).toBe("Temper has finished and is waiting on you.");
+  });
+
   it("keeps a sentence that only shares a few words", () => {
     expect(dropRepeats("The Temper commits have been pushed now, all four of them.", said, now)).toBe("The Temper commits have been pushed now, all four of them.");
   });

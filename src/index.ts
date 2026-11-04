@@ -1424,8 +1424,10 @@ async function main(): Promise<void> {
     const titles = finished.filter((s) => !mine.has(s.id)).map((s) => s.title);
     if (!titles.length) return;
     const text = titles.length === 1 ? `${titles[0]} has finished and is waiting on you.` : `${titles.slice(0, -1).join(", ")} and ${titles.at(-1)} have finished and are waiting on you.`;
-    if (transcribing) console.log(`\n  (${text})`);
-    else void say(text);
+    // A session that finishes turn after turn would get the same sentence each time; once in a while is enough.
+    const fresh = dropRepeats(text, spoken);
+    if (transcribing || !fresh) console.log(`\n  (${text}${fresh ? "" : " · already said, not repeated"})`);
+    else void say(fresh);
   };
   /** God mode on or off: commanding your sessions, with finish announcements. Remembered between runs. */
   const setGodMode = (on: boolean): string => {
