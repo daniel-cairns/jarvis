@@ -159,8 +159,7 @@ app.whenReady().then(() => {
     fullscreenable: false,
     skipTaskbar: true,
     alwaysOnTop: true,
-    // God mode's chime (god.js) plays when Astra turns it on or off, which is never a click in the page itself.
-    webPreferences: { ...WEB_PREFERENCES, autoplayPolicy: "no-user-gesture-required" },
+    webPreferences: WEB_PREFERENCES,
   });
   win.setAlwaysOnTop(true, "floating");
   win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });

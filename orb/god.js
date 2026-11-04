@@ -1,4 +1,4 @@
-// God mode on the orb: the Eye on her left wing, one satellite per commanded session, the chime and toast, and the
+// God mode on the orb: the Eye on her left wing, one satellite per commanded session, the toast, and the
 // glyph slate that pops out beside her. (The rotating ring of glyphs is drawn on her canvas in orb.js.) Entries come
 // from Astra as { type: "god-sessions" } (src/ui/godSlate.ts); opening one sends the sessions panel's own
 // "session-action" message, which Astra checks again before acting.
@@ -55,34 +55,6 @@
   /** A fold still animating: it gives the window its room back when it ends. */
   let pendingFold = null;
   let foldTimer = 0;
-
-  // ── The chime: a soft generated tone, rising for on and falling for off. Web Audio only, no audio files. ──
-  let audio = null;
-  function playChime(rising) {
-    try {
-      audio ??= new AudioContext();
-      if (audio.state === "suspended") void audio.resume();
-      const notes = rising ? [659.25, 987.77] : [987.77, 659.25];
-      const start = audio.currentTime + 0.02;
-      notes.forEach((frequency, index) => {
-        const at = start + index * 0.16;
-        [1, 2.01].forEach((partial, p) => {
-          const osc = audio.createOscillator();
-          const gain = audio.createGain();
-          osc.type = "sine";
-          osc.frequency.value = frequency * partial;
-          gain.gain.setValueAtTime(0, at);
-          gain.gain.linearRampToValueAtTime(p === 0 ? 0.08 : 0.02, at + 0.02);
-          gain.gain.exponentialRampToValueAtTime(0.0001, at + 1.1);
-          osc.connect(gain).connect(audio.destination);
-          osc.start(at);
-          osc.stop(at + 1.2);
-        });
-      });
-    } catch (error) {
-      console.warn("Chime unavailable:", error);
-    }
-  }
 
   /** A one-line toast across the top of her frame, announced politely. */
   function showToast(text) {
@@ -393,7 +365,7 @@
   });
 
   window.astraGod = {
-    /** God mode from her "mode" message: the chime and toast only when it really changes. */
+    /** God mode from her "mode" message: the toast only when it really changes. */
     setMode(on) {
       const changed = modeSeen && on !== godOn;
       modeSeen = true;
@@ -406,10 +378,7 @@
       }
       renderSatellites();
       renderEye();
-      if (changed) {
-        playChime(on);
-        showToast(on ? "God mode on: Astra is commanding your sessions." : "God mode off: your sessions are your own again.");
-      }
+      if (changed) showToast(on ? "God mode on: Astra is commanding your sessions." : "God mode off: your sessions are your own again.");
     },
     /** A fresh list from Astra. Anything newly waiting, done or failed pops the slate out and is announced. */
     setEntries(list) {
