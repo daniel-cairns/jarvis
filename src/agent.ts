@@ -42,7 +42,7 @@ export type JarvisIO = {
   /** Shows a teardown's 3D map (or a text version without the orb); returns where it went. */
   graph?(title: string, graph: TeardownGraph, say?: string): string;
   /** Puts detail on screen (the orb's panel, or the terminal); returns where it went. */
-  show?(title: string, markdown: string, say?: string): string;
+  show?(title: string, markdown: string, say?: string): string | Promise<string>;
   /** Asks the user a yes/always/no question (spoken briefly, detail shown) and returns their raw answer. */
   ask(question: Approval): Promise<string>;
 };

@@ -17,6 +17,7 @@ import type { RepoState } from "../tools/git.js";
 import type { TermEntry } from "./worklog.js";
 import type { Position, UiAction } from "./control.js";
 import type { TeardownGraph } from "./graph.js";
+import type { PanelVisibility } from "./visibility.js";
 import type { BeamTarget } from "../control/computer.js";
 
 /** What the sessions panel can do with a row. */
@@ -92,6 +93,12 @@ export type FromOrb =
   | { type: "volume"; delta?: number; level?: number }
   | { type: "git-diff"; root: string; path: string }
   | { type: "panel-closed" | "panel-opened"; kind: string }
+  /** Whether a panel she just showed is really on screen (orb/visibility.cjs); result null if it couldn't be read. */
+  | { type: "panel-shown"; kind: string; result: PanelVisibility | null }
+  /** The result of bringing every panel forward. */
+  | { type: "panels-front"; results: PanelVisibility[] | null }
+  /** A line for her log from the orb (why it closed a panel). */
+  | { type: "log"; text: string }
   | { type: "session-action"; action: SessionAction; ref: string; run?: string; text?: string };
 
 export type OrbHandlers = {
@@ -113,6 +120,10 @@ export type OrbHandlers = {
   /** The git panel asked for one file's diff. */
   onGitDiff?(msg: { root: string; path: string }): void;
   onPanelClosed?(kind: string): void;
+  /** Whether a panel she just showed is really on screen. */
+  onPanelShown?(kind: string, result: PanelVisibility | null): void;
+  onPanelsFront?(results: PanelVisibility[] | null): void;
+  onLog?(text: string): void;
   onPanelOpened?(kind: string): void;
   onSessionAction?(msg: { action: SessionAction; ref: string; run?: string; text?: string }): void;
   /** Scroll on the orb (delta) or the menu-bar volume menu (level), both 0..1 scale. */
@@ -120,6 +131,14 @@ export type OrbHandlers = {
 };
 
 const ANSWERS = new Set<string>(["yes", "always", "no"]);
+
+/** A visibility result from the orb, checked field by field; null if it isn't one. */
+function visibilityOrNull(v: unknown): PanelVisibility | null {
+  const r = v as Partial<PanelVisibility> | null;
+  if (!r || typeof r !== "object" || typeof r.kind !== "string" || typeof r.onScreen !== "boolean" || typeof r.covered !== "boolean") return null;
+  const coveredBy = Array.isArray(r.coveredBy) ? r.coveredBy.filter((n): n is string => typeof n === "string").slice(0, 8) : [];
+  return { kind: r.kind, onScreen: r.onScreen, covered: r.covered, coveredBy };
+}
 
 /** Parses one line from the orb process; anything unexpected (including Chromium noise) is ignored. */
 export function parseFromOrb(line: string): FromOrb | null {
@@ -139,6 +158,13 @@ export function parseFromOrb(line: string): FromOrb | null {
   if ((msg.type === "brain-open" || msg.type === "brain-map") && typeof msg.path === "string" && msg.path.length <= 300) {
     return { type: msg.type, path: msg.path };
   }
+  if (msg.type === "panel-shown" && typeof msg.kind === "string" && msg.kind.length < 40) {
+    return { type: "panel-shown", kind: msg.kind, result: visibilityOrNull(msg.result) };
+  }
+  if (msg.type === "panels-front") {
+    return { type: "panels-front", results: Array.isArray(msg.results) ? msg.results.map(visibilityOrNull).filter((v): v is PanelVisibility => v !== null) : null };
+  }
+  if (msg.type === "log" && typeof msg.text === "string" && msg.text.length < 500) return { type: "log", text: msg.text };
   if ((msg.type === "panel-closed" || msg.type === "panel-opened") && typeof msg.kind === "string" && msg.kind.length < 40) {
     return { type: msg.type, kind: msg.kind };
   }
@@ -299,6 +325,9 @@ export class Orb {
     else if (msg?.type === "volume") this.handlers.onVolume?.(msg);
     else if (msg?.type === "git-diff") this.handlers.onGitDiff?.(msg);
     else if (msg?.type === "panel-closed") this.handlers.onPanelClosed?.(msg.kind);
+    else if (msg?.type === "panel-shown") this.handlers.onPanelShown?.(msg.kind, msg.result);
+    else if (msg?.type === "panels-front") this.handlers.onPanelsFront?.(msg.results);
+    else if (msg?.type === "log") this.handlers.onLog?.(msg.text);
     else if (msg?.type === "panel-opened") this.handlers.onPanelOpened?.(msg.kind);
     else if (msg?.type === "session-action") this.handlers.onSessionAction?.(msg);
     else if (msg?.type === "answer" || msg?.type === "question-answer") {

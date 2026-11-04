@@ -7,6 +7,8 @@ const path = require("node:path");
 const readline = require("node:readline");
 const { layoutPanels, placeNew, minFor } = require("./layout.cjs");
 const { housekeep, overCap } = require("./housekeeping.cjs");
+const { visibilityOf } = require("./visibility.cjs");
+const { execFile } = require("node:child_process");
 
 const ANSWERS = new Set(["yes", "always", "no"]);
 
@@ -277,7 +279,11 @@ app.whenReady().then(() => {
       if (requestNo !== at) return; // A new request started: leave everything for it.
       for (const slab of Object.values(slabs)) {
         if (!slab.win || slab.win.isDestroyed()) continue;
-        if (slab.owner === "auto" || (slab.owner === "astra" && slab.request < at)) slab.win.close();
+        if (slab.owner === "auto" || (slab.owner === "astra" && slab.request < at)) {
+          const kind = Object.keys(slabs).find((k) => slabs[k] === slab);
+          send({ type: "log", text: `closed the ${kind} panel: ${slab.owner === "auto" ? "it popped up while she worked and she has finished" : "she showed it during an earlier request"}` });
+          slab.win.close();
+        }
       }
     }, TIDY_MS);
   };
@@ -313,15 +319,65 @@ app.whenReady().then(() => {
    * The sun glyph (or "bring your panels forward"): every open panel in front of other apps' windows, the one used
    * most recently on top. Without focusing them, so typing stays where it was.
    */
-  const raisePanels = () => {
-    const open = Object.values(slabs).filter((s) => s.win && !s.win.isDestroyed() && s.win.isVisible());
-    open.sort((a, b) => (a.lastUsed ?? 0) - (b.lastUsed ?? 0));
-    // showInactive alone doesn't reorder a window that's already showing; moveTop brings it over other apps' windows
-    // without taking the keyboard.
-    for (const slab of open) {
-      slab.win.showInactive();
-      slab.win.moveTop();
+  /**
+   * Brings a panel in front of the app Dan is in, without taking his keyboard. Proven on 4 Nov with Chrome in front
+   * and Stage Manager on: showInactive and moveTop leave a window of an app that isn't active behind (19th in the
+   * window order, Chrome first), while a moment at the floating level puts it first and leaves Chrome the active app.
+   * It drops back to the normal level straight after, so other apps can still cover it later.
+   */
+  const bringForward = (w) => {
+    if (!w || w.isDestroyed()) return;
+    w.showInactive();
+    w.setAlwaysOnTop(true, "floating");
+    setTimeout(() => {
+      if (!w.isDestroyed()) w.setAlwaysOnTop(false);
+    }, 250);
+  };
+
+  /** The on-screen windows, front to back, from the Mac control helper; null if it can't be read. */
+  const HELPER = path.join(process.env.JARVIS_HOME || path.join(require("node:os").homedir(), ".jarvis"), "bin", "astra-ax");
+  const screenWindows = () =>
+    new Promise((resolve) => {
+      execFile(HELPER, ["windows"], { timeout: 3000 }, (err, stdout) => {
+        if (err) return resolve(null);
+        try {
+          const list = JSON.parse(stdout);
+          resolve(Array.isArray(list) ? list : null);
+        } catch {
+          resolve(null);
+        }
+      });
+    });
+
+  /** Whether these panels can really be seen now: [{ kind, onScreen, covered, coveredBy }], or null if unknown. */
+  const checkVisible = async (kinds) => {
+    const list = await screenWindows();
+    if (!list) return null;
+    return kinds.map((kind) => {
+      const w = slabs[kind]?.win;
+      if (!w || w.isDestroyed() || !w.isVisible()) return { kind, onScreen: false, covered: false, coveredBy: [] };
+      return { kind, ...visibilityOf(list, process.pid, w.getBounds()) };
+    });
+  };
+
+  /** Tells Astra whether a panel she just showed is really on screen, once it has had a moment to settle. */
+  const reportShown = (kind) => {
+    setTimeout(async () => {
+      const result = await checkVisible([kind]);
+      send({ type: "panel-shown", kind, result: result ? result[0] : null });
+    }, 450);
+  };
+
+  const raisePanels = async () => {
+    const open = Object.entries(slabs).filter(([, s]) => s.win && !s.win.isDestroyed() && s.win.isVisible());
+    open.sort(([, a], [, b]) => (a.lastUsed ?? 0) - (b.lastUsed ?? 0));
+    // The one used most recently is lifted last, so it ends up on top.
+    for (const [, slab] of open) {
+      bringForward(slab.win);
+      await new Promise((r) => setTimeout(r, 30));
     }
+    await new Promise((r) => setTimeout(r, 450));
+    send({ type: "panels-front", results: open.length ? await checkVisible(open.map(([kind]) => kind)) : [] });
   };
 
   /**
@@ -344,13 +400,11 @@ app.whenReady().then(() => {
         return;
       }
       slab.win.webContents.send("jarvis", msg);
-      // Only a hidden panel or an explicit show comes forward (a live refresh stays where it sits). showInactive alone
-      // doesn't reorder a window that's already showing, so the ether reached a panel left behind other apps' windows;
-      // moveTop brings it over them without taking the keyboard.
+      // Only a hidden panel or an explicit show comes forward (a live refresh stays where it sits).
       if (raise || !slab.win.isVisible()) {
-        slab.win.showInactive();
-        slab.win.moveTop();
+        bringForward(slab.win);
         flashPanel(kind);
+        reportShown(kind);
       }
       return;
     }
@@ -432,11 +486,12 @@ app.whenReady().then(() => {
     w.loadFile(path.join(__dirname, slab.file));
     w.webContents.once("did-finish-load", () => {
       w.webContents.send("jarvis", msg);
-      w.showInactive();
+      bringForward(w);
       closeOverCap(kind);
       sendPanels();
       relayout();
       flashPanel(kind);
+      reportShown(kind);
     });
   };
 
@@ -448,13 +503,19 @@ app.whenReady().then(() => {
 
   /** A panel just opened: close the ones used longest ago if that makes too many. */
   const closeOverCap = (opened) => {
-    for (const kind of overCap(openPanels(), opened)) slabs[kind].win.close();
+    for (const kind of overCap(openPanels(), opened)) {
+      send({ type: "log", text: `closed the ${kind} panel: more than four were open and it was used longest ago` });
+      slabs[kind].win.close();
+    }
   };
 
   // Every half minute: close panels nobody has used for a while, and fold hand-placed ones back into the layout.
   setInterval(() => {
     const { close, rejoin } = housekeep(openPanels(), Date.now());
-    for (const kind of close) slabs[kind].win.close();
+    for (const kind of close) {
+      send({ type: "log", text: `closed the ${kind} panel: nobody had used it for five minutes` });
+      slabs[kind].win.close();
+    }
     for (const kind of rejoin) slabs[kind].pinned = false;
     if (rejoin.length) relayout("rejoin");
   }, 30_000).unref?.();

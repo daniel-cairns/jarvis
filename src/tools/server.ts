@@ -31,7 +31,7 @@ async function guarded(fn: () => Promise<unknown>): Promise<ToolText> {
 }
 
 /** Shows markdown in the detail panel; returns where it ended up, for the model to know. */
-export type ShowDetail = (title: string, markdown: string, say?: string) => string;
+export type ShowDetail = (title: string, markdown: string, say?: string) => string | Promise<string>;
 export type ShowGraph = (title: string, graph: TeardownGraph, say?: string) => string;
 export type AskQuestion = (spec: QuestionSpec) => Promise<QuestionAnswer | null>;
 export type UiControl = (action: UiAction, level?: number, position?: Position) => string | Promise<string>;

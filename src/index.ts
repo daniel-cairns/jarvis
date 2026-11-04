@@ -40,6 +40,7 @@ import { dropRepeats, headline, MoreQueue } from "./voice/brevity.js";
 import { Speaker } from "./voice/speaker.js";
 import { helpText } from "./abilities.js";
 import { heldDuringDemo, runDemo } from "./demo.js";
+import { frontReport, shownReport, type PanelVisibility } from "./ui/visibility.js";
 import { isResearch, Scribe } from "./scribe.js";
 import { ENROL_SENTENCES, enrolPanel, VoiceCheck, WEAK_READING, wavlmEmbedder, type VoiceVerdict } from "./voice/voiceprint.js";
 import { KokoroTts, SayTts } from "./voice/tts.js";
@@ -300,6 +301,18 @@ async function main(): Promise<void> {
       },
       onBrain: (msg) => void onBrain(msg),
       onGitDiff: (msg) => void onGitDiff(msg),
+      onPanelShown: (kind, result) => {
+        if (result && (!result.onScreen || result.covered)) console.log(`  [orb] ${shownReport(kind, "", result)}`);
+        for (const f of shownWaiters.get(kind) ?? []) f(result);
+        shownWaiters.delete(kind);
+      },
+      onPanelsFront: (results) => {
+        const waiting = frontWaiters;
+        frontWaiters = [];
+        for (const f of waiting) f(results);
+        if (!waiting.length) console.log(`  [orb] ${frontReport(results)}`);
+      },
+      onLog: (text) => console.log(`  [orb] ${text}`),
       onPanelClosed: (kind) => {
         if (kind === "sessions") sessionsPanelOpen = false;
         if (kind === "tallyline") tallylineOpen = false;
@@ -752,9 +765,10 @@ async function main(): Promise<void> {
       for (const n of notes) console.log(`  ${n.folder}/ ${n.title}`);
       return `Listed ${notes.length} notes in the terminal.`;
     }
+    const seen = panelShown("brain");
     orb.send({ type: "brain", notes, ...(owner ? { owner } : {}) });
     remember("brain", "Brain browser", () => void openBrain("user"));
-    return `Opened the brain browser with ${notes.length} notes.`;
+    return shownReport("brain", `Opened the brain browser with ${notes.length} notes.`, await seen);
   };
 
   // A note saved or changed (a new teardown, say) refreshes the brain browser if it's open; it never opens it.
@@ -798,6 +812,35 @@ async function main(): Promise<void> {
     return `Volume ${Math.round(settings.volume * 100)}%.`;
   };
 
+  // Whether the panels she shows really reach the screen: the orb checks the window order and reports back.
+  const shownWaiters = new Map<string, ((v: PanelVisibility | null) => void)[]>();
+  let frontWaiters: ((v: PanelVisibility[] | null) => void)[] = [];
+  /** Resolves with what the orb saw of this panel once it's shown, or null if no word comes within `ms`. */
+  const panelShown = (kind: string, ms = 6_000): Promise<PanelVisibility | null> =>
+    new Promise((resolve) => {
+      const done = (v: PanelVisibility | null) => {
+        clearTimeout(timer);
+        resolve(v);
+      };
+      const timer = setTimeout(() => {
+        shownWaiters.set(kind, (shownWaiters.get(kind) ?? []).filter((f) => f !== done));
+        resolve(null);
+      }, ms);
+      shownWaiters.set(kind, [...(shownWaiters.get(kind) ?? []), done]);
+    });
+  const panelsFront = (ms = 4_000): Promise<PanelVisibility[] | null> =>
+    new Promise((resolve) => {
+      const done = (v: PanelVisibility[] | null) => {
+        clearTimeout(timer);
+        resolve(v);
+      };
+      const timer = setTimeout(() => {
+        frontWaiters = frontWaiters.filter((f) => f !== done);
+        resolve(null);
+      }, ms);
+      frontWaiters.push(done);
+    });
+
   /** Astra working her own interface, by voice or via ui_control. */
   const runUi = async (command: UiCommand | UiAction): Promise<string> => {
     const { action, level, position } = typeof command === "string" ? { action: command, level: undefined, position: undefined } : command;
@@ -825,6 +868,12 @@ async function main(): Promise<void> {
     if (action === "show_brain") return openBrain();
     if (action === "reopen_windows") return windowTools.show("all");
     if (action === "restart") return requestRestart();
+    if (action === "panels_front") {
+      if (!orb?.alive) return "No orb is open.";
+      const seen = panelsFront();
+      orb.send({ type: "ui", action });
+      return frontReport(await seen);
+    }
     if (action === "demo") {
       if (busy) {
         pendingDemo = true;
@@ -1612,11 +1661,13 @@ async function main(): Promise<void> {
       console.log(`\n${graphAsText(title, graph)}\n`);
       return "Printed as text in the terminal (no orb is open).";
     },
-    show: (title, markdown, sayAlong) => {
+    show: async (title, markdown, sayAlong) => {
       if (orb?.alive) {
         more.setPanel(markdown);
+        const seen = panelShown("detail");
         showPanel({ type: "detail", title, html: renderDetail(markdown) }, sayAlong);
-        return "Shown in the detail panel.";
+        // Only "Shown" if it really is on screen (it used to say so while the panel sat behind Chrome).
+        return shownReport("detail", "Shown in the detail panel.", await seen);
       }
       console.log(`\n── ${title} ──\n${markdown}\n`);
       return "Printed in the terminal (no orb is open).";
