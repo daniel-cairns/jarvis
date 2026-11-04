@@ -316,7 +316,12 @@ app.whenReady().then(() => {
   const raisePanels = () => {
     const open = Object.values(slabs).filter((s) => s.win && !s.win.isDestroyed() && s.win.isVisible());
     open.sort((a, b) => (a.lastUsed ?? 0) - (b.lastUsed ?? 0));
-    for (const slab of open) slab.win.showInactive();
+    // showInactive alone doesn't reorder a window that's already showing; moveTop brings it over other apps' windows
+    // without taking the keyboard.
+    for (const slab of open) {
+      slab.win.showInactive();
+      slab.win.moveTop();
+    }
   };
 
   /**
@@ -339,9 +344,12 @@ app.whenReady().then(() => {
         return;
       }
       slab.win.webContents.send("jarvis", msg);
-      // showInactive orders the window to the front, so only a hidden panel or an explicit show gets it.
+      // Only a hidden panel or an explicit show comes forward (a live refresh stays where it sits). showInactive alone
+      // doesn't reorder a window that's already showing, so the ether reached a panel left behind other apps' windows;
+      // moveTop brings it over them without taking the keyboard.
       if (raise || !slab.win.isVisible()) {
         slab.win.showInactive();
+        slab.win.moveTop();
         flashPanel(kind);
       }
       return;
