@@ -67,18 +67,21 @@ describe("voice commands", () => {
 });
 
 describe("fitting the bar to Dan's microphone", () => {
-  it("lowers the full-phrase bar to just under his weakest good reading", async () => {
+  it("sets the bar a gap under his enrolment, because everyday speech scores lower than reading aloud", async () => {
     const { calibratedAdjust, thresholdFor } = await import("../src/voice/voiceprint.js");
-    // His real enrolment, without the stumbled first reading.
-    const adjust = calibratedAdjust([0.931, 0.884, 0.912, 0.914]);
-    expect(thresholdFor(4, adjust)).toBeCloseTo(0.864, 3);
-    // His everyday phrases that were refused against the old bar now get through.
-    expect(0.873).toBeGreaterThanOrEqual(thresholdFor(16, adjust));
+    // His real enrolment on 4 Nov (readings 0.97-0.99) and the everyday phrases refused against it.
+    const adjust = calibratedAdjust([0.978, 0.991, 0.972, 0.979, 0.982]);
+    expect(thresholdFor(4, adjust)).toBeCloseTo(0.892, 3);
+    for (const [score, seconds] of [[0.921, 5.6], [0.906, 5.2], [0.942, 4.6], [0.938, 3.8]] as const) {
+      expect(score).toBeGreaterThanOrEqual(thresholdFor(seconds, adjust));
+    }
+    // A phrase far from his voice is still refused.
+    expect(0.695).toBeLessThan(thresholdFor(4.9, adjust));
   });
 
   it("never raises the bar, and never lowers it so far that most voices get through", async () => {
     const { calibratedAdjust } = await import("../src/voice/voiceprint.js");
-    expect(calibratedAdjust([0.99, 0.98, 0.99])).toBe(0);
+    expect(calibratedAdjust([1, 1, 1])).toBeLessThanOrEqual(0);
     expect(calibratedAdjust([0.5, 0.6, 0.55])).toBe(-0.12);
   });
 });

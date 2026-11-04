@@ -415,12 +415,16 @@ async function main(): Promise<void> {
     };
   };
 
+  /** The phrase just heard was refused by the voice check, so "I didn't catch anything" would be wrong. */
+  let refusedVoice = false;
+  const REFUSED = "That didn't sound like you, so I ignored it. If it was you, type /voiceprint off";
+
   /** Whether a phrase may be acted on: Dan's voice, or one that can't be judged (no voiceprint, too short). */
   const fromDan = async (check: ReturnType<typeof voiceCheckFor>): Promise<boolean> => {
     const v = await check.result();
     if (!v) return true;
     console.log(`  (voice ${v.ok ? "is Dan's" : "isn't Dan's, ignored"}: ${v.score.toFixed(3)} against ${v.threshold.toFixed(3)} over ${v.seconds.toFixed(1)} s)`);
-    if (!v.ok) orb?.send({ type: "caption", role: "status", text: "That didn't sound like you, so I ignored it. If it was you, type /voiceprint off" });
+    if (!v.ok) refusedVoice = true;
     return v.ok;
   };
 
@@ -510,7 +514,10 @@ async function main(): Promise<void> {
       // Checked only when it would be acted on. Over her own voice the recording mixes two voices and can't be judged,
       // so her echo filters above decide; a bare "stop" counts from anyone.
       const acting = request !== null ? !isStopCommand(request) : Boolean(dialogParses && heard.trim());
-      if (acting && !herVoice && !(await fromDan(check))) continue;
+      if (acting && !herVoice && !(await fromDan(check))) {
+        orb?.send({ type: "caption", role: "status", text: REFUSED });
+        continue;
+      }
       if (request !== null) onWake(request);
       else if (dialogParses && heard.trim()) answerWithoutName(heard, herVoice, startedAt);
     }
@@ -665,6 +672,7 @@ async function main(): Promise<void> {
       .then((line) => (line === null ? new Promise<never>(() => {}) : line));
     // Straight after she has spoken, wait out the echo tail so the recording doesn't start with the end of her.
     if (listenNow) await echoTail();
+    refusedVoice = false;
     let heard = await listenOnce(listenNow ? 8_000 : 15_000, signal, pressed);
     if (heard && !isStopCommand(heard) && herEcho(heard)) {
       console.log("  (that was my own voice)");
@@ -674,9 +682,10 @@ async function main(): Promise<void> {
     if (lines.isClosed || signal?.aborted) return null;
     if (heard === null) return "";
     lastInputWasVoice = true;
-    if (heard || !listenNow) {
-      console.log(heard ? `You: ${heard}` : "(I didn't catch anything)");
-      orb?.send({ type: "caption", role: heard ? "you" : "status", text: heard || "I didn't catch anything" });
+    if (heard || !listenNow || refusedVoice) {
+      const missed = refusedVoice ? REFUSED : "I didn't catch anything";
+      console.log(heard ? `You: ${heard}` : `(${missed})`);
+      orb?.send({ type: "caption", role: heard ? "you" : "status", text: heard || missed });
     }
     return heard;
   };

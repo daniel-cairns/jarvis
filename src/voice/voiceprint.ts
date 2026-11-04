@@ -66,16 +66,19 @@ export function meanPrint(embeddings: readonly Float32Array[]): Float32Array {
 
 /** A reading that matches the others less than this is re-recorded before the voiceprint is saved. */
 export const WEAK_READING = 0.85;
-/** How far under Dan's own weakest good reading the bar sits, so his everyday phrases clear it. */
-const CALIBRATION_MARGIN = 0.02;
+/**
+ * How far under Dan's weakest enrolment reading the bar sits. Enrolment readings are cleaner than everyday speech
+ * (read close to the Mac, in a quiet moment): measured on 4 Nov 2026, his readings matched each other at 0.97-0.99
+ * while his everyday phrases scored 0.906-0.942 against the same print. So the bar sits a gap below enrolment.
+ */
+const CALIBRATION_MARGIN = 0.08;
 /** The most the bar is ever lowered: below this it would let most voices through. */
 const MAX_LOWERING = 0.12;
 
 /**
  * The `adjust` that fits the bar to Dan's microphone and room. The bar (thresholdFor) was measured on clean
- * studio recordings, where the same voice scores higher than through a laptop mic: his everyday phrases scored
- * 0.87–0.89 against a bar of 0.944. So the bar for a full phrase is set just under his own weakest reading.
- * Never raised, and never lowered more than MAX_LOWERING.
+ * studio recordings, where the same voice scores higher than through a laptop mic. So the bar for a full phrase is
+ * set CALIBRATION_MARGIN under his weakest enrolment reading. Never raised, and never lowered more than MAX_LOWERING.
  */
 export function calibratedAdjust(selfScores: readonly number[]): number {
   if (!selfScores.length) return 0;
