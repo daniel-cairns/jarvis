@@ -39,6 +39,7 @@ import { answeredNote, Briefing, BRIEF_REQUEST, runFinishedNote } from "./briefi
 import { Loops, loopsContext, plateHeadline, plateMarkdown } from "./loops.js";
 import { dropRepeats, headline, MoreQueue } from "./voice/brevity.js";
 import { Speaker } from "./voice/speaker.js";
+import { runDemo } from "./demo.js";
 import { ENROL_SENTENCES, VoiceCheck, wavlmEmbedder, type VoiceVerdict } from "./voice/voiceprint.js";
 import { KokoroTts, SayTts } from "./voice/tts.js";
 import {
@@ -52,7 +53,7 @@ import {
 import { clock, splitStop, transcriptMarkdown, wordCount, type TranscriptLine } from "./voice/transcript.js";
 import { matchWake, matchWakeAnywhere, speechHint, stripOwnSpeech } from "./voice/wake.js";
 
-const HELP = `Say "Astra" to wake her. Commands: /new (fresh conversation), /continue (pick up the last one), /brain, /stack (tidy her windows), /sitrep, /god on|off, /restart, /type (type only: mic off, silent), /voice, /transcript [title] (record until "stop recording"), /mute, /unmute, /wake on|off, /voiceprint (learn your voice; /voiceprint off forgets it), /help, /quit. Ctrl-C or Esc on the orb stops her.`;
+const HELP = `Say "Astra" to wake her. Commands: /new (fresh conversation), /continue (pick up the last one), /brain, /stack (tidy her windows), /sitrep, /god on|off, /restart, /type (type only: mic off, silent), /voice, /transcript [title] (record until "stop recording"), /mute, /unmute, /wake on|off, /voiceprint (learn your voice; /voiceprint off forgets it), /demo (a tour of everything she does), /help, /quit. Ctrl-C or Esc on the orb stops her.`;
 // Prefixed to each request while god mode is on.
 const GOD_MODE =
   "(God mode is on: you command the user's Claude Code sessions. Hand project work to them rather than doing it yourself: " +
@@ -255,8 +256,11 @@ async function main(): Promise<void> {
   });
 
   /** Stops speech, listening, a pending approval, control of the Mac and the request in progress. Returns whether anything was running. */
+  // The demo tour while it runs (see demo.ts): a stop ends it.
+  let demoAbort: AbortController | null = null;
   const interrupt = (): boolean => {
-    const active = speaking || listening || busy;
+    const active = speaking || listening || busy || demoAbort !== null;
+    demoAbort?.abort();
     computer.stop();
     speaker.stop();
     transcribing?.abort();
@@ -1619,6 +1623,35 @@ async function main(): Promise<void> {
     );
   };
 
+  /** "Demo mode": her narrated tour of every state and ability, with made-up data and no Claude turns. */
+  const demo = async (): Promise<void> => {
+    if (!orb?.alive) return void (await say("The demo needs my orb on screen, and it isn't open."));
+    demoAbort = new AbortController();
+    busy = true;
+    syncOrb();
+    try {
+      await runDemo(
+        {
+          send: (msg) => orb?.send(msg),
+          say: (text, signal) => say(text, signal),
+          render: renderDetail,
+          question: (spec, signal) => orb!.question(spec, signal),
+          ask: (spoken, detail, signal) => orb!.ask(spoken, detail, signal),
+          restore: () => {
+            sendMode();
+            orb?.send({ type: "coffee", on: coffee.on, until: coffee.endsAt });
+          },
+        },
+        demoAbort.signal,
+      );
+    } finally {
+      demoAbort = null;
+      busy = false;
+      await speaker.whenIdle();
+      syncOrb();
+    }
+  };
+
   /** Her turn for a background update nobody asked for (a run finished): she passes it on in her own words. */
   const brief = async (): Promise<void> => {
     busy = true;
@@ -1693,6 +1726,7 @@ async function main(): Promise<void> {
     }
     if (request === "/continue") { await continueLast(); continue; }
     if (request === "/voiceprint") { await enrolVoice(); continue; }
+    if (request === "/demo") { await demo(); continue; }
     if (request === "/voiceprint off") {
       voice.forget();
       await say("Forgotten. I'll listen to anyone again.");

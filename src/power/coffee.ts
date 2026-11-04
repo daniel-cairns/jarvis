@@ -35,6 +35,11 @@ export class CoffeeMode {
     return this.child !== null;
   }
 
+  /** When it turns itself off (ms since the epoch), or null when it's off or open-ended. */
+  get endsAt(): number | null {
+    return this.on ? this.until : null;
+  }
+
   /** Turns coffee mode on, for `minutes` or until turned off. Calling it again replaces the timer. */
   start(minutes?: number): string {
     if (minutes !== undefined && !(minutes > 0)) return "Say how long as a number of minutes, or leave it open-ended.";
