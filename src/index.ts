@@ -25,7 +25,7 @@ import { WorkLog, type ToolEvent } from "./ui/worklog.js";
 import { SessionRunner, type Job } from "./tools/runner.js";
 import type { SessionTools, WindowTools } from "./tools/server.js";
 import { appLinks, findSession, listSessions, liveStatus, resolveProject, sendRefusal, type SessionSummary } from "./tools/sessions.js";
-import { newlyWaiting, sitrep } from "./tools/sitrep.js";
+import { FinishWatcher, sitrep } from "./tools/sitrep.js";
 import { markRestart, pickLastSession, saveLastSession, takeRestartMark } from "./tools/lastSession.js";
 import { stopServing } from "./tools/serve.js";
 import { isStopCommand, localCommand, redirectRequest, type UiAction, type UiCommand } from "./ui/control.js";
@@ -1450,14 +1450,12 @@ async function main(): Promise<void> {
   };
 
   // God mode: she commands your sessions (see GOD_MODE) and every 30 s checks which have finished a turn.
-  const seen = new Map<string, SessionSummary["status"]>();
+  // Announces a session only once it has been left waiting a couple of minutes, so never the one Dan is in.
+  const finishes = new FinishWatcher();
   let godTimer: NodeJS.Timeout | null = null;
   const watchSessions = async () => {
     const now = await liveSessions({ limit: 30, exclude: [cfg.workspaceDir] }).catch(() => [] as SessionSummary[]);
-    const first = seen.size === 0;
-    const finished = first ? [] : newlyWaiting(seen, now);
-    seen.clear();
-    for (const s of now) seen.set(s.id, s.status);
+    const finished = finishes.update(now);
     // Her own background runs are reported when they end anyway.
     const mine = new Set(sessionRunner.list().map((j) => j.sessionId));
     const titles = finished.filter((s) => !mine.has(s.id)).map((s) => s.title);
@@ -1474,7 +1472,7 @@ async function main(): Promise<void> {
     saveSettings(cfg.home, settings);
     if (godTimer) clearInterval(godTimer);
     godTimer = null;
-    seen.clear();
+    finishes.reset();
     if (on) {
       void watchSessions();
       godTimer = setInterval(() => void watchSessions(), 30_000);

@@ -54,3 +54,36 @@ describe("newlyWaiting", () => {
     expect(found.map((s) => s.title)).toEqual(["A"]);
   });
 });
+
+describe("FinishWatcher: god mode doesn't announce the session Dan is in", () => {
+  const at = Date.parse("2026-11-04T08:00:00Z");
+  const s = (id: string, status: "working" | "waiting" | "idle") => session(id, `Session ${id}`, status, 0);
+
+  it("announces a session once it has been left waiting two minutes, and only once", async () => {
+    const { FinishWatcher } = await import("../src/tools/sitrep.js");
+    const w = new FinishWatcher();
+    expect(w.update([s("a", "working")], at)).toEqual([]);
+    expect(w.update([s("a", "waiting")], at + 30_000)).toEqual([]);
+    expect(w.update([s("a", "waiting")], at + 90_000)).toEqual([]);
+    expect(w.update([s("a", "waiting")], at + 150_000).map((x) => x.id)).toEqual(["a"]);
+    expect(w.update([s("a", "waiting")], at + 180_000)).toEqual([]);
+  });
+
+  it("never announces one Dan answers within the two minutes (the one he's sitting in)", async () => {
+    const { FinishWatcher } = await import("../src/tools/sitrep.js");
+    const w = new FinishWatcher();
+    w.update([s("me", "working")], at);
+    for (let turn = 0; turn < 5; turn++) {
+      const t = at + turn * 120_000;
+      expect(w.update([s("me", "waiting")], t + 30_000)).toEqual([]);
+      expect(w.update([s("me", "working")], t + 60_000)).toEqual([]);
+    }
+  });
+
+  it("doesn't announce what was already waiting when god mode was turned on", async () => {
+    const { FinishWatcher } = await import("../src/tools/sitrep.js");
+    const w = new FinishWatcher();
+    w.update([s("old", "waiting")], at);
+    expect(w.update([s("old", "waiting")], at + 10 * 60_000)).toEqual([]);
+  });
+});

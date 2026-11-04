@@ -67,3 +67,48 @@ export function sitrep(sessions: SessionSummary[], runs: RunSummary[], now = Dat
 export function newlyWaiting(before: Map<string, SessionSummary["status"]>, now: SessionSummary[]): SessionSummary[] {
   return now.filter((s) => s.status === "waiting" && before.get(s.id) === "working");
 }
+
+/** How long a session must be left waiting before god mode mentions it. */
+export const ANNOUNCE_AFTER_MS = 2 * 60_000;
+
+/**
+ * God mode's ear on Dan's sessions: which ones have finished a turn and been left waiting a while. A session Dan is
+ * in gets his reply within that time and is never announced (she used to announce the session he was sitting in,
+ * every turn); one he has wandered away from is announced once, a couple of minutes after it finished.
+ */
+export class FinishWatcher {
+  private readonly seen = new Map<string, { status: SessionSummary["status"]; waitingSince?: number; told?: boolean }>();
+  private started = false;
+
+  constructor(private readonly delayMs = ANNOUNCE_AFTER_MS) {}
+
+  /** Takes the latest look at the sessions; returns the ones to announce now. */
+  update(now: SessionSummary[], at = Date.now()): SessionSummary[] {
+    const first = !this.started;
+    this.started = true;
+    const due: SessionSummary[] = [];
+    const next = new Map<string, { status: SessionSummary["status"]; waitingSince?: number; told?: boolean }>();
+    for (const s of now) {
+      const before = this.seen.get(s.id);
+      let entry: { status: SessionSummary["status"]; waitingSince?: number; told?: boolean } = { status: s.status };
+      if (s.status === "waiting") {
+        // Just finished (it was working last time we looked): start the clock. Already waiting: keep its clock.
+        if (!first && before?.status === "working") entry = { status: s.status, waitingSince: at };
+        else if (before?.status === "waiting") entry = { ...before };
+      }
+      if (entry.waitingSince !== undefined && !entry.told && at - entry.waitingSince >= this.delayMs) {
+        entry.told = true;
+        due.push(s);
+      }
+      next.set(s.id, entry);
+    }
+    this.seen.clear();
+    for (const [id, e] of next) this.seen.set(id, e);
+    return due;
+  }
+
+  reset(): void {
+    this.seen.clear();
+    this.started = false;
+  }
+}

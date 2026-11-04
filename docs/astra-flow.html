@@ -161,7 +161,7 @@
         <rect class="box" x="20" y="140" width="280" height="40"/><text x="32" y="165">God mode: one of your sessions finishes</text>
         <text class="small" x="330" y="165">checked every 30 s</text>
         <line x1="300" y1="160" x2="558" y2="160" marker-end="url(#arrow2)"/>
-        <rect class="hot" x="560" y="140" width="420" height="40"/><text x="572" y="158">“X has finished and is waiting on you”</text><text class="small" x="572" y="173">not repeated within 10 min; includes the session you’re sitting in</text>
+        <rect class="box" x="560" y="140" width="420" height="40"/><text x="572" y="158">“X has finished and is waiting on you”</text><text class="small" x="572" y="173">once it’s been left waiting 2 min, so never the one you’re in</text>
       </g>
       <g>
         <rect class="box" x="20" y="192" width="280" height="40"/><text x="32" y="217">A note changes in the brain folder</text>
@@ -194,7 +194,7 @@
         <rect class="box" x="560" y="400" width="420" height="40"/><text x="572" y="418">Coffee ends on time (and survives a restart)</text><text class="small" x="572" y="433">a display change re-lays out every panel</text>
       </g>
     </svg>
-    <figcaption>None of these need you to say anything. The dashed box is rough edge 4 below.</figcaption>
+    <figcaption>None of these need you to say anything. Every trigger here now behaves; rough edges 5 and 6 below are about the demo and the voiceprint.</figcaption>
   </figure>
 
   <h2>3. Her modes</h2>
@@ -222,7 +222,7 @@
     <li><span class="tag bug">FLOW</span><strong>✓ Fixed 4 Nov: talking to her mid-task cancelled the task; typing didn’t.</strong> Now a spoken request waits its turn too, and only a redirect (“stop, do X instead”, “no, the Temper one”, “never mind, …”) cancels. A spoken request while she’s busy interrupts her work and starts the new one; the same words typed wait their turn (<code>src/index.ts:572</code>). Saying “Astra, what time is it?” halfway through a teardown throws the teardown away. Fix: queue spoken requests like typed ones, and keep interrupting only for “stop”.</li>
     <li><span class="tag bug">KNOWLEDGE</span><strong>✓ Fixed 4 Nov: what she can do was written down in four places that drifted apart.</strong> Now one list (<code>src/abilities.ts</code>) builds the help text, the <code>ui_control</code> description and a “What you can do” section of her instructions, and tests check every phrase in it against her real command matcher. Before: The quick-command patterns (<code>src/ui/control.ts</code>), the help text (<code>src/index.ts:55</code>), the <code>ui_control</code> description (<code>src/tools/server.ts:208</code>) and her instructions (<code>src/prompt.ts</code>). Demo mode was in two of them, so she told you it didn’t exist and paid a session to rebuild it. Fix: one list of her abilities that generates all four.</li>
     <li><span class="tag bug">RESTART</span><strong>✓ Fixed 4 Nov: a restart forgot the conversation.</strong> Now she leaves a marker as she restarts and quietly carries on in the same conversation when she's back (no extra turn). Before: Every launch starts fresh unless you say “pick up where we left off”, so a question she asked just before is lost. Fix: after a restart she asked for or that came from a code change, resume the last conversation automatically.</li>
-    <li><span class="tag bug">NOISE</span><strong>God mode announces the session you’re sitting in.</strong> It tells you this Claude Code session has finished every time it ends a turn, while you’re looking at it. Fix: skip a session whose window is in front, or only announce once it has waited a few minutes.</li>
+    <li><span class="tag bug">NOISE</span><strong>✓ Fixed 4 Nov: god mode announced the session you were sitting in.</strong> Now a session is announced only once it has been left waiting two minutes: one you’re in gets your reply first and is never announced. Before: It tells you this Claude Code session has finished every time it ends a turn, while you’re looking at it. Fix: skip a session whose window is in front, or only announce once it has waited a few minutes.</li>
     <li><span class="tag bug">DEMO</span><strong>Real background events still reach the screen during the demo.</strong> A run’s card, a session refresh or a god-mode announcement can appear in the middle of the tour. Fix: hold everything that isn’t the demo’s own until it ends (the other session’s draft of this is saved as a patch).</li>
     <li><span class="tag bug">VOICE</span><strong>The voiceprint bar is fitted to you, but untested against anyone else.</strong> It now sits just under your own readings; how close other voices score through your mic is unknown. Fix: one test with a second person, reading the score lines in the log.</li>
     <li><span class="tag bug">STATE</span><strong>Idle in god mode looks like “always god mode”.</strong> When god mode is on, the status pill shows “GOD MODE” in place of “IDLE” (<code>orb/orb.js:517</code>), so you can’t tell idle from god mode, and the transmission window can still say “Thinking…” after she has finished. Fix: keep the pill for what she’s doing (idle, listening, thinking, speaking) and show god mode separately (next item).</li>
