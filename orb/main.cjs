@@ -339,7 +339,10 @@ app.whenReady().then(() => {
       }
       slab.win.webContents.send("jarvis", msg);
       // showInactive orders the window to the front, so only a hidden panel or an explicit show gets it.
-      if (raise || !slab.win.isVisible()) slab.win.showInactive();
+      if (raise || !slab.win.isVisible()) {
+        slab.win.showInactive();
+        flashPanel(kind);
+      }
       return;
     }
     slab.owner = owner;
@@ -424,6 +427,7 @@ app.whenReady().then(() => {
       closeOverCap(kind);
       sendPanels();
       relayout();
+      flashPanel(kind);
     });
   };
 
@@ -453,6 +457,9 @@ app.whenReady().then(() => {
    * Lays every visible panel out so all can be seen at once (see layout.cjs) on the display the orb is on, skipping any you've
    * dragged or resized by hand. `tidy` (the "tidy up" action) brings those back into the layout too.
    */
+  /** A panel moved by more than a nudge (the layout settling by a few points doesn't count). */
+  const movedFar = (a, b) => Math.abs(a.x - b.x) + Math.abs(a.y - b.y) > 24;
+  const kindOf = (slab) => Object.keys(slabs).find((k) => slabs[k] === slab);
   const relayout = (mode = "new") => {
     const tidy = mode === "tidy";
     if (tidy) for (const s of Object.values(slabs)) s.pinned = false;
@@ -466,6 +473,7 @@ app.whenReady().then(() => {
       for (const [, s] of visible) {
         if (s.placed || s.pinned) continue;
         const rect = placeNew({ area: workArea, orb, fixed, width: s.width, height: s.collapsed ? s.win.getBounds().height : s.height });
+        if (s.placed && movedFar(s.win.getBounds(), rect)) flashPanel(kindOf(s));
         s.win.setBounds(rect, true);
         s.placed = true;
         fixed.push(rect);
@@ -488,6 +496,7 @@ app.whenReady().then(() => {
       // The layout never goes below a panel's own minimum (a folded one is just its header).
       const [minW, minH] = minFor(kind);
       s.win.setMinimumSize(Math.min(minW, rects[kind].width), s.collapsed ? 60 : Math.min(minH, rects[kind].height));
+      if (s.placed && movedFar(s.win.getBounds(), rects[kind])) flashPanel(kind);
       s.win.setBounds(rects[kind], true);
       s.placed = true;
     }
@@ -721,45 +730,94 @@ app.whenReady().then(() => {
   /** When she last acted on another app; work panels stay put for a minute after. */
   let lastControlAt = 0;
   const CONTROL_QUIET_MS = 60_000;
-  /** The window she's working in, for the beam (screen points), or null. */
+  /** The window she's working in while she controls the Mac (screen points), or null. */
   let beamTarget = null;
+  /** Whether the "controlling your Mac" overlay is up: the app beam only shows then. */
+  let controlOn = false;
+  /** Panels she has just opened or moved, each flowing with ether for a moment: kind → when it fades. */
+  const flashes = new Map();
+  const FLASH_MS = 2600;
+  /** Her beam layer: a transparent, click-through window over the orb's display, above everything (beam.html). */
+  let beamWin = null;
+  let flashTimer;
+
+  /** A panel she just showed or moved gets a stream of ether from the orb for a moment. */
+  const flashPanel = (kind) => {
+    if (!slabs[kind]?.win || slabs[kind].win.isDestroyed()) return;
+    flashes.set(kind, Date.now() + FLASH_MS);
+    void sendBeam();
+    // Again once its layout animation has settled, so the stream lands where the panel ended up.
+    setTimeout(() => void sendBeam(), 350);
+  };
+
   /**
-   * Draws her beam on the control overlay: from the orb's core (the talk button's centre) to the target window, both
-   * in the overlay's own coordinates. Nothing while the overlay is hidden.
+   * Draws every stream on the beam layer: from the orb's core (the talk button's centre) to the app she's working
+   * in, and to each panel she has just shown or moved, all in the layer's own coordinates. Hides the layer when
+   * there's nothing to draw.
    */
   const sendBeam = async () => {
-    if (!controlWin || controlWin.isDestroyed() || !controlWin.isVisible()) return;
-    const area = controlWin.getBounds();
-    let to = null;
-    let from = null;
-    if (beamTarget && win.isVisible()) {
-      const core = await win.webContents
-        .executeJavaScript(`(() => { const r = document.getElementById("talk").getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; })()`)
-        .catch(() => null);
-      const orb = win.getBounds();
-      if (Array.isArray(core)) from = { x: orb.x + core[0] - area.x, y: orb.y + core[1] - area.y };
-      to = { x: beamTarget.x - area.x, y: beamTarget.y - area.y, width: beamTarget.width, height: beamTarget.height };
+    const now = Date.now();
+    for (const [kind, until] of flashes) {
+      const w = slabs[kind]?.win;
+      if (until <= now || !w || w.isDestroyed() || !w.isVisible()) flashes.delete(kind);
     }
-    controlWin.webContents.send("jarvis", { type: "beam", from, to: from ? to : null });
+    const targets = [];
+    if (controlOn && beamTarget) targets.push(beamTarget);
+    for (const kind of flashes.keys()) targets.push(slabs[kind].win.getBounds());
+    clearTimeout(flashTimer);
+    if (flashes.size) flashTimer = setTimeout(() => void sendBeam(), Math.max(50, Math.min(...flashes.values()) - now + 20));
+    if (!targets.length || !win.isVisible()) {
+      if (beamWin && !beamWin.isDestroyed()) {
+        beamWin.webContents.send("jarvis", { type: "beam", from: null, targets: [] });
+        beamWin.hide();
+      }
+      return;
+    }
+    const { bounds: area } = screen.getDisplayMatching(win.getBounds());
+    if (!beamWin || beamWin.isDestroyed()) {
+      beamWin = new BrowserWindow({
+        ...area, frame: false, transparent: true, hasShadow: false, focusable: false, resizable: false, movable: false,
+        skipTaskbar: true, show: false, webPreferences: WEB_PREFERENCES,
+      });
+      beamWin.setIgnoreMouseEvents(true);
+      beamWin.setAlwaysOnTop(true, "screen-saver");
+      beamWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+      harden(beamWin);
+      beamWin.loadFile(path.join(__dirname, "beam.html"));
+      beamWin.webContents.on("did-finish-load", () => void sendBeam());
+      return;
+    }
+    const core = await win.webContents
+      .executeJavaScript(`(() => { const r = document.getElementById("talk").getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; })()`)
+      .catch(() => null);
+    if (!Array.isArray(core) || beamWin.isDestroyed()) return;
+    const orb = win.getBounds();
+    beamWin.setBounds(area);
+    if (!beamWin.isVisible()) beamWin.showInactive();
+    beamWin.webContents.send("jarvis", {
+      type: "beam",
+      from: { x: orb.x + core[0] - area.x, y: orb.y + core[1] - area.y },
+      targets: targets.map((t) => ({ x: t.x - area.x, y: t.y - area.y, width: t.width, height: t.height })),
+    });
   };
   const controlIndicator = (on) => {
+    controlOn = on;
+    void sendBeam();
     if (!on) return void controlWin?.hide();
     const { bounds } = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
     if (!controlWin || controlWin.isDestroyed()) {
       controlWin = new BrowserWindow({
         ...bounds, frame: false, transparent: true, hasShadow: false, focusable: false, resizable: false, movable: false,
-        skipTaskbar: true, show: false, webPreferences: WEB_PREFERENCES,
+        skipTaskbar: true, show: false, webPreferences: { sandbox: true, contextIsolation: true },
       });
       controlWin.setIgnoreMouseEvents(true);
       controlWin.setAlwaysOnTop(true, "screen-saver");
       controlWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
       harden(controlWin);
       controlWin.loadFile(path.join(__dirname, "control.html"));
-      controlWin.webContents.on("did-finish-load", () => void sendBeam());
     }
     controlWin.setBounds(bounds);
     controlWin.showInactive();
-    void sendBeam();
   };
   // Control+Option+Escape: stop whatever she's doing, from any app.
   globalShortcut.register("Control+Alt+Escape", () => send({ type: "stop" }));

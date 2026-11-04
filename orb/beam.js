@@ -1,5 +1,5 @@
-// Her beam on the control overlay: a gentle stream of ether from the orb's core to the window she's working in (see
-// sendBeam in main.cjs). Coordinates arrive in this window's own points. The stream ends on the window's edge nearest
+// Her beam layer (beam.html): gentle streams of ether from the orb's core to each panel she has just shown or moved,
+// and to the window she's working in while she controls the Mac (see sendBeam in main.cjs). Coordinates arrive in this window's own points. The stream ends on the window's edge nearest
 // the orb, and flows round the window. A pale, slowly drifting haze (turbulence over soft wide strokes), faint wisps
 // that sway smoothly through it, and a soft glow breathing at each end. With reduced motion it's drawn once, still.
 (() => {
@@ -71,9 +71,14 @@
 
   function draw(time) {
     if (!current) return;
-    const { from, to, end } = current;
+    layer.replaceChildren(...current.targets.flatMap((to) => stream(current.from, to, time)));
+  }
+
+  /** One stream: from the orb to a window, and round it. */
+  function stream(from, to, time) {
+    const end = landing(from, to);
     const breathe = still ? 1 : 0.85 + 0.15 * Math.sin(time * 1.3);
-    layer.replaceChildren(
+    return [
       // The window she's in: ether flowing round it. A soft haze along its edge, and two currents gliding round the
       // border in opposite directions (pathLength 1000, so the dash pattern is the same on any size of window).
       ...(() => {
@@ -100,7 +105,7 @@
       ),
       el("circle", { cx: from.x, cy: from.y, r: 20 * breathe, fill: "url(#aura)" }),
       el("circle", { cx: end.x, cy: end.y, r: 16 * breathe, fill: "url(#aura)" }),
-    );
+    ];
   }
 
   /** About 30 times a second: the wisps sway and the ends breathe. */
@@ -117,7 +122,8 @@
   bridge.onMessage((m) => {
     if (m.type !== "beam") return;
     const was = current;
-    current = m.from && m.to ? { from: m.from, to: m.to, end: landing(m.from, m.to) } : null;
+    const targets = Array.isArray(m.targets) ? m.targets : m.to ? [m.to] : [];
+    current = m.from && targets.length ? { from: m.from, targets } : null;
     if (!current) return layer.replaceChildren();
     draw(performance.now() / 1000);
     if (!was && !still) requestAnimationFrame(loop);
