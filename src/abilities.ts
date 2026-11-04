@@ -24,7 +24,7 @@ export const ABILITIES: readonly Ability[] = [
   { name: "New conversation", what: "Start afresh, forgetting this conversation.", say: ["new conversation", "start fresh"], slash: "/new" },
   {
     name: "Pick up the last conversation",
-    what: "Resume the previous conversation after a restart. Only when Dan asks; it resumes once this reply ends.",
+    what: "Resume the previous conversation after an ordinary launch (after a restart you carry on in it by yourself). Only when Dan asks; it resumes once this reply ends.",
     say: ["pick up where we left off", "continue the last conversation"],
     slash: "/continue",
     ui: "continue_session",

@@ -1,10 +1,11 @@
 /**
- * "Continue last session": which of Astra's own conversations to resume after a restart. Every launch starts fresh;
- * this only runs when asked. Her conversations are the Claude Code sessions whose folder is her workspace (her
- * background runs work in other projects' folders), and the one she was in is recorded as she goes.
+ * "Continue last session": which of Astra's own conversations to resume. After a restart she carries on in the same
+ * one by herself (markRestart); any other launch starts fresh, and this runs only when asked. Her conversations are
+ * the Claude Code sessions whose folder is her workspace (her background runs work in other projects' folders), and
+ * the one she was in is recorded as she goes.
  */
 import fs from "node:fs/promises";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { projectsRoot } from "./sessions.js";
 
@@ -93,4 +94,31 @@ async function looksIntact(file: string): Promise<boolean> {
   } finally {
     await handle.close();
   }
+}
+
+const RESTART_MARK = "resume-after-restart";
+/** A restart this long ago or less still counts as "just restarted". */
+export const RESUME_WINDOW_MS = 10 * 60_000;
+
+/** Left as she quits to restart, so the next start knows to carry on in the same conversation. */
+export function markRestart(home: string, now = new Date()): void {
+  mkdirSync(home, { recursive: true });
+  writeFileSync(path.join(home, RESTART_MARK), now.toISOString());
+}
+
+/**
+ * Whether this start follows a restart (a marker from the last few minutes). Always clears the marker, so a later
+ * ordinary launch starts fresh as before.
+ */
+export function takeRestartMark(home: string, now = Date.now()): boolean {
+  const file = path.join(home, RESTART_MARK);
+  if (!existsSync(file)) return false;
+  let at = Number.NaN;
+  try {
+    at = Date.parse(readFileSync(file, "utf8").trim());
+  } catch {}
+  try {
+    rmSync(file, { force: true });
+  } catch {}
+  return Number.isFinite(at) && now - at >= 0 && now - at <= RESUME_WINDOW_MS;
 }

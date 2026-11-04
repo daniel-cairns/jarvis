@@ -71,3 +71,24 @@ describe("continue last session commands", () => {
     expect(parseFromOrb('{"type":"continue-session"}')).toEqual({ type: "continue-session" });
   });
 });
+
+describe("carrying on after a restart", () => {
+  it("a restart's marker says to carry on, once, and is cleared", async () => {
+    const { markRestart, takeRestartMark } = await import("../src/tools/lastSession.js");
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "restart-"));
+    const at = new Date("2026-11-04T08:00:00Z");
+    markRestart(home, at);
+    expect(takeRestartMark(home, at.getTime() + 40_000)).toBe(true);
+    // An ordinary launch afterwards starts fresh.
+    expect(takeRestartMark(home, at.getTime() + 60_000)).toBe(false);
+  });
+
+  it("an old marker (a restart that never came back) doesn't resume a launch hours later", async () => {
+    const { markRestart, RESUME_WINDOW_MS, takeRestartMark } = await import("../src/tools/lastSession.js");
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "restart-"));
+    const at = new Date("2026-11-04T08:00:00Z");
+    markRestart(home, at);
+    expect(takeRestartMark(home, at.getTime() + RESUME_WINDOW_MS + 1)).toBe(false);
+    expect(fs.existsSync(path.join(home, "resume-after-restart"))).toBe(false);
+  });
+});

@@ -26,7 +26,7 @@ import { SessionRunner, type Job } from "./tools/runner.js";
 import type { SessionTools, WindowTools } from "./tools/server.js";
 import { appLinks, findSession, listSessions, liveStatus, resolveProject, sendRefusal, type SessionSummary } from "./tools/sessions.js";
 import { newlyWaiting, sitrep } from "./tools/sitrep.js";
-import { pickLastSession, saveLastSession } from "./tools/lastSession.js";
+import { markRestart, pickLastSession, saveLastSession, takeRestartMark } from "./tools/lastSession.js";
 import { stopServing } from "./tools/serve.js";
 import { isStopCommand, localCommand, redirectRequest, type UiAction, type UiCommand } from "./ui/control.js";
 import { WindowHistory, type WindowKind } from "./ui/windows.js";
@@ -1748,6 +1748,17 @@ async function main(): Promise<void> {
   console.log(`Astra is ready. ${voiceMode ? `${howToTalk} Or type a request.` : "Type a request."}`);
   console.log(HELP);
 
+  // Back from a restart: carry on in the same conversation, quietly (no turn, nothing said), so a question she asked
+  // just before still has its context when Dan answers. Any other launch starts fresh.
+  if (takeRestartMark(cfg.home)) {
+    const pick = await pickLastSession({ home: cfg.home, workspaceDir: cfg.workspaceDir, current: jarvis.session });
+    if ("id" in pick) {
+      jarvis.resumeFrom(pick.id);
+      console.log(`  (back after the restart, still in our conversation ${pick.id})`);
+      orb?.send({ type: "caption", role: "status", text: "Back after the restart, still in our conversation" });
+    } else console.log(`  (after the restart: ${pick.problem} Starting fresh.)`);
+  }
+
   // After a spoken exchange Astra listens for your reply straight away, like a conversation.
   let followUp = false;
   for (;;) {
@@ -1879,8 +1890,11 @@ async function main(): Promise<void> {
   await wakeListener.cancel();
   speaker.stop();
   stopWatchingBrain();
+  const restarting = existsSync(path.join(cfg.home, "restart"));
+  // A restart carries on in the same conversation (see takeRestartMark at start-up); quitting doesn't.
+  if (restarting) markRestart(cfg.home);
   // A restart (its flag file is there) keeps coffee mode for the next start; quitting ends it.
-  coffee.shutdown(existsSync(path.join(cfg.home, "restart")));
+  coffee.shutdown(restarting);
   // A Tallyline server she started herself goes with her (one Dan started is left running).
   tallyline.stop();
   orb?.close();
