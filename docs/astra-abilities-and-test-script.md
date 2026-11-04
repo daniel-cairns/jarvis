@@ -160,6 +160,7 @@ Tick each line as you go. **Expect** is what a pass looks like.
 | F7 | During a session upload or download, watch the orb. | Anubis is always in front of the upload and download glyphs. |
 | F8 | "Show Tallyline." | A compact ledger panel; it starts Tallyline if it isn't running. |
 | F9 | Ask her to research something that takes a few seconds ("search the web for the latest Kokoro voices", or "read me the Signal teardown"). | After about 1.5 s Thoth, the ibis-headed scribe, rises behind the orb: his pen writes gold marks that drift up, and his moon brightens. The status says "Researching…". When she has it, one glint off the moon and he sinks away. A quick lookup shows nothing. If Anubis is needed meanwhile (a page check, a refused voice), Anubis takes the front. With reduced motion: a fade in and out only. Also in the demo, after Anubis. |
+| F10 | Hover each glyph on her lower wings (stop, record, type-only, minimise, the sun, and the Eye in God mode), then Tab onto one and press Escape. | Each shows a small help tip saying what it does, with Esc on stop (and on the Eye while the slate is out); the tip stays inside the window. Escape on a focused button hides its tip without stopping her; a second Escape stops her. With reduced motion the tip only fades in. |
 
 ### G. Brain and transcripts
 | # | Do | Expect |

@@ -38,23 +38,23 @@
         <svg id="slate-art" class="wing-art" aria-hidden="true" focusable="false"></svg>
         <ol id="slate-cells" class="slate-cells"></ol>
       </section>
-      <button id="stop" type="button" aria-label="Stop Astra" title="Stop (Esc)" disabled>
+      <button id="stop" type="button" aria-label="Stop Astra" aria-keyshortcuts="Escape" disabled>
         <!-- The "house" hieroglyph (O1): a square with an opening, so it still reads as stop. -->
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 19H5V5h14v14h-5"/><rect class="core" x="9" y="9" width="6" height="6" rx="0.5"/></svg>
       </button>
-      <button id="record" type="button" aria-label="Start a transcript" aria-pressed="false" title="Record a transcript · click again to stop">
+      <button id="record" type="button" aria-label="Start a transcript" aria-pressed="false">
         <!-- The scribe's palette hieroglyph (Y3): a palette with two ink wells and a reed pen. The wells glow red while recording. -->
         <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7.5" y="3" width="7" height="18" rx="1"/><circle class="well" cx="9.8" cy="6.2" r="1.1"/><circle class="well" cx="12.2" cy="6.2" r="1.1"/><path d="M11 10v8M17 21l3-14"/></svg>
       </button>
-      <button id="type-only" type="button" aria-label="Type only: microphone off and silent" aria-pressed="false" title="Type only · mic off, silent replies">
+      <button id="type-only" type="button" aria-label="Type only: microphone off and silent" aria-pressed="false">
         <!-- The mouth hieroglyph (D21), sealed by a bar while type-only mode is on. -->
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12c4-4.6 14-4.6 18 0c-4 4.6-14 4.6-18 0z"/><path class="seal" d="M5.5 12h13"/></svg>
       </button>
-      <button id="minimise" type="button" aria-label="Minimise Astra (reopen from the menu bar)" title="Minimise · reopen from the menu bar">
+      <button id="minimise" type="button" aria-label="Minimise Astra (reopen from the menu bar)">
         <!-- The "water" hieroglyph (N35): a ripple line, so it still reads as minimise. -->
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12.5l2.4-2.6 2.4 2.6 2.4-2.6 2.4 2.6 2.4-2.6 2.4 2.6 2.4-2.6 2.4 2.6"/></svg>
       </button>
-      <button id="front" type="button" aria-label="Bring all panels forward" title="Bring all panels forward">
+      <button id="front" type="button" aria-label="Bring all panels forward">
         <!-- The sun hieroglyph (N5): a disc with a dot, raising the panels over everything else. -->
         <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="7"/><circle class="core" cx="12" cy="12" r="1.8"/></svg>
       </button>
@@ -119,6 +119,7 @@
   <script src="glyphs.js"></script>
   <script src="god-glyphs.js"></script>
   <script src="god.js"></script>
+  <script src="wing-tips.js"></script>
   <script src="orb.js"></script>
 </body>
 </html>

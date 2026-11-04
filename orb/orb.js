@@ -655,6 +655,9 @@
     el.addEventListener("blur", () => (hovered = null));
   }
 
+  // Each wing button's help text (wing-tips.js), on hover and keyboard focus.
+  const wingTips = window.astraWingTips.create(document, [stopButton, recordButton, typeOnlyButton, document.getElementById("minimise"), frontButton, eyeButton]);
+
   // Clicks pass through the window's empty space to the app underneath (see hit.js), so her click area is the shape of
   // her body. The window stops ignoring the pointer whenever it's over something drawn; never mid-drag, or the drag
   // would lose its mouse-up.
@@ -665,8 +668,12 @@
     bridge.send({ type: "click-through", on });
   };
   window.addEventListener("mousemove", (e) => {
-    if (e.buttons) return setClickThrough(false);
+    if (e.buttons) {
+      wingTips.pointer(null);
+      return setClickThrough(false);
+    }
     const el = document.elementFromPoint(e.clientX, e.clientY);
+    wingTips.pointer(el, e.clientX, e.clientY);
     let target = "empty";
     let alpha = 0;
     if (el === canvas || el === talk) {
@@ -682,10 +689,12 @@
       god.pointer(fromCore <= BODY_RADIUS);
     } else if (el && el !== document.body && el !== document.documentElement && !el.matches("main, .orb-wrap, .state-wrap")) target = "control";
     if (target !== "canvas") god.pointer(false);
-    setClickThrough(!window.astraHit.isSolid({ target, alpha }));
+    // A wing button's help text, while it shows, is part of her too (it lets clicks through to what it covers).
+    setClickThrough(!(wingTips.covers(e.clientX, e.clientY) || window.astraHit.isSolid({ target, alpha })));
   });
   document.addEventListener("mouseleave", () => {
     god.pointer(false);
+    wingTips.pointer(null);
     setClickThrough(true);
   });
 
@@ -700,6 +709,8 @@
   window.addEventListener("keydown", (e) => {
     // Escape on the slate (or on her, with it out) folds it and stays there; anywhere else it folds it and stops her.
     if (e.key === "Escape" && god.escape()) return e.preventDefault();
+    // Escape on a wing button showing its help text hides the text; the next Escape stops her.
+    if (e.key === "Escape" && wingTips.escape(e.target)) return e.preventDefault();
     // Typing to her: letters and digits are text, not answer shortcuts; Esc still stops her.
     if (e.target === typeText) {
       if (e.key === "Escape") bridge.send({ type: "stop" });
@@ -921,6 +932,7 @@
     for (const { el, side, angle } of WING_BUTTONS) {
       el.style.translate = rounded ? `${(side * Math.sin(angle) * rounded).toFixed(2)}px ${(Math.cos(angle) * rounded).toFixed(2)}px` : "";
     }
+    wingTips.place();
   }
 
   /** The Eye of Horus in the core; `open` 0..1 squashes it shut. */

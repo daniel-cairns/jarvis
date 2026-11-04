@@ -321,6 +321,42 @@ body.god-mode #orb { filter: drop-shadow(0 0 9px rgba(236, 188, 82, 0.55)); }
 body.type-only.god-mode #orb { filter: saturate(0.55) brightness(0.85) drop-shadow(0 0 9px rgba(236, 188, 82, 0.55)); }
 #stop:focus-visible, #minimise:focus-visible, #record:focus-visible, #type-only:focus-visible, #front:focus-visible { outline: 2px solid var(--reactor); outline-offset: 2px; }
 
+/* The wing buttons' help text (wing-tips.js): dark glass, light text, a gold rim and key, like the god slate's. Placed
+   in the window's own coordinates and kept inside it. Clicks go through it to whatever it covers, but while it shows
+   it counts as part of her for click-through (wing-tips.js covers). */
+.wing-tip {
+  position: fixed;
+  z-index: 20;
+  max-width: 220px;
+  margin: 0;
+  padding: 5px 9px 6px;
+  border: 1px solid rgba(236, 188, 82, 0.75);
+  border-radius: 8px;
+  background: #060a18;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 8px 22px rgba(0, 0, 0, 0.55);
+  color: #eef3ef;
+  font: 12px/1.4 -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
+  text-shadow: none;
+  white-space: normal;
+  pointer-events: none;
+  animation: wing-tip-rise 0.14s ease-out;
+}
+.wing-tip[hidden] { display: none; }
+.wing-tip kbd {
+  display: inline-block;
+  margin-left: 2px;
+  padding: 0 5px;
+  border: 1px solid rgba(236, 188, 82, 0.6);
+  border-radius: 4px;
+  background: rgba(236, 188, 82, 0.1);
+  color: var(--accent);
+  font: 600 10.5px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.wing-tip-note { display: block; color: #b9c7c1; font-size: 11px; }
+@keyframes wing-tip-rise { from { opacity: 0; transform: translateY(3px); } }
+@keyframes wing-tip-fade { from { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .wing-tip { animation-name: wing-tip-fade; } }
+
 .hint {
   margin: 10px 0 0;
   font: 9.5px/1.3 ui-monospace, SFMono-Regular, Menlo, monospace;
