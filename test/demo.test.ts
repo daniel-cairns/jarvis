@@ -71,3 +71,24 @@ describe("demo mode", () => {
     expect(localCommand("what can you do")).toEqual({ slash: "/help" });
   });
 });
+
+describe("a command said after a few other words", () => {
+  it.each([
+    ["That's really great. Demo mode.", { slash: "/demo" }],
+    ["Nice one. What's on my plate?", { ui: { action: "show_plate" } }],
+    ["OK thanks. Tell me more.", { slash: "/more" }],
+  ])("hears %j", (s, expected) => {
+    expect(localCommand(s)).toEqual(expected);
+  });
+
+  it.each(["That's not what I meant. Restart.", "I'm done for today. Quit.", "Never mind that one. New conversation.", "Ugh. Minimise."])(
+    "doesn't act on a risky one at the end of something else: %j",
+    (s) => {
+      expect(localCommand(s)).toBeNull();
+    },
+  );
+
+  it("leaves a long sentence that merely ends in a command to her", () => {
+    expect(localCommand("When the Temper session finishes its review and pushes the branch, tell me. Demo mode.")).toBeNull();
+  });
+});

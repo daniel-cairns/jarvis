@@ -32,6 +32,7 @@ export const UI_ACTIONS = [
   "show_sessions",
   "show_tallyline",
   "show_plate",
+  "demo",
 ] as const;
 export type UiAction = (typeof UI_ACTIONS)[number];
 /** Where "move" can put the orb: a spot on screen, or a nudge in one direction. */
@@ -160,6 +161,24 @@ export type LocalCommand = { ui: UiCommand } | { slash: string };
  */
 export function localCommand(request: string): LocalCommand | null {
   if (request.trim().startsWith("/")) return null;
+  const whole = wholeCommand(request);
+  if (whole) return whole;
+  // "That's really great. Demo mode.": a command said after a few words of something else. Only harmless ones:
+  // a stray "...quit" or "...restart" at the end of a sentence about something else mustn't act.
+  const said = request.trim().split(/(?<=[.!?])\s+/);
+  if (said.length < 2 || said.slice(0, -1).join(" ").split(/\s+/).length > 8) return null;
+  const last = wholeCommand(said.at(-1)!);
+  if (!last) return null;
+  const risky = "slash" in last ? RISKY_SLASH.has(last.slash) : RISKY_UI.has(last.ui.action);
+  return risky ? null : last;
+}
+
+/** Commands that act too big to take from the tail of a longer sentence. */
+const RISKY_SLASH = new Set(["/quit", "/new", "/mute", "/wake off", "/voiceprint", "/voiceprint off"]);
+const RISKY_UI = new Set<UiAction>(["restart", "minimise", "close_panels", "type_only", "god_mode_on", "god_mode_off", "continue_session"]);
+
+/** The request as a whole is one of her quick commands. */
+function wholeCommand(request: string): LocalCommand | null {
   const words = commandWords(request);
   if (!words) return null;
   const ui = quickUiCommand(request) ?? quickUiCommand(words);

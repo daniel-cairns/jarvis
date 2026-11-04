@@ -786,6 +786,14 @@ async function main(): Promise<void> {
     if (action === "show_brain") return openBrain();
     if (action === "reopen_windows") return windowTools.show("all");
     if (action === "restart") return requestRestart();
+    if (action === "demo") {
+      if (busy) {
+        pendingDemo = true;
+        return "The demo starts as soon as this reply ends: keep this reply to a few words.";
+      }
+      lines.inject("/demo");
+      return "Starting the demo.";
+    }
     if (action === "continue_session") {
       if (busy) {
         pendingContinue = true;
@@ -828,7 +836,7 @@ async function main(): Promise<void> {
     }
     if (!orb?.alive) return "No orb is open.";
     orb.send({ type: "ui", action });
-    const done: Record<Exclude<UiAction, "show_tallyline" | "show_plate" | "show_sessions" | "continue_session" | "reopen_windows" | "stop" | "show_brain" | "start_transcript" | "restart" | "type_only" | "voice_mode" | "sitrep" | "god_mode_on" | "god_mode_off" | "volume_up" | "volume_down" | "set_volume" | "move" | "show_terminal" | "show_git">, string> = {
+    const done: Record<Exclude<UiAction, "show_tallyline" | "show_plate" | "show_sessions" | "continue_session" | "demo" | "reopen_windows" | "stop" | "show_brain" | "start_transcript" | "restart" | "type_only" | "voice_mode" | "sitrep" | "god_mode_on" | "god_mode_off" | "volume_up" | "volume_down" | "set_volume" | "move" | "show_terminal" | "show_git">, string> = {
       minimise: "Minimised to the menu bar.",
       show: "The orb is back.",
       close_panels: "Closed the panels.",
@@ -951,6 +959,8 @@ async function main(): Promise<void> {
 
   // "Continue last session", asked for mid-request: it resumes once the request ends.
   let pendingContinue = false;
+  /** "Show me your demo": the tour starts once her reply has ended (it speaks, so it can't run inside it). */
+  let pendingDemo = false;
 
   /**
    * Picks up her previous conversation (the same Claude Code session, resumed with its full context) and says briefly
@@ -1826,6 +1836,10 @@ async function main(): Promise<void> {
     if (pendingContinue) {
       pendingContinue = false;
       await continueLast();
+    }
+    if (pendingDemo) {
+      pendingDemo = false;
+      await demo();
     }
     if (pendingTranscript) {
       const { title } = pendingTranscript;
