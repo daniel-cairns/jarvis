@@ -9,7 +9,7 @@ import { Jarvis, type Approval } from "./agent.js";
 import { loadConfig } from "./config.js";
 import { parseAnswer, type Answer } from "./permissions.js";
 import { renderDetail } from "./ui/detail.js";
-import { checkGraph, graphAsText, graphShape } from "./ui/graph.js";
+import { graphAsText, readGraph } from "./ui/graph.js";
 import { brainIndex, noteMap, readNote, saveNote, watchBrain } from "./tools/brain.js";
 import { openApp, realRunner } from "./tools/mac.js";
 import { ComputerControl, nativeHelper } from "./control/computer.js";
@@ -27,7 +27,6 @@ import type { SessionTools, WindowTools } from "./tools/server.js";
 import { appLinks, findSession, listSessions, liveStatus, resolveProject, type SessionSummary } from "./tools/sessions.js";
 import { newlyWaiting, sitrep } from "./tools/sitrep.js";
 import { pickLastSession, saveLastSession } from "./tools/lastSession.js";
-import { z } from "zod";
 import { stopServing } from "./tools/serve.js";
 import { isStopCommand, localCommand, type UiAction, type UiCommand } from "./ui/control.js";
 import { WindowHistory, type WindowKind } from "./ui/windows.js";
@@ -742,11 +741,13 @@ async function main(): Promise<void> {
       }
       const raw = await noteMap(cfg.brainDir, msg.path);
       if (!raw) return;
-      const graph = checkGraph(z.object(graphShape).parse(raw));
+      const graph = readGraph(raw);
       // Opened from the brain browser, so it's yours.
       showPanel({ type: "graph", title: msg.path.split("/").at(-1)!.replace(/\.md$/, ""), graph, owner: "user" });
     } catch (err) {
       console.log(`  (brain browser: ${(err as Error).message})`);
+      // Said where Dan is looking, so a click that can't open anything never just does nothing.
+      orb?.send({ type: "caption", role: "status", text: `That note's map couldn't be opened. ${(err as Error).message}` });
     }
   };
 

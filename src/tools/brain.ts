@@ -5,6 +5,7 @@
 import { watch } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { readGraph } from "../ui/graph.js";
 
 export type NoteSummary = { path: string; title: string; modified: string };
 export type SearchHit = NoteSummary & { snippet: string; score: number };
@@ -50,11 +51,31 @@ function titleOf(content: string, fallback: string): string {
   return h1?.[1]?.trim() ?? fallback;
 }
 
+const MAP_BLOCK = /```astra-graph\s*\n([\s\S]*?)\n```/;
+
+/**
+ * A note's map rewritten in the one shape the map window reads, so every saved map opens. A map that can't be read
+ * at all stops the save, saying why, rather than leaving a "Show map" button that does nothing.
+ */
+function canonicalMap(body: string): string {
+  const block = body.match(MAP_BLOCK);
+  if (!block) return body;
+  let raw: unknown;
+  try {
+    raw = JSON.parse(block[1]!);
+  } catch {
+    throw new Error("Not saved: the note's astra-graph block isn't valid JSON.");
+  }
+  const graph = readGraph(raw);
+  return body.replace(MAP_BLOCK, () => `\`\`\`astra-graph\n${JSON.stringify(graph)}\n\`\`\``);
+}
+
 export async function saveNote(
   brainDir: string,
   note: { title: string; body: string; folder?: string; tags?: string[] },
   now: Date = new Date(),
 ): Promise<string> {
+  const body = canonicalMap(note.body);
   const folder = checkFolder(note.folder ?? "notes");
   const dir = path.join(brainDir, folder);
   await fs.mkdir(dir, { recursive: true });
@@ -70,7 +91,7 @@ export async function saveNote(
     `tags: [${tags.join(", ")}]`,
     "---",
     "",
-    note.body.trimEnd(),
+    body.trimEnd(),
     "",
   ].join("\n");
 
@@ -187,7 +208,6 @@ export async function readNote(
 
 export type BrainEntry = NoteSummary & { folder: string; snippet: string; hasMap: boolean };
 
-const MAP_BLOCK = /```astra-graph\s*\n([\s\S]*?)\n```/;
 
 /** Every note for the brain browser: newest first, with its folder, a plain-text snippet and whether it has a map. */
 export async function brainIndex(brainDir: string): Promise<BrainEntry[]> {
