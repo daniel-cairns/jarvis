@@ -60,30 +60,87 @@ main {
 .state { cursor: pointer; border-radius: 4px; padding: 2px 4px; }
 .state:focus-visible { outline: 2px solid var(--reactor); outline-offset: 2px; }
 
-/* The status indicator's dropdown: a small glass list just under it. */
+/* The status indicator's dropdown: a small god slate, the same glass, nub and shelf as the thinking window. */
 .panel-menu {
+  position: relative;
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  margin: 6px auto 0;
-  padding: 5px;
-  min-width: 210px;
-  border-radius: 8px;
-  background: linear-gradient(165deg, rgba(20, 44, 90, 0.92), rgba(4, 10, 28, 0.95));
-  box-shadow: inset 0 0 0 1px rgba(236, 188, 82, 0.55), 0 6px 18px rgba(0, 0, 0, 0.45);
+  gap: 3px;
+  margin: 8px auto 0;
+  padding: 0 8px 9px;
+  min-width: 232px;
+  border-radius: 6px;
+  overflow: hidden;
+  color: var(--ink);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0) 30%),
+    radial-gradient(130% 80% at 0% 0%, rgba(170, 235, 255, 0.22), transparent 60%),
+    radial-gradient(90% 60% at 100% 100%, rgba(236, 188, 82, 0.14), transparent 60%),
+    linear-gradient(165deg, rgba(20, 44, 90, 0.82), rgba(4, 10, 28, 0.9));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.6),
+    inset 1px 0 0 rgba(255, 255, 255, 0.2),
+    inset 0 -1px 0 rgba(70, 224, 214, 0.45),
+    inset 0 0 0 1px rgba(236, 188, 82, 0.35),
+    inset 0 0 30px rgba(170, 235, 255, 0.08),
+    0 0 18px rgba(70, 224, 214, 0.18),
+    0 12px 30px rgba(0, 0, 0, 0.4);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+.panel-menu::before {
+  content: "";
+  position: absolute;
+  inset: -60% -10% auto -10%;
+  height: 110%;
+  pointer-events: none;
+  background: linear-gradient(115deg, transparent 34%, rgba(255, 255, 255, 0.12) 44%, rgba(255, 255, 255, 0.03) 52%, transparent 62%);
 }
 .panel-menu[hidden] { display: none; }
+.panel-menu .nub { --nub-w: 150px; --nub-h: 18px; margin: 0 -8px; }
+.panel-menu .shelf { margin: 0 -8px 4px; }
 .panel-menu button {
-  padding: 7px 10px;
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 6px 10px 6px 8px;
   border: 0;
-  border-radius: 5px;
+  border-radius: 4px;
   text-align: left;
-  font: 500 12.5px/1.2 "Avenir Next", -apple-system, sans-serif;
-  color: #e8f6ff;
+  color: #e2f9ff;
   background: none;
   cursor: pointer;
 }
-.panel-menu button:hover, .panel-menu button:focus-visible { background: rgba(70, 224, 214, 0.18); outline: none; color: #fff; }
+/* A lozenge glyph per row: gold for the orb's own window, cyan for panels, dim for ones that are closed. */
+.panel-menu .mark {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  transform: rotate(45deg);
+  border: 1px solid var(--reactor);
+  box-shadow: 0 0 6px rgba(70, 224, 214, 0.7);
+}
+.panel-menu button:not([data-verb]) .mark { border-color: var(--gold); box-shadow: 0 0 6px rgba(236, 188, 82, 0.7); background: rgba(236, 188, 82, 0.35); }
+.panel-menu button[data-verb="reopen"] .mark { opacity: 0.55; box-shadow: none; }
+.panel-menu .text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.panel-menu .verb {
+  font: 600 8.5px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: rgba(236, 188, 82, 0.85);
+}
+.panel-menu .name {
+  font: 600 12.5px/1.2 "Avenir Next", -apple-system, sans-serif;
+  text-shadow: 0 0 10px rgba(70, 224, 214, 0.35), 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+.panel-menu button:hover, .panel-menu button:focus-visible {
+  outline: none;
+  color: #fff;
+  background: linear-gradient(90deg, rgba(70, 224, 214, 0.24), rgba(70, 224, 214, 0.04));
+  box-shadow: inset 2px 0 0 var(--reactor), 0 0 12px rgba(70, 224, 214, 0.18);
+}
+.panel-menu button:hover .mark, .panel-menu button:focus-visible .mark { background: var(--reactor); opacity: 1; }
+.panel-menu button:focus-visible { box-shadow: inset 2px 0 0 var(--reactor), inset 0 0 0 1px rgba(255, 255, 255, 0.7); }
 
 .visually-hidden {
   position: absolute;

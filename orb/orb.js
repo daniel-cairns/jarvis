@@ -251,6 +251,10 @@
 
   // ── The status indicator's dropdown: her thinking window, and any panel that's closed or folded ──
   const panelMenu = document.getElementById("panel-menu");
+  // The nub tab's outline, as on the cards (frame.css styles it).
+  const NUB_SVG =
+    '<svg viewBox="0 0 170 22" preserveAspectRatio="none"><polygon class="plate" points="0,22 170,22 170,10 156,0 0,0"/>' +
+    '<polyline class="edge" points="0,0.8 156,0.8 169.5,10.5"/><polyline class="edge-inner" points="0,4 154,4 165,12"/></svg>';
   let panels = []; // [{ kind, state }] from the main process
   const menuOpen = () => !panelMenu.hidden;
   function closeMenu(refocus = false) {
@@ -262,14 +266,44 @@
   function openMenu() {
     const cardShown = !card.hidden && !card.classList.contains("collapsed");
     const items = window.astraPanelMenu.menuItems({ cardShown, panels });
+    // A small god slate, like the thinking window: a nub tab, a glow shelf, then one row per item. A panel's row
+    // reads as its name with what choosing it does above ("Reopen", "Unfold", "Bring forward").
+    const tab = document.createElement("div");
+    tab.className = "nub";
+    tab.setAttribute("aria-hidden", "true");
+    tab.innerHTML = NUB_SVG + '<p class="nub-label">Panels</p>';
+    const shelf = document.createElement("div");
+    shelf.className = "shelf";
+    shelf.setAttribute("aria-hidden", "true");
     panelMenu.replaceChildren(
+      tab,
+      shelf,
       ...items.map((item) => {
         const b = document.createElement("button");
         b.type = "button";
         b.setAttribute("role", "menuitem");
         b.tabIndex = -1;
         b.dataset.id = item.id;
-        b.textContent = item.label;
+        const [verb, name] = item.label.includes(": ") ? item.label.split(": ") : [null, item.label];
+        if (verb) b.dataset.verb = verb.toLowerCase().replace(/\s+/g, "-");
+        const mark = document.createElement("span");
+        mark.className = "mark";
+        mark.setAttribute("aria-hidden", "true");
+        const text = document.createElement("span");
+        text.className = "text";
+        if (verb) {
+          const small = document.createElement("span");
+          small.className = "verb";
+          small.textContent = verb;
+          text.append(small);
+        }
+        const big = document.createElement("span");
+        big.className = "name";
+        big.textContent = name.charAt(0).toUpperCase() + name.slice(1);
+        text.append(big);
+        b.append(mark, text);
+        // Read as one phrase ("Reopen: map"), not two.
+        b.setAttribute("aria-label", item.label);
         return b;
       }),
     );
