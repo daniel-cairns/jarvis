@@ -65,3 +65,49 @@ describe("voice commands", () => {
     expect(localCommand(s)).toEqual({ slash: "/voiceprint off" });
   });
 });
+
+describe("fitting the bar to Dan's microphone", () => {
+  it("lowers the full-phrase bar to just under his weakest good reading", async () => {
+    const { calibratedAdjust, thresholdFor } = await import("../src/voice/voiceprint.js");
+    // His real enrolment, without the stumbled first reading.
+    const adjust = calibratedAdjust([0.931, 0.884, 0.912, 0.914]);
+    expect(thresholdFor(4, adjust)).toBeCloseTo(0.864, 3);
+    // His everyday phrases that were refused against the old bar now get through.
+    expect(0.873).toBeGreaterThanOrEqual(thresholdFor(16, adjust));
+  });
+
+  it("never raises the bar, and never lowers it so far that most voices get through", async () => {
+    const { calibratedAdjust } = await import("../src/voice/voiceprint.js");
+    expect(calibratedAdjust([0.99, 0.98, 0.99])).toBe(0);
+    expect(calibratedAdjust([0.5, 0.6, 0.55])).toBe(-0.12);
+  });
+});
+
+describe("the enrolment panel", () => {
+  it("shows every sentence, the one to read now large and marked, and ticks the ones done", async () => {
+    const { enrolPanel, ENROL_SENTENCES } = await import("../src/voice/voiceprint.js");
+    const md = enrolPanel(1, new Set([0]));
+    expect(md).toContain(`Read number 2 of 5\n\n> **${ENROL_SENTENCES[1]}**`);
+    expect(md).toContain(`1. ✓ ${ENROL_SENTENCES[0]}`);
+    expect(md).toContain(`2. ▶ ${ENROL_SENTENCES[1]}`);
+    for (const sentence of ENROL_SENTENCES) expect(md).toContain(sentence);
+    expect(enrolPanel(3, new Set([0, 1, 2]), true)).toContain("Once more: read number 4");
+  });
+});
+
+describe("VoiceCheck.enrol calibrates", () => {
+  it("saves the adjust it chose, and readingScores matches what enrol reports", async () => {
+    const { mkdtempSync } = await import("node:fs");
+    const os = await import("node:os");
+    const home = mkdtempSync(path.join(os.tmpdir(), "vp-"));
+    // Fake embeddings: the clip's first sample picks a direction, so readings can be made to disagree.
+    const embed: Embedder = async (s) => normalise([1, s[0]!, 0.1]);
+    const clips = [0.1, 0.12, 0.11, 0.9].map((v) => Float32Array.from({ length: 16_000 }, () => v));
+    const check = new VoiceCheck(home, embed);
+    const scores = await check.readingScores(clips);
+    expect(scores[3]).toBeLessThan(scores[0]!);
+    const { selfScores, adjust } = await check.enrol(clips);
+    expect(selfScores).toEqual(scores);
+    expect(JSON.parse(readFileSync(path.join(home, "voiceprint.json"), "utf8")).adjust).toBe(adjust);
+  });
+});

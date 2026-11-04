@@ -64,6 +64,44 @@ export function meanPrint(embeddings: readonly Float32Array[]): Float32Array {
   return normalise(sum);
 }
 
+/** A reading that matches the others less than this is re-recorded before the voiceprint is saved. */
+export const WEAK_READING = 0.85;
+/** How far under Dan's own weakest good reading the bar sits, so his everyday phrases clear it. */
+const CALIBRATION_MARGIN = 0.02;
+/** The most the bar is ever lowered: below this it would let most voices through. */
+const MAX_LOWERING = 0.12;
+
+/**
+ * The `adjust` that fits the bar to Dan's microphone and room. The bar (thresholdFor) was measured on clean
+ * studio recordings, where the same voice scores higher than through a laptop mic: his everyday phrases scored
+ * 0.87–0.89 against a bar of 0.944. So the bar for a full phrase is set just under his own weakest reading.
+ * Never raised, and never lowered more than MAX_LOWERING.
+ */
+export function calibratedAdjust(selfScores: readonly number[]): number {
+  if (!selfScores.length) return 0;
+  const target = Math.min(...selfScores) - CALIBRATION_MARGIN;
+  const lowering = Math.min(0, target - thresholdFor(4));
+  return Math.round(Math.max(-MAX_LOWERING, lowering) * 1000) / 1000;
+}
+
+/** How well each embedding matches the average of the others: a low one is a noisy or misread phrase. */
+export function selfScoresOf(embeddings: readonly Float32Array[]): number[] {
+  return embeddings.map((e, i) => cosine(meanPrint(embeddings.filter((_, j) => j !== i)), e));
+}
+
+/**
+ * The enrolment panel: every sentence, the one to read now large and marked, the ones done ticked. `again` marks a
+ * sentence being read a second time because the first reading didn't match the others.
+ */
+export function enrolPanel(current: number | null, done: ReadonlySet<number>, again = false): string {
+  const now =
+    current === null
+      ? "### All read: saving your voice…"
+      : `### ${again ? "Once more: read" : "Read"} number ${current + 1} of ${ENROL_SENTENCES.length}\n\n> **${ENROL_SENTENCES[current]}**`;
+  const list = ENROL_SENTENCES.map((sentence, i) => `${i + 1}. ${done.has(i) ? "✓ " : i === current ? "▶ " : ""}${sentence}`).join("\n");
+  return `${now}\n\nRead in your normal voice, at your usual distance from the Mac. I start listening when I say the number.\n\n${list}`;
+}
+
 export type VoiceVerdict = { ok: boolean; score: number; threshold: number; seconds: number };
 
 type VoiceprintFile = { model: string; embedding: number[]; adjust: number; enrolledAt: string; selfScores: number[] };
@@ -120,24 +158,30 @@ export class VoiceCheck {
     return { ok: score >= threshold, score, threshold, seconds };
   }
 
+  /** How well each reading matches the others, before anything is saved (see WEAK_READING). */
+  async readingScores(clips: readonly Float32Array[]): Promise<number[]> {
+    return selfScoresOf(await Promise.all(clips.map((c) => this.embed(c.subarray(0, MAX_SECONDS * RATE)))));
+  }
+
   /**
-   * Makes Dan's voiceprint from the phrases he read, and saves it. Returns how well each phrase matches the print
-   * made from the others: a low one means a noisy or misread phrase (or a different voice).
+   * Makes Dan's voiceprint from the phrases he read, fits the bar to his microphone (calibratedAdjust), and saves it.
+   * Returns how well each phrase matches the print made from the others, and the adjust chosen.
    */
-  async enrol(clips: readonly Float32Array[], now = new Date()): Promise<{ selfScores: number[] }> {
+  async enrol(clips: readonly Float32Array[], now = new Date()): Promise<{ selfScores: number[]; adjust: number }> {
     if (clips.length < 3) throw new Error("Enrolment needs at least three phrases.");
     const embeddings = await Promise.all(clips.map((c) => this.embed(c.subarray(0, MAX_SECONDS * RATE))));
-    const selfScores = embeddings.map((e, i) => cosine(meanPrint(embeddings.filter((_, j) => j !== i)), e));
+    const selfScores = selfScoresOf(embeddings);
+    const adjust = calibratedAdjust(selfScores);
     const file: VoiceprintFile = {
       model: SPEAKER_MODEL,
       embedding: [...meanPrint(embeddings)],
-      adjust: this.load()?.adjust ?? 0,
+      adjust,
       enrolledAt: now.toISOString(),
       selfScores: selfScores.map((s) => Math.round(s * 1000) / 1000),
     };
     writeFileSync(this.file, `${JSON.stringify(file)}\n`);
     this.print = file;
-    return { selfScores };
+    return { selfScores, adjust };
   }
 
   /** Forgets the voiceprint: she listens to everyone again. */

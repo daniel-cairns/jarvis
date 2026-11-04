@@ -39,7 +39,7 @@ import { Loops, loopsContext, plateHeadline, plateMarkdown } from "./loops.js";
 import { dropRepeats, headline, MoreQueue } from "./voice/brevity.js";
 import { Speaker } from "./voice/speaker.js";
 import { runDemo } from "./demo.js";
-import { ENROL_SENTENCES, VoiceCheck, wavlmEmbedder, type VoiceVerdict } from "./voice/voiceprint.js";
+import { ENROL_SENTENCES, enrolPanel, VoiceCheck, WEAK_READING, wavlmEmbedder, type VoiceVerdict } from "./voice/voiceprint.js";
 import { KokoroTts, SayTts } from "./voice/tts.js";
 import {
   parseSpokenChoice,
@@ -417,7 +417,7 @@ async function main(): Promise<void> {
     const v = await check.result();
     if (!v) return true;
     console.log(`  (voice ${v.ok ? "is Dan's" : "isn't Dan's, ignored"}: ${v.score.toFixed(3)} against ${v.threshold.toFixed(3)} over ${v.seconds.toFixed(1)} s)`);
-    if (!v.ok) orb?.send({ type: "caption", role: "status", text: "That wasn't your voice, so I ignored it" });
+    if (!v.ok) orb?.send({ type: "caption", role: "status", text: "That didn't sound like you, so I ignored it. If it was you, type /voiceprint off" });
     return v.ok;
   };
 
@@ -1602,34 +1602,60 @@ async function main(): Promise<void> {
    */
   const enrolVoice = async (): Promise<void> => {
     if (!voiceMode) return void (await say("I need the microphone for that. Switch me to voice mode first."));
-    const panel = ENROL_SENTENCES.map((sentence, i) => `${i + 1}. ${sentence}`).join("\n");
-    if (orb?.alive) showPanel({ type: "detail", title: "Learn my voice", html: renderDetail(`Read each sentence when I say its number, in your normal voice.\n\n${panel}`) });
-    await say("I'll learn your voice. Read each sentence on screen when I say its number.");
-    const clips: Float32Array[] = [];
-    for (const [i, sentence] of ENROL_SENTENCES.entries()) {
-      let clip: Float32Array | null = null;
-      for (let attempt = 0; attempt < 2 && !clip; attempt++) {
-        orb?.send({ type: "caption", role: "status", text: `Read: ${sentence}` });
-        await say(attempt ? `Once more, number ${i + 1}.` : `Number ${i + 1}.`);
+    if (!orb?.alive) return void (await say("I need my orb on screen to show you the sentences, and it isn't open."));
+    const done = new Set<number>();
+    // The sentences go in a detail panel, the one to read large: the transmission card is too small for them. It's
+    // Dan's panel (never tidied away) and is brought to the front each time it changes.
+    const panel = (current: number | null, again = false) => {
+      orb?.send({ type: "detail", title: "Learn my voice", html: renderDetail(enrolPanel(current, done, again)), owner: "user" });
+      orb?.send({ type: "ui", action: "panels_front" });
+    };
+    panel(0);
+    await say("I'll learn your voice. Read each sentence in the panel when I say its number.");
+    /** Records one sentence (two tries); null if he stopped it, undefined if it couldn't be heard. */
+    const record = async (i: number, again: boolean): Promise<Float32Array | null | undefined> => {
+      for (let attempt = 0; attempt < 2; attempt++) {
+        panel(i, again || attempt > 0);
+        orb?.send({ type: "caption", role: "jarvis", text: ENROL_SENTENCES[i]! });
+        await say(attempt || again ? `Once more, number ${i + 1}.` : `Number ${i + 1}.`);
         await speaker.whenIdle();
         await echoTail();
         let audio: Float32Array | null = null;
-        const heard = await listenOnce(8_000, undefined, undefined, (samples) => (audio = samples));
-        if (heard === null) return void (await say("Stopped. I haven't saved anything."));
+        const heard = await listenOnce(10_000, undefined, undefined, (samples) => (audio = samples));
+        if (heard === null) return null;
         // At least a second and a half of it: a cough or a half-read sentence would weaken the voiceprint.
         const got = audio as Float32Array | null;
-        if (got && got.length >= 1.5 * 16_000) clip = got;
+        if (got && got.length >= 1.5 * 16_000) return got;
       }
+      return undefined;
+    };
+    const clips: Float32Array[] = [];
+    for (const i of ENROL_SENTENCES.keys()) {
+      const clip = await record(i, false);
+      if (clip === null) return void (await say("Stopped. I haven't saved anything."));
       if (!clip) return void (await say("I couldn't hear that one, so I haven't saved anything. Say \"learn my voice\" to try again."));
       clips.push(clip);
+      done.add(i);
     }
-    const { selfScores } = await voice.enrol(clips);
+    // A reading that doesn't match the others (a stumble, a noise, someone else talking) is read again, once.
+    const scores = await voice.readingScores(clips);
+    for (const [i, score] of scores.entries()) {
+      if (score >= WEAK_READING) continue;
+      console.log(`  (reading ${i + 1} matched the others only ${score.toFixed(3)}: asking for it again)`);
+      done.delete(i);
+      const clip = await record(i, true);
+      if (clip === null) return void (await say("Stopped. I haven't saved anything."));
+      if (clip) clips[i] = clip;
+      done.add(i);
+    }
+    panel(null);
+    const { selfScores, adjust } = await voice.enrol(clips);
     const weakest = Math.min(...selfScores);
-    console.log(`  (voiceprint saved; each reading against the rest: ${selfScores.map((s) => s.toFixed(3)).join(", ")})`);
+    console.log(`  (voiceprint saved; each reading against the rest: ${selfScores.map((x) => x.toFixed(3)).join(", ")}; bar adjusted by ${adjust})`);
     await say(
-      weakest < 0.85
-        ? "Saved, though one reading didn't match the others well. If I start ignoring you, run this again somewhere quieter."
-        : "Got it. I'll only listen to you now. Say \"forget my voice\" to undo it.",
+      weakest < WEAK_READING
+        ? "Saved, though one reading still didn't match the others well. If I start ignoring you, say \"forget my voice\" or type slash voiceprint off."
+        : "Got it. I'll only listen to you now. If I ever ignore you, type slash voiceprint off.",
     );
   };
 
