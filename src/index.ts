@@ -10,7 +10,7 @@ import { loadConfig } from "./config.js";
 import { parseAnswer, type Answer } from "./permissions.js";
 import { renderDetail } from "./ui/detail.js";
 import { checkGraph, graphAsText, graphShape } from "./ui/graph.js";
-import { brainIndex, noteMap, readNote, saveNote } from "./tools/brain.js";
+import { brainIndex, noteMap, readNote, saveNote, watchBrain } from "./tools/brain.js";
 import { openApp, realRunner } from "./tools/mac.js";
 import { ComputerControl, nativeHelper } from "./control/computer.js";
 import { CoffeeMode } from "./power/coffee.js";
@@ -718,6 +718,14 @@ async function main(): Promise<void> {
     remember("brain", "Brain browser", () => void openBrain("user"));
     return `Opened the brain browser with ${notes.length} notes.`;
   };
+
+  // A note saved or changed (a new teardown, say) refreshes the brain browser if it's open; it never opens it.
+  const stopWatchingBrain = watchBrain(cfg.brainDir, () => {
+    if (!orb?.alive) return;
+    void brainIndex(cfg.brainDir)
+      .then((notes) => orb?.send({ type: "brain", notes, refresh: true }))
+      .catch((err) => console.log(`  (couldn't refresh the brain browser: ${(err as Error).message})`));
+  });
 
   /** The brain browser's requests: the list, one note (rendered), or a note's saved map. */
   const onBrain = async (msg: { type: "brain-request" } | { type: "brain-open" | "brain-map"; path: string }) => {
@@ -1803,6 +1811,7 @@ async function main(): Promise<void> {
   quitting = true;
   await wakeListener.cancel();
   speaker.stop();
+  stopWatchingBrain();
   // A restart (its flag file is there) keeps coffee mode for the next start; quitting ends it.
   coffee.shutdown(existsSync(path.join(cfg.home, "restart")));
   // A Tallyline server she started herself goes with her (one Dan started is left running).

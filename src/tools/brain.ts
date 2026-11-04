@@ -2,6 +2,7 @@
  * The "second brain": a folder of plain markdown notes Astra can write, search and read back.
  * Plain files on purpose — you can open the same folder in any editor or knowledge-graph tool.
  */
+import { watch } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 
@@ -219,4 +220,28 @@ export async function noteMap(brainDir: string, relPath: string): Promise<unknow
   } catch {
     throw new Error("The note's map block isn't valid JSON");
   }
+}
+
+/**
+ * Calls `onChange` once a burst of note changes in the brain folder settles (a teardown is often written in several
+ * goes), whoever made them: her own saves, a session's, or Dan's editor. Returns a function that stops watching.
+ */
+export function watchBrain(brainDir: string, onChange: () => void, settleMs = 800): () => void {
+  let timer: NodeJS.Timeout | undefined;
+  let watcher: ReturnType<typeof watch>;
+  try {
+    watcher = watch(brainDir, { recursive: true }, (_event, file) => {
+      if (file && !String(file).endsWith(".md")) return;
+      clearTimeout(timer);
+      timer = setTimeout(onChange, settleMs);
+    });
+  } catch (err) {
+    console.log(`  (not watching the brain for new notes: ${(err as Error).message})`);
+    return () => {};
+  }
+  watcher.on("error", (err) => console.log(`  (stopped watching the brain: ${err.message})`));
+  return () => {
+    clearTimeout(timer);
+    watcher.close();
+  };
 }

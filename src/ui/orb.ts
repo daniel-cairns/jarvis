@@ -58,7 +58,8 @@ export type ToOrb =
   | { type: "activity-reset" }
   | { type: "ui"; action: UiAction; position?: Position }
   | { type: "volume-level"; level: number; quiet?: boolean }
-  | { type: "brain"; notes: BrainEntry[]; owner?: "user" }
+  /** `refresh`: the notes changed on disk; updates an open brain browser and never opens one. */
+  | { type: "brain"; notes: BrainEntry[]; owner?: "user"; refresh?: boolean }
   | { type: "terminal"; entries: TermEntry[]; force?: boolean; owner?: "user" }
   | { type: "git"; repos: RepoState[]; force?: boolean; owner?: "user" }
   | { type: "git-diff-result"; root: string; path: string; diff: string }

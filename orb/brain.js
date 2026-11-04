@@ -84,11 +84,17 @@
 
   bridge.onMessage((m) => {
     if (m.type === "brain") {
+      const before = new Set(notes.map((n) => n.path));
       notes = m.notes || [];
+      refresh.disabled = false;
+      refresh.classList.remove("spinning");
+      // A refresh says what's new, for screen readers too; a fresh open takes you to the search box.
+      const added = m.refresh || before.size ? notes.filter((n) => !before.has(n.path)).length : 0;
+      if (before.size) status.textContent = added ? `${added} new note${added === 1 ? "" : "s"}` : "Up to date";
       meta.textContent = `ASTRA-01 | CLASS: ARCHIVE | ${notes.length} NOTES`;
       stamp.textContent = new Date().toLocaleTimeString("en-NZ", { hour: "2-digit", minute: "2-digit" });
       render();
-      search.focus();
+      if (!m.refresh && !before.size) search.focus();
     } else if (m.type === "brain-note") showNote(m);
   });
 
@@ -97,6 +103,15 @@
     if (path) bridge.send({ type: "brain-open", path });
   });
   search.addEventListener("input", render);
+
+  const refresh = document.getElementById("refresh");
+  const status = document.getElementById("refresh-status");
+  refresh.addEventListener("click", () => {
+    refresh.disabled = true;
+    refresh.classList.add("spinning");
+    status.textContent = "Refreshing…";
+    bridge.send({ type: "brain-request" });
+  });
 
   const close = () => bridge.send({ type: "panel-close" });
   document.getElementById("close").addEventListener("click", close);

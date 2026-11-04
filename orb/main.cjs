@@ -13,7 +13,7 @@ const ANSWERS = new Set(["yes", "always", "no"]);
 /** Only well-formed messages from the page reach Astra. */
 function fromPage(m) {
   if (!m || typeof m !== "object") return null;
-  if (m.type === "talk" || m.type === "stop" || m.type === "record") return { type: m.type };
+  if (m.type === "talk" || m.type === "stop" || m.type === "record" || m.type === "brain-request") return { type: m.type };
   if (m.type === "type-only" && typeof m.on === "boolean") return { type: "type-only", on: m.on };
   if (m.type === "typed" && typeof m.text === "string" && m.text.trim() && m.text.length <= 2000) return { type: "typed", text: m.text };
   if (m.type === "answer" && typeof m.id === "string" && ANSWERS.has(m.answer)) {
@@ -265,7 +265,7 @@ app.whenReady().then(() => {
   // end of her next request), "user" you opened or clicked into (never closed for you).
   const RANK = { auto: 0, astra: 1, user: 2 };
   /** Panels that refresh themselves while open; a refresh isn't Dan using them. */
-  const REFRESHED = new Set(["sessions", "tallyline"]);
+  const REFRESHED = new Set(["sessions", "tallyline", "brain"]);
   let requestNo = 0;
   const TIDY_MS = 6000;
 
@@ -780,6 +780,12 @@ app.whenReady().then(() => {
       else if (m.type === "transcript" && m.owner !== "user" && closed.has("transcript")) {
         slabs.transcript.last = m;
         sendPanels();
+      }
+      // The brain browser's list changed on disk: refresh it if it's open, where it sits; never open it for that.
+      else if (m.type === "brain" && m.refresh) {
+        const slab = slabs.brain;
+        if (slab.win && !slab.win.isDestroyed()) openSlab("brain", m, "auto", false);
+        else if (slab.last) slab.last = m;
       }
       // Detail, map and brain come from Astra's show tools (or "show me…"): explicit, so they open even if closed.
       else if (m.type === "detail" || m.type === "graph" || m.type === "brain" || m.type === "transcript") {
