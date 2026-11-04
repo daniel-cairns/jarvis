@@ -1176,6 +1176,13 @@
     ctx.fillStyle = halo;
     ctx.fillRect(0, 0, W, H);
 
+    // Transfers first, then Anubis: when a security check runs during an upload or download, he stands in front of the
+    // beams and the pyramid rather than being hidden behind them.
+    upAmt = lerp(upAmt, transferDir === "up" && formTo === 1 ? 1 : 0, 0.06);
+    downAmt = lerp(downAmt, transferDir === "down" && formTo === 1 ? 1 : 0, 0.04);
+    if (upAmt > 0.01) drawLaserArray(cx, cy - r * 0.95, t, upAmt * st.wings);
+    if (downAmt > 0.01) drawMothership(cx, cy - r * 0.95, r, t, downAmt * st.wings);
+
     guardAmt = lerp(guardAmt, guardState && formTo === 1 ? 1 : 0, 0.07);
     guardRed = lerp(guardRed, guardState === "blocked" ? 1 : 0, 0.12);
     if (guardAmt > 0.01) drawGuardian(cx, t, guardAmt * st.wings, guardRed);
@@ -1372,10 +1379,6 @@
     horusEye(eye * st.eye);
     ctx.restore();
 
-    upAmt = lerp(upAmt, transferDir === "up" && formTo === 1 ? 1 : 0, 0.06);
-    downAmt = lerp(downAmt, transferDir === "down" && formTo === 1 ? 1 : 0, 0.04);
-    if (upAmt > 0.01) drawLaserArray(cx, cy - r * 0.95, t, upAmt * st.wings);
-    if (downAmt > 0.01) drawMothership(cx, cy - r * 0.95, r, t, downAmt * st.wings);
 
     requestAnimationFrame(draw);
   }
