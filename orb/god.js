@@ -28,6 +28,11 @@
   const WING = { rootY: 54, lift: 22, rootHalf: 23, tipHalf: 18 };
   /** Help text is 240 px wide, centred on its cartouche: how far it can reach past the slate's outer end. */
   const TIP_REACH = 120 - (8 + CELL / 2);
+  /** Help text sits this far off its cartouche (god.css .slate-tip), and this far inside the window's edges. */
+  const TIP_GAP = 6;
+  const TIP_MARGIN = 4;
+  /** How far an arrow key scrolls a long help text. */
+  const TIP_LINE = 36;
 
   const IDLE_MS = 6000; // untouched this long, the slate folds away
   const GRACE_MS = 450; // lets the pointer or focus cross between the orb and the slate
@@ -225,6 +230,9 @@
           const current = entries.find((e) => e.key === li.dataset.key);
           if (current) openEntry(current);
         });
+        li.addEventListener("mouseenter", () => fitTip(li));
+        li.addEventListener("focusin", () => fitTip(li));
+        li.querySelector("button").addEventListener("keydown", (e) => scrollTip(li, e));
         cellByKey.set(entry.key, li);
       }
       slateCells.append(li);
@@ -239,6 +247,33 @@
       button.setAttribute("aria-label", `${entry.meaning}: ${entry.title}`);
       fillTip(li.querySelector(".slate-tip"), entry);
     });
+  }
+
+  /**
+   * Fits a cartouche's help text in the window as it shows: above the cartouche, or below if there's more room there,
+   * capped to that room. Anything longer scrolls (by wheel, or by arrow keys on the cartouche: scrollTip).
+   */
+  function fitTip(li) {
+    const tip = li.querySelector(".slate-tip");
+    const cell = li.querySelector("button").getBoundingClientRect();
+    const above = cell.top - TIP_GAP - TIP_MARGIN;
+    const below = window.innerHeight - cell.bottom - TIP_GAP - TIP_MARGIN;
+    tip.style.maxHeight = "none";
+    const flip = tip.scrollHeight > above && below > above;
+    tip.classList.toggle("below", flip);
+    tip.style.maxHeight = `${Math.max(0, Math.floor(flip ? below : above))}px`;
+    tip.scrollTop = 0;
+  }
+
+  /** Arrow, Page and Home/End keys on a cartouche scroll its help text, when it's long enough to scroll. */
+  function scrollTip(li, e) {
+    const tip = li.querySelector(".slate-tip");
+    if (tip.scrollHeight <= tip.clientHeight) return;
+    const page = tip.clientHeight - TIP_LINE;
+    const by = { ArrowDown: TIP_LINE, ArrowUp: -TIP_LINE, PageDown: page, PageUp: -page, End: tip.scrollHeight, Home: -tip.scrollHeight }[e.key];
+    if (by === undefined) return;
+    e.preventDefault();
+    tip.scrollBy({ top: by });
   }
 
   /** How much wider the window must be for the slate and its help text, on the side it opens. */
@@ -341,8 +376,12 @@
     if (!onSlate().length) return showToast(`God mode is on. ${summary()}`);
     openSlate();
   });
-  slate.addEventListener("mouseenter", () => hold("slate-hover"));
-  slate.addEventListener("mouseleave", () => release("slate-hover"));
+  // Over and out, not enter and leave: the slate itself takes no pointer events (only its cartouches and help text
+  // do), and Chromium sends no enter or leave to it; over and out bubble up from them.
+  slate.addEventListener("mouseover", () => hold("slate-hover"));
+  slate.addEventListener("mouseout", (e) => {
+    if (!slate.contains(e.relatedTarget)) release("slate-hover");
+  });
   slate.addEventListener("focusin", () => hold("slate-focus"));
   slate.addEventListener("focusout", (e) => {
     if (!slate.contains(e.relatedTarget)) release("slate-focus");

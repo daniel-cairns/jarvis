@@ -158,7 +158,8 @@ body.room-left main { margin-left: auto; }
   z-index: 4;
   pointer-events: none;
   transition: transform 0.5s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.35s ease, clip-path 0.5s cubic-bezier(0.2, 0.8, 0.2, 1);
-  clip-path: inset(-220px -150px -40px -150px);
+  /* Room above and below for long help text (sized to the window in god.js fitTip). */
+  clip-path: inset(-1000px -150px -1000px -150px);
 }
 .slate-wing[hidden] { display: none; }
 .slate-wing.to-left { transform-origin: right 54px; }
@@ -225,11 +226,18 @@ body.room-left main { margin-left: auto; }
   text-shadow: none;
   user-select: text;
   transform: translateX(-50%);
+  /* Long help text scrolls inside the room it has (god.js fitTip caps max-height), with a slim gold scrollbar. */
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(236, 188, 82, 0.7) transparent;
   opacity: 0;
   visibility: hidden;
   pointer-events: auto;
   transition: opacity 0.15s, visibility 0s linear 0.15s;
 }
+/* Flipped below the cartouche when there's more room there. */
+.slate-tip.below { bottom: auto; top: 26px; }
 .slate-cell:hover .slate-tip, .slate-cell:focus-within .slate-tip { opacity: 1; visibility: visible; transition: opacity 0.15s; }
 .slate-tip p { margin: 0; overflow-wrap: anywhere; }
 .tip-head { font-weight: 600; }
@@ -254,5 +262,5 @@ body.room-left main { margin-left: auto; }
   .orbit, .upright, .sat.working .dot, .god-toast { animation: none; }
   .slate-cell { transition: none; }
   .slate-wing { transition: opacity 0.35s ease; }
-  .slate-wing.to-left.folded, .slate-wing.to-right.folded { transform: none; clip-path: inset(-220px -150px -40px -150px); }
+  .slate-wing.to-left.folded, .slate-wing.to-right.folded { transform: none; clip-path: inset(-1000px -150px -1000px -150px); }
 }
