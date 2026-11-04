@@ -138,7 +138,8 @@ app.dock?.hide();
 
 app.whenReady().then(() => {
   const { workArea } = screen.getPrimaryDisplay();
-  const width = 350;
+  // Wider than the cards, so her glow and figures have room at the sides (the empty space lets clicks through).
+  const width = 430;
   const height = 480;
   const win = new BrowserWindow({
     width,
@@ -606,8 +607,10 @@ app.whenReady().then(() => {
    * her cards go below the orb whenever they fit above the bottom of the screen, otherwise above it. (With the cards
    * below, the orb is at the window's top, so it can also be dragged right up under the menu bar.)
    */
-  const ORB_SECTION = 290; // the orb, its state label and padding: the window's height with no cards showing
+  const ORB_SECTION = 346; // the orb, its state label, the room above it and padding: the height with no cards showing
   let layoutTop = true; // true: cards below the orb
+  let layoutSplit = false; // true: below, except the approval or question card, which opens above
+  let wantedDecision = 0;
   let orbOffset = null; // the orb's top inside the window
   let wantedHeight = ORB_SECTION;
   let arranging = false;
@@ -626,11 +629,17 @@ app.whenReady().then(() => {
         const { workArea: wa } = screen.getDisplayMatching(b);
         const orbScreenY = b.y + orbOffset;
         const height = Math.round(Math.min(Math.max(wantedHeight, ORB_SECTION), wa.height - 16));
-        const below = orbScreenY + height <= wa.y + wa.height - 4;
-        if (below === layoutTop && height === b.height) continue;
-        if (below !== layoutTop) {
+        const limit = wa.y + wa.height - 4;
+        const fitsBelow = orbScreenY + height <= limit;
+        // Not room below for everything, but there is for the transmission window: the approval or question card
+        // opens above the orb instead, and the transmission window stays where it is.
+        const split = !fitsBelow && wantedDecision > 0 && orbScreenY + (height - wantedDecision) <= limit && orbScreenY - wantedDecision >= wa.y;
+        const below = fitsBelow || split;
+        if (below === layoutTop && split === layoutSplit && height === b.height) continue;
+        if (below !== layoutTop || split !== layoutSplit) {
           layoutTop = below;
-          win.webContents.send("jarvis", { type: "layout", top: below });
+          layoutSplit = split;
+          win.webContents.send("jarvis", { type: "layout", top: below, split });
         }
         win.setBounds({ x: b.x, y: b.y, width: b.width, height });
         await settle();
@@ -644,7 +653,7 @@ app.whenReady().then(() => {
     }
   };
   win.webContents.on("did-finish-load", async () => {
-    win.webContents.send("jarvis", { type: "layout", top: layoutTop });
+    win.webContents.send("jarvis", { type: "layout", top: layoutTop, split: layoutSplit });
     await settle();
     orbOffset = await orbTop();
     void arrange();
@@ -656,8 +665,9 @@ app.whenReady().then(() => {
     scheduleLayout();
   });
 
-  const fitHeight = (wanted) => {
+  const fitHeight = (wanted, decision = 0) => {
     wantedHeight = wanted;
+    wantedDecision = decision;
     void arrange();
   };
 
@@ -676,7 +686,9 @@ app.whenReady().then(() => {
     if (m?.type === "panel-restore" && sender === win && typeof m.kind === "string" && slabs[m.kind]) return restoreSlab(m.kind);
     if (m?.type === "panels-front" && sender === win) return raisePanels();
     if (m?.type === "transform-done" && sender === win) return transformWaiter?.();
-    if (m?.type === "fit" && sender === win && Number.isFinite(m.height)) return void fitHeight(m.height);
+    // The orb's empty space lets clicks through to the app underneath (orb/hit.js); forward keeps mouse moves coming.
+    if (m?.type === "click-through" && sender === win) return void win.setIgnoreMouseEvents(!!m.on, { forward: true });
+    if (m?.type === "fit" && sender === win && Number.isFinite(m.height)) return void fitHeight(m.height, Number.isFinite(m.decision) ? m.decision : 0);
     // The compact Tallyline panel's expand control and issue links: open the full app at that page.
     if (m?.type === "tallyline-open" && sender && sender === slabs.tallyline.win) {
       const where = typeof m.path === "string" && /^\/[\w\-./?=&%]*$/.test(m.path) ? m.path : "/";
@@ -739,11 +751,16 @@ app.whenReady().then(() => {
   const CONTROL_QUIET_MS = 60_000;
   /** The window she's working in while she controls the Mac (screen points), or null. */
   let beamTarget = null;
+  /** An upload or download in progress, drawn from her box up to the top of the screen: "up", "down" or null. */
+  let skyDir = null;
+  /** Anubis is up: the transfer fades out behind him, so he stands in front of it. */
+  let guardUp = false;
   /** Whether the "controlling your Mac" overlay is up: the app beam only shows then. */
   let controlOn = false;
   /** Panels she has just opened or moved, each flowing with ether for a moment: kind → when it fades. */
   const flashes = new Map();
   const FLASH_MS = 2600;
+  let skyFadeUntil = 0;
   /** Her beam layer: a transparent, click-through window over the orb's display, above everything (beam.html). */
   let beamWin = null;
   let flashTimer;
@@ -773,9 +790,13 @@ app.whenReady().then(() => {
     if (controlOn && beamTarget) targets.push(beamTarget);
     for (const kind of flashes.keys()) targets.push(slabs[kind].win.getBounds());
     clearTimeout(flashTimer);
+    // The sky part of a transfer fades out on the layer itself, so keep it up a moment after one ends.
+    if (!skyDir && skyFadeUntil > now) flashTimer = setTimeout(() => void sendBeam(), skyFadeUntil - now);
     // While a panel flows, keep re-aiming (it may still be gliding into place), and stop once the last has faded.
     if (flashes.size) flashTimer = setTimeout(() => void sendBeam(), Math.max(50, Math.min(120, Math.min(...flashes.values()) - now + 20)));
-    if (!targets.length || !win.isVisible()) {
+    if (skyDir) skyFadeUntil = now + 1500;
+    const skyShowing = skyDir || skyFadeUntil > now;
+    if ((!targets.length && !skyShowing) || !win.isVisible()) {
       if (beamWin && !beamWin.isDestroyed()) {
         beamWin.webContents.send("jarvis", { type: "beam", from: null, targets: [] });
         beamWin.hide();
@@ -799,8 +820,9 @@ app.whenReady().then(() => {
       beamWin.webContents.on("did-finish-load", () => void sendBeam());
       return;
     }
+    // Her core (the talk button's centre), and the top of her drawing box, where the sky part of a transfer begins.
     const core = await win.webContents
-      .executeJavaScript(`(() => { const r = document.getElementById("talk").getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; })()`)
+      .executeJavaScript(`(() => { const r = document.getElementById("talk").getBoundingClientRect(); const c = document.getElementById("orb"); const o = c.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2, o.top + Number(c.dataset.frameTop || 0)]; })()`)
       .catch(() => null);
     if (!Array.isArray(core) || beamWin.isDestroyed() || win.isDestroyed()) return;
     const orb = win.getBounds();
@@ -812,6 +834,8 @@ app.whenReady().then(() => {
       type: "beam",
       from: { x: orb.x + core[0] - at.x, y: orb.y + core[1] - at.y },
       targets: targets.map((t) => ({ x: t.x - at.x, y: t.y - at.y, width: t.width, height: t.height })),
+      // The transfer runs from just above her core (radius 34) to the top of the screen; behind Anubis while he's up.
+      sky: { dir: skyDir, x: orb.x + core[0] - at.x, top: orb.y + core[2] - at.y, coreTop: orb.y + core[1] - 32 - at.y, guard: guardUp },
     });
   };
   const controlIndicator = (on) => {
@@ -850,6 +874,15 @@ app.whenReady().then(() => {
       if (m.type === "control") {
         if (m.on) lastControlAt = Date.now();
         controlIndicator(!!m.on);
+      }
+      // Uploads and downloads also reach up to the top of the screen, on the beam layer (sky.js).
+      if (m.type === "guard") {
+        guardUp = m.state === "checking" || m.state === "blocked" || m.state === "voice";
+        if (skyDir) void sendBeam();
+      }
+      if (m.type === "transfer") {
+        skyDir = m.dir === "up" || m.dir === "down" ? m.dir : null;
+        void sendBeam();
       }
       if (m.type === "beam") {
         beamTarget = m.target && Number.isFinite(m.target.x) && Number.isFinite(m.target.y) ? m.target : null;

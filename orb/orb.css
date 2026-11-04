@@ -27,12 +27,15 @@ main {
   align-items: center;
   justify-content: flex-end;
   min-height: 100%;
-  padding: 0 12px 12px;
+  /* Room above for her figures and transfer beams to rise into (see PAD in orb.js). */
+  padding: 56px 12px 12px;
   gap: 6px;
 }
 
 .orb-wrap { position: relative; width: 320px; height: 260px; flex: none; }
-#orb { width: 320px; height: 260px; display: block; cursor: grab; }
+/* The canvas spills past the orb's 320 × 260 frame (PAD in orb.js), so her glow and figures aren't cut off at its
+   edges; the frame itself, and everything positioned in it, stays where it was. */
+#orb { width: 400px; height: 340px; margin: -56px -40px -24px; display: block; cursor: grab; }
 #orb.dragging { cursor: grabbing; }
 
 #talk {
@@ -150,6 +153,9 @@ main {
   clip-path: inset(50%);
   white-space: nowrap;
 }
+
+/* The window is wider than the cards now (room for the orb's glow); the cards keep their size. */
+.card { max-width: 326px; }
 
 /* Glass cards: tinted, rim-lit and sheened. (The orb window is see-through, so there's no native blur behind them.) */
 .card {
@@ -380,6 +386,9 @@ body.type-only.god-mode #orb { filter: saturate(0.55) brightness(0.85) drop-shad
 .card, .question { order: -1; }
 body.top main { justify-content: flex-start; }
 body.top .card, body.top .question { order: 1; }
+/* Split: not enough room below for both, so the approval or question opens above the orb and the transmission window
+   stays below where it was. */
+body.top.split #ask, body.top.split #question { order: -1; }
 
 /* Collapsing the thinking window: only the tab and the current step remain. */
 .card-toggle {

@@ -35,7 +35,17 @@
   // Arc reactor meets the winged sun: turquoise reactor light, lapis and gold.
   const W = 320;
   const H = 260;
+  /**
+   * Room round the drawing frame: everything is drawn in W × H as before, but the canvas is this much bigger, so her
+   * glow, Anubis, Thoth and the transfer beams fade out softly instead of stopping at the frame's edges. With
+   * click-through (hit.js) the extra room catches no clicks. Keep in step with #orb in orb.css.
+   */
+  const PAD = { x: 40, top: 56, bottom: 24 };
+  /** The whole canvas, in drawing coordinates. */
+  const FULL = [-PAD.x, -PAD.top, W + 2 * PAD.x, H + PAD.top + PAD.bottom];
   const R = 34;
+  /** Out to just past her glyph ring (R × 1.72 + 7): all of it is grabbable, gaps included. */
+  const BODY_RADIUS = Math.round(R * 1.72 + 14);
   const GOLD = [236, 188, 82];
   const LAPIS = [34, 64, 160];
   const COLOURS = {
@@ -47,6 +57,8 @@
   const EYE_OPEN = { idle: 0.85, listening: 1, thinking: 0.75, speaking: 0.9 };
   const GLYPHS = ["ankh", "eye", "water", "djed", "sun", "reed"];
   const LABELS = { idle: "Idle", listening: "Listening…", thinking: "Thinking…", speaking: "Speaking" };
+  /** The status text for a state: "Researching…" while Thoth is up and she's working. */
+  const labelFor = (s) => (scribeState === "researching" && s === "thinking" ? "Researching…" : LABELS[s]);
   const TALK_LABELS = { listening: "Stop listening" };
 
   let state = "idle";
@@ -65,9 +77,12 @@
   let nextBlink = 3000;
 
   const dpr = window.devicePixelRatio || 1;
-  canvas.width = W * dpr;
-  canvas.height = H * dpr;
+  canvas.width = (W + 2 * PAD.x) * dpr;
+  canvas.height = (H + PAD.top + PAD.bottom) * dpr;
   ctx.scale(dpr, dpr);
+  ctx.translate(PAD.x, PAD.top);
+  // Where the drawing frame starts inside the canvas: the sky part of a transfer (sky.js) carries on from there.
+  canvas.dataset.frameTop = String(PAD.top);
 
   const rgba = (c, a) => `rgba(${c[0] | 0}, ${c[1] | 0}, ${c[2] | 0}, ${Math.max(0, Math.min(1, a))})`;
   const lerp = (a, b, t) => a + (b - a) * t;
@@ -160,7 +175,7 @@
     if (!COLOURS[next]) return;
     if (next !== state) startUnlock();
     state = next;
-    stateLabel.textContent = LABELS[next];
+    stateLabel.textContent = labelFor(next);
     // Finished: the last step she worked on is done, not still "current" (it read "Thinking…" while she sat idle).
     if (next === "idle") {
       for (const li of activity.children) li.className = "done";
@@ -510,7 +525,14 @@
     // Transcript mode: "Recording 03:12" in place of "Listening…" until the state changes.
     else if (m.type === "state-label") stateLabel.textContent = m.text;
     else if (m.type === "guard") guardState = m.state === "checking" || m.state === "blocked" || m.state === "voice" ? m.state : null;
-    else if (m.type === "transfer") transferDir = m.dir === "up" || m.dir === "down" ? m.dir : null;
+    else if (m.type === "scribe") {
+      const next = m.state === "researching" || m.state === "found" ? m.state : null;
+      if (next === "found" && scribeState !== "found") glintAt = performance.now();
+      if (next !== "found") glintAt = 0;
+      scribeState = next;
+      // The status says "Researching" while he's up: the glyph is never the only signal.
+      stateLabel.textContent = labelFor(state);
+    }
     else if (m.type === "coffee") showCoffee(m);
     else if (m.type === "mode") {
       const on = !!m.typeOnly;
@@ -532,7 +554,10 @@
       recordButton.setAttribute("aria-pressed", String(recording));
       recordButton.setAttribute("aria-label", recording ? "Stop the transcript" : "Start a transcript");
     }
-    else if (m.type === "layout") document.body.classList.toggle("top", !!m.top);
+    else if (m.type === "layout") {
+      document.body.classList.toggle("top", !!m.top);
+      document.body.classList.toggle("split", !!m.split);
+    }
     else if (m.type === "collapse") (m.collapsed ? foldCard() : showCard());
     else if (m.type === "panels") panels = Array.isArray(m.panels) ? m.panels : [];
     else if (m.type === "transform") transformTo(m.to);
@@ -615,6 +640,34 @@
     el.addEventListener("focus", () => (hovered = id));
     el.addEventListener("blur", () => (hovered = null));
   }
+
+  // Clicks pass through the window's empty space to the app underneath (see hit.js), so her click area is the shape of
+  // her body. The window stops ignoring the pointer whenever it's over something drawn; never mid-drag, or the drag
+  // would lose its mouse-up.
+  let clickThrough = false;
+  const setClickThrough = (on) => {
+    if (on === clickThrough) return;
+    clickThrough = on;
+    bridge.send({ type: "click-through", on });
+  };
+  window.addEventListener("mousemove", (e) => {
+    if (e.buttons) return setClickThrough(false);
+    const el = document.elementFromPoint(e.clientX, e.clientY);
+    let target = "empty";
+    let alpha = 0;
+    if (el === canvas || el === talk) {
+      const r = canvas.getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1;
+      target = "canvas";
+      // The core (the talk button) is always clickable; elsewhere it's whether a pixel of her is drawn there.
+      const core = talk.getBoundingClientRect();
+      const fromCore = Math.hypot(e.clientX - (core.left + core.width / 2), e.clientY - (core.top + core.height / 2));
+      // Her ring and core, gaps included, are her body; past them, whether a pixel of her (wings, a figure) is drawn.
+      alpha = fromCore <= BODY_RADIUS ? 255 : ctx.getImageData(Math.floor((e.clientX - r.left) * dpr), Math.floor((e.clientY - r.top) * dpr), 1, 1).data[3];
+    } else if (el && el !== document.body && el !== document.documentElement && !el.matches("main, .orb-wrap, .state-wrap")) target = "control";
+    setClickThrough(!window.astraHit.isSolid({ target, alpha }));
+  });
+  document.addEventListener("mouseleave", () => setClickThrough(true));
 
   typeBox.addEventListener("submit", (e) => {
     e.preventDefault();
@@ -901,120 +954,7 @@
     }
   }
 
-  // Data transfers: "up" fires a laser pulse array straight up out of the core; "down" calls the pyramid mothership.
-  let transferDir = null;
-  let upAmt = 0;
-  let downAmt = 0;
-  const BEAM = [120, 255, 236];
-
-  /** Uploading: five beams rise from the core, converging into the distance, with bright pulses racing up them. */
-  function drawLaserArray(cx, top, t, amt) {
-    const beams = [-12, -6, 0, 6, 12];
-    const speed = reducedMotion ? 0.15 : 1.7;
-    const emitter = ctx.createRadialGradient(cx, top, 0, cx, top, 22);
-    emitter.addColorStop(0, rgba([255, 255, 255], 0.8 * amt));
-    emitter.addColorStop(1, rgba(BEAM, 0));
-    ctx.fillStyle = emitter;
-    ctx.fillRect(cx - 22, top - 22, 44, 44);
-    // x at height y: the beams draw together as they go up, like a distant target.
-    const at = (dx, y) => cx + dx * (0.35 + 0.65 * (y / top));
-    beams.forEach((dx, i) => {
-      const centre = dx === 0;
-      ctx.beginPath();
-      ctx.moveTo(at(dx, top), top);
-      ctx.lineTo(at(dx, 0), 0);
-      ctx.strokeStyle = rgba(BEAM, (centre ? 0.45 : 0.25) * amt);
-      ctx.lineWidth = centre ? 2 : 1;
-      ctx.stroke();
-      for (let k = 0; k < 3; k++) {
-        const p = (t * speed + k / 3 + i * 0.17) % 1;
-        const y = top * (1 - p);
-        const len = 10 + 8 * (1 - p);
-        const g = ctx.createLinearGradient(0, y, 0, y + len);
-        g.addColorStop(0, rgba([255, 255, 255], amt * (1 - p * 0.7)));
-        g.addColorStop(1, rgba(BEAM, 0));
-        ctx.beginPath();
-        ctx.moveTo(at(dx, y), y);
-        ctx.lineTo(at(dx, Math.min(top, y + len)), Math.min(top, y + len));
-        ctx.strokeStyle = g;
-        ctx.lineWidth = centre ? 3 : 2;
-        ctx.lineCap = "round";
-        ctx.stroke();
-      }
-    });
-  }
-
-  /** Downloading: a gold pyramid mothership descends, turning slowly, and beams the data down into the core. */
-  function drawMothership(cx, coreTop, coreR, t, amt) {
-    const s = 22;
-    const h = 26;
-    const baseY = -30 + 58 * amt;
-    const spinAngle = t * (reducedMotion ? 0.15 : 0.8);
-    const corners = [0, 1, 2, 3].map((i) => {
-      const a = spinAngle + (i * Math.PI) / 2;
-      return { x: cx + Math.cos(a) * s, y: baseY + Math.sin(a) * s * 0.28, z: Math.sin(a) };
-    });
-    const apex = { x: cx, y: baseY - h };
-
-    // Tractor beam to the core, with rings travelling down it.
-    const beam = ctx.createLinearGradient(0, baseY, 0, coreTop);
-    beam.addColorStop(0, rgba(BEAM, 0.32 * amt));
-    beam.addColorStop(1, rgba(BEAM, 0.06 * amt));
-    ctx.beginPath();
-    ctx.moveTo(cx - s * 0.9, baseY + 3);
-    ctx.lineTo(cx + s * 0.9, baseY + 3);
-    ctx.lineTo(cx + coreR * 0.7, coreTop);
-    ctx.lineTo(cx - coreR * 0.7, coreTop);
-    ctx.closePath();
-    ctx.fillStyle = beam;
-    ctx.fill();
-    for (let k = 0; k < 3; k++) {
-      const p = (t * (reducedMotion ? 0.1 : 0.9) + k / 3) % 1;
-      const y = baseY + 3 + (coreTop - baseY - 3) * p;
-      const w = s * 0.9 + (coreR * 0.7 - s * 0.9) * p;
-      ctx.beginPath();
-      ctx.ellipse(cx, y, w, 2.2, 0, 0, Math.PI * 2);
-      ctx.strokeStyle = rgba([255, 255, 255], 0.55 * amt * Math.sin(p * Math.PI));
-      ctx.lineWidth = 1;
-      ctx.stroke();
-    }
-
-    // Faces, back to front, lit by how squarely each faces you.
-    const faces = [0, 1, 2, 3]
-      .map((i) => {
-        const a = corners[i];
-        const b = corners[(i + 1) % 4];
-        return { a, b, depth: (a.z + b.z) / 2 };
-      })
-      .sort((p, q) => q.depth - p.depth);
-    for (const f of faces) {
-      const front = f.depth < 0;
-      const light = front ? 0.55 + 0.45 * -f.depth : 0.25;
-      ctx.beginPath();
-      ctx.moveTo(f.a.x, f.a.y);
-      ctx.lineTo(f.b.x, f.b.y);
-      ctx.lineTo(apex.x, apex.y);
-      ctx.closePath();
-      ctx.fillStyle = rgba(GOLD.map((v) => v * light), 0.92 * amt);
-      ctx.fill();
-      ctx.strokeStyle = rgba([255, 236, 180], 0.8 * amt);
-      ctx.lineWidth = 0.8;
-      ctx.stroke();
-    }
-    // The capstone glows, and lights run along the rim.
-    const cap = ctx.createRadialGradient(apex.x, apex.y + 2, 0, apex.x, apex.y + 2, 7);
-    cap.addColorStop(0, rgba([255, 255, 255], 0.95 * amt));
-    cap.addColorStop(1, rgba(BEAM, 0));
-    ctx.fillStyle = cap;
-    ctx.fillRect(apex.x - 7, apex.y - 5, 14, 14);
-    for (const c of corners) {
-      if (c.z > 0.2) continue;
-      ctx.beginPath();
-      ctx.arc(c.x, c.y, 1.6, 0, Math.PI * 2);
-      ctx.fillStyle = rgba(BEAM, amt * (0.6 + 0.4 * Math.sin(t * 5 + c.x)));
-      ctx.fill();
-    }
-  }
+  // Uploads and downloads are drawn whole on the beam layer (orb/sky.js), from her core to the top of the screen.
 
   // Security checks: Anubis rises behind the orb, head and shoulders, holding the was sceptre. His eyes glow gold while
   // he checks and burn red when he blocks a site.
@@ -1022,6 +962,201 @@
   let guardAmt = 0;
   let guardRed = 0;
   const JACKAL = [16, 20, 34];
+
+  // ── Thoth, the scribe: rises behind the orb while she researches (see src/scribe.ts) ──
+  let scribeState = null;
+  let thothAmt = 0;
+  /** How bright his moon is: it builds slowly while he researches, and resets once he has gone. */
+  let moonAmt = 0;
+  /** When the research was found (his one glint), or 0. */
+  let glintAt = 0;
+  const MOON = [226, 232, 255];
+
+  /**
+   * Thoth, head and shoulders, the way Anubis stands: an ibis head with a long curved beak under a crescent and moon
+   * disc, a reed pen in his right hand writing marks that drift up and fade like ink turning to light, and a scribe's
+   * palette resting at his left shoulder. Gold line work on lapis and the dark, as Anubis is drawn.
+   */
+  function drawScribe(cx, t, amt, moon, glint) {
+    const rise = (1 - amt) * 34;
+    const bob = reducedMotion ? 0 : Math.sin(t * 1.3 + 1) * 1.1;
+    const y0 = 3 + rise + bob; // top of the moon disc
+    ctx.save();
+    ctx.globalAlpha = amt;
+
+    // A soft moonlit ward over the orb.
+    const ward = ctx.createRadialGradient(cx, y0 + 36, 4, cx, y0 + 36, 92);
+    ward.addColorStop(0, rgba(MOON, 0.1 + 0.1 * moon));
+    ward.addColorStop(1, rgba(MOON, 0));
+    ctx.fillStyle = ward;
+    ctx.fillRect(...FULL);
+
+    // Shoulders, lapis into the dark, gold along the top.
+    ctx.beginPath();
+    ctx.moveTo(cx - 62, y0 + 84);
+    ctx.quadraticCurveTo(cx - 58, y0 + 55, cx - 24, y0 + 49);
+    ctx.lineTo(cx + 24, y0 + 49);
+    ctx.quadraticCurveTo(cx + 58, y0 + 55, cx + 62, y0 + 84);
+    const body = ctx.createLinearGradient(0, y0 + 49, 0, y0 + 84);
+    body.addColorStop(0, rgba(LAPIS, 0.95));
+    body.addColorStop(0.6, rgba(JACKAL, 0.8));
+    body.addColorStop(1, rgba(JACKAL, 0));
+    ctx.fillStyle = body;
+    ctx.fill();
+    const edge = ctx.createLinearGradient(0, y0 + 49, 0, y0 + 84);
+    edge.addColorStop(0, rgba(GOLD, 0.9));
+    edge.addColorStop(1, rgba(GOLD, 0));
+    ctx.strokeStyle = edge;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    // Striped headdress falling either side of his neck.
+    for (const side of [-1, 1]) {
+      for (let i = 0; i < 3; i++) {
+        ctx.beginPath();
+        ctx.moveTo(cx + side * (8 + i * 2), y0 + 30 + i * 6);
+        ctx.lineTo(cx + side * (16 + i * 2.4), y0 + 30 + i * 6);
+        ctx.lineTo(cx + side * (18 + i * 2.4), y0 + 36 + i * 6);
+        ctx.lineTo(cx + side * (10 + i * 2), y0 + 36 + i * 6);
+        ctx.closePath();
+        ctx.fillStyle = rgba(i % 2 ? LAPIS : GOLD, 0.95);
+        ctx.fill();
+      }
+    }
+
+    // Collar: gold, turquoise, gold.
+    [[20, GOLD], [24.5, [70, 210, 220]], [29, GOLD]].forEach(([radius, colour]) => {
+      ctx.beginPath();
+      ctx.arc(cx, y0 + 42, radius, Math.PI * 0.16, Math.PI * 0.84);
+      ctx.strokeStyle = rgba(colour, 0.9);
+      ctx.lineWidth = 3;
+      ctx.stroke();
+    });
+
+    // Crescent and moon disc above his head, brightening as he works.
+    const mx = cx;
+    const my = y0 + 9;
+    const halo = ctx.createRadialGradient(mx, my, 2, mx, my, 20);
+    halo.addColorStop(0, rgba(MOON, 0.35 + 0.45 * moon));
+    halo.addColorStop(1, rgba(MOON, 0));
+    ctx.fillStyle = halo;
+    ctx.fillRect(mx - 20, my - 20, 40, 40);
+    ctx.beginPath();
+    ctx.arc(mx, my, 6.5, 0, Math.PI * 2);
+    ctx.fillStyle = rgba([lerp(150, 245, moon), lerp(160, 248, moon), lerp(200, 255, moon)], 0.95);
+    ctx.fill();
+    ctx.strokeStyle = rgba(GOLD, 0.9);
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(mx, my + 2, 9.5, Math.PI * 0.1, Math.PI * 0.9);
+    ctx.strokeStyle = rgba(GOLD, 0.95);
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // The ibis head: a rounded crown, and the long beak curving down and away to his right.
+    ctx.fillStyle = rgba(JACKAL, 1);
+    ctx.strokeStyle = rgba(GOLD, 0.9);
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.ellipse(cx + 1, y0 + 27, 8.5, 7.5, -0.2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(cx - 5, y0 + 24);
+    ctx.bezierCurveTo(cx - 16, y0 + 27, cx - 24, y0 + 36, cx - 27, y0 + 50);
+    ctx.bezierCurveTo(cx - 21, y0 + 39, cx - 14, y0 + 32, cx - 4, y0 + 30);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    // His eye: a bright, calm point.
+    const glow = 0.75 + (reducedMotion ? 0 : 0.25 * Math.sin(t * 2.2));
+    ctx.beginPath();
+    ctx.arc(cx - 1, y0 + 25.5, 1.6, 0, Math.PI * 2);
+    ctx.fillStyle = rgba([255, 226, 150], glow);
+    ctx.shadowColor = rgba([255, 214, 110], 0.9);
+    ctx.shadowBlur = 6;
+    ctx.fill();
+    ctx.shadowBlur = 0;
+
+    // The palette at his left shoulder: a slim board with two ink wells.
+    ctx.save();
+    ctx.translate(cx - 50, y0 + 58);
+    ctx.rotate(-0.55);
+    ctx.beginPath();
+    ctx.roundRect(-4, -15, 8, 30, 2);
+    ctx.fillStyle = rgba(JACKAL, 0.95);
+    ctx.fill();
+    ctx.strokeStyle = rgba(GOLD, 0.9);
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    for (const wy of [-10, -4]) {
+      ctx.beginPath();
+      ctx.arc(0, wy, 1.6, 0, Math.PI * 2);
+      ctx.fillStyle = rgba(wy < -6 ? [200, 70, 60] : GOLD, 0.9);
+      ctx.fill();
+    }
+    ctx.restore();
+
+    // The reed pen in his right hand, and his arm reaching up from the shoulder.
+    const nx = cx + 66;
+    const ny = y0 + 30;
+    ctx.beginPath();
+    ctx.moveTo(cx + 46, y0 + 64);
+    ctx.quadraticCurveTo(cx + 60, y0 + 62, cx + 60, y0 + 50);
+    ctx.strokeStyle = rgba(GOLD, 0.9);
+    ctx.lineWidth = 7;
+    ctx.lineCap = "round";
+    ctx.stroke();
+    ctx.strokeStyle = rgba(LAPIS, 1);
+    ctx.lineWidth = 5;
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(cx + 58, y0 + 56);
+    ctx.lineTo(nx, ny);
+    ctx.strokeStyle = rgba(GOLD, 0.95);
+    ctx.lineWidth = 1.8;
+    ctx.stroke();
+    ctx.fillStyle = rgba(GOLD, 0.95);
+    ctx.fillRect(cx + 56.5, y0 + 49, 6, 4);
+
+    // Writing: small gold marks leave the nib, drift up and fade, like ink becoming light. Not with reduced motion.
+    if (!reducedMotion && scribeState === "researching") {
+      for (let i = 0; i < 6; i++) {
+        const p = (t * 0.55 + i / 6) % 1;
+        const x = nx + Math.sin(i * 1.9 + p * 4) * 5 + p * 4;
+        const y = ny - 2 - p * 34;
+        ctx.save();
+        ctx.translate(x, y);
+        ctx.rotate(i * 0.9 + p);
+        ctx.strokeStyle = rgba([255, 226, 150], (1 - p) * 0.85);
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        ctx.moveTo(-2, 0);
+        ctx.lineTo(2, i % 2 ? 1.5 : -1.5);
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
+
+    // Found: one soft glint off the moon before he sinks away.
+    if (glint > 0) {
+      const g = ctx.createRadialGradient(mx, my, 0, mx, my, 26 * glint + 6);
+      g.addColorStop(0, rgba([255, 255, 255], 0.9 * glint));
+      g.addColorStop(1, rgba(MOON, 0));
+      ctx.fillStyle = g;
+      ctx.fillRect(mx - 34, my - 34, 68, 68);
+      ctx.strokeStyle = rgba([255, 250, 230], 0.8 * glint);
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(mx - 14 * glint, my);
+      ctx.lineTo(mx + 14 * glint, my);
+      ctx.moveTo(mx, my - 14 * glint);
+      ctx.lineTo(mx, my + 14 * glint);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
 
   function drawGuardian(cx, t, amt, red) {
     const rise = (1 - amt) * 34;
@@ -1036,7 +1171,7 @@
     ward.addColorStop(0, rgba(red > 0.5 ? [255, 90, 70] : GOLD, 0.18));
     ward.addColorStop(1, rgba(GOLD, 0));
     ctx.fillStyle = ward;
-    ctx.fillRect(0, 0, W, H);
+    ctx.fillRect(...FULL);
 
     // Shoulders, lapis fading into the dark behind the orb, the top edge in gold.
     ctx.beginPath();
@@ -1211,7 +1346,7 @@
     const breathe = reducedMotion ? 0 : Math.sin(t * 1.5) * 0.03;
     const r = R * (1 + breathe + level * 0.22);
 
-    ctx.clearRect(0, 0, W, H);
+    ctx.clearRect(...FULL);
 
     // Halo: reactor light with a warm gold rim
     const halo = ctx.createRadialGradient(cx, cy, r * 0.4, cx, cy, r * 3.2);
@@ -1220,16 +1355,16 @@
     halo.addColorStop(0.6, rgba(GOLD, 0.05 + level * 0.06));
     halo.addColorStop(1, rgba(GOLD, 0));
     ctx.fillStyle = halo;
-    ctx.fillRect(0, 0, W, H);
+    ctx.fillRect(...FULL);
 
-    // Transfers first, then Anubis: when a security check runs during an upload or download, he stands in front of the
-    // beams and the pyramid rather than being hidden behind them.
-    upAmt = lerp(upAmt, transferDir === "up" && formTo === 1 ? 1 : 0, 0.06);
-    downAmt = lerp(downAmt, transferDir === "down" && formTo === 1 ? 1 : 0, 0.04);
-    if (upAmt > 0.01) drawLaserArray(cx, cy - r * 0.95, t, upAmt * st.wings);
-    if (downAmt > 0.01) drawMothership(cx, cy - r * 0.95, r, t, downAmt * st.wings);
-
-    guardAmt = lerp(guardAmt, guardState && formTo === 1 ? 1 : 0, 0.07);
+    // Anubis guards; Thoth researches; Anubis wins while he's up (orb/figures.js).
+    const figures = window.astraFigures.figureTargets({ guard: guardState, scribe: scribeState, open: formTo === 1 });
+    guardAmt = lerp(guardAmt, figures.anubis, 0.07);
+    thothAmt = lerp(thothAmt, figures.thoth, 0.06);
+    if (scribeState === "researching") moonAmt = Math.min(1, moonAmt + (reducedMotion ? 1 : 0.004));
+    else if (thothAmt < 0.01) moonAmt = 0;
+    const glint = glintAt && !reducedMotion ? Math.max(0, 1 - (performance.now() - glintAt) / 900) : 0;
+    if (thothAmt > 0.01) drawScribe(cx, t, thothAmt * st.wings, moonAmt, glint);
     // Red eyes when he's stopped something: a blocked page, or a voice that isn't Dan's.
     guardRed = lerp(guardRed, guardState === "blocked" || guardState === "voice" ? 1 : 0, 0.12);
     if (guardAmt > 0.01) drawGuardian(cx, t, guardAmt * st.wings, guardRed);
@@ -1450,6 +1585,7 @@
   // never cut off and no invisible window is left blocking clicks. The main process keeps the orb where it is.
   const main = document.querySelector("main");
   let lastFit = 0;
+  let lastDecision = 0;
   const reportFit = () => {
     const style = getComputedStyle(main);
     const gap = parseFloat(style.rowGap) || 0;
@@ -1461,9 +1597,15 @@
       parseFloat(style.paddingBottom) +
       8;
     const rounded = Math.ceil(height);
-    if (Math.abs(rounded - lastFit) < 2) return;
+    // The decision cards (an approval or a question), measured on their own: when there isn't room for them and the
+    // transmission window below the orb, they open above it instead (see arrange in main.cjs).
+    const decision = Math.ceil(
+      shown.filter((el) => el.id === "ask" || el.id === "question").reduce((sum, el) => sum + el.getBoundingClientRect().height + gap, 0),
+    );
+    if (Math.abs(rounded - lastFit) < 2 && decision === lastDecision) return;
     lastFit = rounded;
-    bridge.send({ type: "fit", height: rounded });
+    lastDecision = decision;
+    bridge.send({ type: "fit", height: rounded, decision });
   };
   new ResizeObserver(reportFit).observe(main);
   for (const el of main.children) new ResizeObserver(reportFit).observe(el);

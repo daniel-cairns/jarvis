@@ -7,11 +7,14 @@
   <style>
     /* Her beam layer: ether flowing from the orb to her panels and the app she's working in. Clicks pass through. */
     html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; }
+    #sky { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; }
     #beam { position: fixed; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; mix-blend-mode: screen; }
   </style>
 </head>
 <body>
+  <canvas id="sky" aria-hidden="true"></canvas>
   <svg id="beam" aria-hidden="true"></svg>
   <script src="beam.js"></script>
+  <script src="sky.js"></script>
 </body>
 </html>
