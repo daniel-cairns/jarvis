@@ -51,6 +51,8 @@
 
   let state = "idle";
   let colour = [...COLOURS.idle];
+  /** God mode: drawn as a gold halo over the ring (see draw), in every state. */
+  let godMode = false;
   let level = 0;
   let spin = 0;
   let wingOpen = 0.6;
@@ -159,6 +161,12 @@
     if (next !== state) startUnlock();
     state = next;
     stateLabel.textContent = LABELS[next];
+    // Finished: the last step she worked on is done, not still "current" (it read "Thinking…" while she sat idle).
+    if (next === "idle") {
+      for (const li of activity.children) li.className = "done";
+      // A bare "Thinking…" left over says nothing once she's finished, and reads as if she still is.
+      if (activity.lastElementChild?.dataset.text === "Thinking…") activity.lastElementChild.remove();
+    }
     stopButton.disabled = next === "idle";
     talk.setAttribute("aria-label", TALK_LABELS[next] ?? "Talk to Astra");
   }
@@ -514,7 +522,10 @@
       if (on) typeText.focus();
       typeOnlyButton.setAttribute("aria-label", on ? "Back to voice: microphone and speech on" : "Type only: microphone off and silent");
       document.body.classList.toggle("god-mode", !!m.god);
-      LABELS.idle = on ? "Type only" : m.god ? "God mode" : "Idle";
+      godMode = !!m.god;
+      godBadge.hidden = !godMode;
+      // The status says what she's doing; god mode has its own crown and halo, so idle reads as idle.
+      LABELS.idle = on ? "Type only" : "Idle";
       if (state === "idle") stateLabel.textContent = LABELS.idle;
     } else if (m.type === "recording") {
       recording = !!m.on;
@@ -672,6 +683,7 @@
 
   /** Coffee mode's water clock under her status: a slow silent drip while the Mac is kept awake. */
   const coffee = document.getElementById("coffee");
+  const godBadge = document.getElementById("god");
   function showCoffee(m) {
     coffee.hidden = !m.on;
     if (!m.on) return void coffee.replaceChildren();
@@ -1390,6 +1402,22 @@
       ctx.lineWidth = 3;
       ctx.lineCap = "round";
       ctx.stroke();
+    }
+
+    // God mode: a gold halo flowing over the top of the ring, in every state, so it never hides what she's doing.
+    if (godMode) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(cx, cy, gr + 20, Math.PI * 1.12, Math.PI * 1.88);
+      ctx.setLineDash([2, 7]);
+      ctx.lineDashOffset = reducedMotion ? 0 : -t * 14;
+      ctx.strokeStyle = rgba(GOLD, 0.85);
+      ctx.lineWidth = 2.4;
+      ctx.lineCap = "round";
+      ctx.shadowColor = rgba(GOLD, 0.9);
+      ctx.shadowBlur = 8;
+      ctx.stroke();
+      ctx.restore();
     }
 
     // Core: white-hot sun disc

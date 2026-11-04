@@ -404,3 +404,7 @@ body.collapsed .state { cursor: pointer; text-decoration: underline dotted rgba(
 .state-wrap { position: relative; }
 .coffee { position: absolute; left: 100%; top: 50%; transform: translate(2px, -60%); margin: 0; color: var(--accent); font-size: 15px; line-height: 1; opacity: 0.9; }
 .coffee[hidden] { display: none; }
+/* God mode's crown: on the status pill's left, gold and glowing, whatever state she's in. */
+.god-badge { position: absolute; right: 100%; top: 50%; transform: translate(-3px, -58%); margin: 0; width: 16px; height: 16px; color: var(--accent); filter: drop-shadow(0 0 4px rgba(236, 188, 82, 0.85)); }
+.god-badge[hidden] { display: none; }
+.god-badge svg { width: 100%; height: 100%; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linejoin: round; stroke-linecap: round; }
