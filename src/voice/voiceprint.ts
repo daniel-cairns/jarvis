@@ -105,6 +105,41 @@ export function enrolPanel(current: number | null, done: ReadonlySet<number>, ag
   return `${now}\n\nRead in your normal voice, at your usual distance from the Mac. I start listening when I say the number.\n\n${list}`;
 }
 
+/** Analysis frame for finding speech: 20 ms. */
+const FRAME = RATE / 50;
+/** Kept either side of the speech, so a word's soft start and end stay in. */
+const SPEECH_PAD = 0.1 * RATE;
+
+/**
+ * Where the speech is in a recording: from the first loud frame to the last, padded a little, and never shorter than
+ * MIN_SECONDS (widened around the speech, within the recording), so even a short "yes" is still judged.
+ * "Loud" is relative to the recording's own peak, so a quiet room and a loud one trim alike.
+ */
+export function speechSpan(samples: Float32Array): { start: number; end: number } {
+  const frames = Math.floor(samples.length / FRAME);
+  const rms: number[] = [];
+  for (let f = 0; f < frames; f++) {
+    let sum = 0;
+    for (let i = f * FRAME; i < (f + 1) * FRAME; i++) sum += samples[i]! * samples[i]!;
+    rms.push(Math.sqrt(sum / FRAME));
+  }
+  const peak = Math.max(0, ...rms);
+  const floor = Math.max(0.005, peak * 0.1);
+  const first = rms.findIndex((v) => v >= floor);
+  const last = rms.length - 1 - [...rms].reverse().findIndex((v) => v >= floor);
+  if (first < 0 || peak === 0) return { start: 0, end: samples.length };
+  let start = Math.max(0, first * FRAME - SPEECH_PAD);
+  let end = Math.min(samples.length, (last + 1) * FRAME + SPEECH_PAD);
+  const min = MIN_SECONDS * RATE;
+  if (end - start < min) {
+    const grow = (min - (end - start)) / 2;
+    start = Math.max(0, Math.floor(start - grow));
+    end = Math.min(samples.length, start + min);
+    start = Math.max(0, end - min);
+  }
+  return { start, end };
+}
+
 export type VoiceVerdict = { ok: boolean; score: number; threshold: number; seconds: number };
 
 type VoiceprintFile = { model: string; embedding: number[]; adjust: number; enrolledAt: string; selfScores: number[] };
@@ -154,9 +189,13 @@ export class VoiceCheck {
   /** Is this Dan? Null when there's no voiceprint yet or the phrase is too short to judge. */
   async verdict(samples: Float32Array): Promise<VoiceVerdict | null> {
     const print = this.load();
-    const seconds = samples.length / RATE;
-    if (!print || seconds < MIN_SECONDS) return null;
-    const score = cosine(print.embedding, await this.embed(samples.subarray(0, MAX_SECONDS * RATE)));
+    if (!print || samples.length / RATE < MIN_SECONDS) return null;
+    // Judged on the spoken part only: the silence around a one-word "more" made a half-second word look like a
+    // three-second phrase, so it was scored mostly on silence and faced a long phrase's bar.
+    const { start, end } = speechSpan(samples);
+    const spoken = samples.subarray(start, Math.min(end, start + MAX_SECONDS * RATE));
+    const seconds = (end - start) / RATE;
+    const score = cosine(print.embedding, await this.embed(spoken));
     const threshold = thresholdFor(seconds, print.adjust);
     return { ok: score >= threshold, score, threshold, seconds };
   }

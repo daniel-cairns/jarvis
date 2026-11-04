@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -112,5 +112,44 @@ describe("VoiceCheck.enrol calibrates", () => {
     const { selfScores, adjust } = await check.enrol(clips);
     expect(selfScores).toEqual(scores);
     expect(JSON.parse(readFileSync(path.join(home, "voiceprint.json"), "utf8")).adjust).toBe(adjust);
+  });
+});
+
+describe("a one-word command is judged on its spoken part, not the silence around it", () => {
+  /** `silence` s of near-silence, `word` s of a loud "voice", then `silence` s more, at 16 kHz. */
+  const clip = (silence: number, word: number, level = 0.3) =>
+    Float32Array.from({ length: Math.round((2 * silence + word) * 16_000) }, (_, i) => {
+      const t = i / 16_000;
+      return t >= silence && t < silence + word ? level * Math.sin(i / 3) : 0.001 * Math.sin(i);
+    });
+
+  it("finds the half-second \"more\" in a three-second recording", async () => {
+    const { speechSpan } = await import("../src/voice/voiceprint.js");
+    const { start, end } = speechSpan(clip(1.25, 0.5));
+    expect((end - start) / 16_000).toBeCloseTo(0.7, 1);
+    expect(start / 16_000).toBeCloseTo(1.15, 1);
+  });
+
+  it("widens a very short word to the shortest length it can judge, so it's still checked", async () => {
+    const { speechSpan } = await import("../src/voice/voiceprint.js");
+    const { start, end } = speechSpan(clip(1.4, 0.1));
+    expect((end - start) / 16_000).toBeCloseTo(0.4, 2);
+  });
+
+  it("scores and sets the bar on the spoken part: Dan's live \"more\" (0.875 over a 4.4 s clip) now passes", async () => {
+    const { mkdtempSync } = await import("node:fs");
+    const home = mkdtempSync(path.join(os.tmpdir(), "vp-short-"));
+    const heard: number[] = [];
+    // Scores 0.875 for whatever it's given, like the live "more", and records how much audio it saw.
+    const embed: Embedder = async (s) => {
+      heard.push(s.length / 16_000);
+      return normalise([0.875, Math.sqrt(1 - 0.875 ** 2), 0]);
+    };
+    writeFileSync(path.join(home, "voiceprint.json"), JSON.stringify({ model: "Xenova/wavlm-base-plus-sv", embedding: [1, 0, 0], adjust: -0.052, enrolledAt: "", selfScores: [] }));
+    const v = await new VoiceCheck(home, embed).verdict(clip(1.95, 0.5));
+    expect(heard[0]).toBeCloseTo(0.7, 1);
+    expect(v?.seconds).toBeCloseTo(0.7, 1);
+    expect(v?.threshold).toBeLessThan(0.8);
+    expect(v?.ok).toBe(true);
   });
 });
