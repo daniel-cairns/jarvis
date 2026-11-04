@@ -197,3 +197,19 @@ export function isStopCommand(request: string): boolean {
   const s = request.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, " ").replace(/\s+/g, " ").trim();
   return /^(stop|cancel|never ?mind|be quiet|quiet|shush|shut up|hush)( (it|that|this|talking|speaking|now|please|everything|there|right there|all of it))*$/.test(s);
 }
+
+/**
+ * "Stop, check my email instead", "no, the Temper one", "never mind, what's on my plate": Dan redirecting her while
+ * she works. Returns the new request (without the stop words), or null when it isn't a redirect. Only these count:
+ * anything else said while she's busy waits its turn, so a passing question can't throw her work away.
+ */
+export function redirectRequest(request: string): string | null {
+  const m = request
+    .trim()
+    .match(/^(?:stop|cancel|no|wait|hold on|forget (?:it|that)|never ?mind|scrap that|change of plan)\b(?:\s+(?:it|that|this))?[\s,.!;:-]+(?:(?:and|then)\s+)?(?:instead[,\s]+)?(.+)$/i);
+  const rest = m?.[1]?.trim();
+  if (rest && rest.split(/\s+/).length >= 2) return rest;
+  // "Do X instead" said on its own is a redirect too.
+  const instead = request.trim().match(/^(.+?)[\s,]+instead[.!]?$/i)?.[1]?.trim();
+  return instead && instead.split(/\s+/).length >= 2 ? instead : null;
+}

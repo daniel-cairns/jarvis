@@ -28,7 +28,7 @@ import { appLinks, findSession, listSessions, liveStatus, resolveProject, sendRe
 import { newlyWaiting, sitrep } from "./tools/sitrep.js";
 import { pickLastSession, saveLastSession } from "./tools/lastSession.js";
 import { stopServing } from "./tools/serve.js";
-import { isStopCommand, localCommand, type UiAction, type UiCommand } from "./ui/control.js";
+import { isStopCommand, localCommand, redirectRequest, type UiAction, type UiCommand } from "./ui/control.js";
 import { WindowHistory, type WindowKind } from "./ui/windows.js";
 import { clampVolume, loadSettings, saveSettings } from "./settings.js";
 import { askDialog } from "./ui/dialog.js";
@@ -579,11 +579,17 @@ async function main(): Promise<void> {
       return void runUi(local.ui);
     }
     if (dialogWake) return dialogWake(request);
-    // A slash command ("start a new conversation" → /new) doesn't interrupt what she's doing; a request does.
-    const line = local ? local.slash : request;
-    if (!local || local.slash === "/quit") {
+    // While she works, a new request waits its turn (as a typed one does): only a redirect ("stop, do X instead")
+    // throws her work away. While she's only talking, cutting in is how conversation goes, so that stops her voice.
+    const redirect = local ? null : redirectRequest(request);
+    const line = local ? local.slash : (redirect ?? request);
+    if (local?.slash === "/quit" || redirect) {
       if (busy || speaking) interrupt();
-    }
+    } else if (!local && busy) {
+      console.log(`\n  (queued: ${line})`);
+      orb?.send({ type: "caption", role: "you", text: request });
+      orb?.send({ type: "caption", role: "status", text: "Queued: I'll do that next" });
+    } else if (!local && speaking) interrupt();
     if (line) wokeWith = line;
     lines.inject(line);
   };

@@ -105,7 +105,7 @@
       <rect class="box" x="730" y="40" width="200" height="54"/><text x="742" y="60">Quick action, right now</text><text class="small" x="742" y="76">louder, sit rep, plate, panels,</text><text class="small" x="742" y="89">move, god mode … no Claude, $0</text>
       <rect class="box" x="730" y="118" width="200" height="54"/><text x="742" y="138">Slash command, in turn</text><text class="small" x="742" y="154">/demo /more /voiceprint /new</text><text class="small" x="742" y="167">waits for the main loop</text>
       <rect class="key" x="730" y="196" width="200" height="86"/><text x="742" y="216">Claude turn</text><text class="small" x="742" y="232">+ briefing notes (what happened)</text><text class="small" x="742" y="247">+ open loops (what’s waiting)</text><text class="small" x="742" y="262">+ god-mode prefix when on</text><text class="small" x="742" y="276">costs money</text>
-      <rect class="hot" x="730" y="306" width="200" height="54"/><text x="742" y="326">Spoken while she’s busy</text><text class="small" x="742" y="342">cancels her current work</text><text class="small" x="742" y="355">(typed waits its turn)</text>
+      <rect class="box" x="730" y="306" width="200" height="54"/><text x="742" y="326">Said while she’s busy</text><text class="small" x="742" y="342">waits its turn, like typing</text><text class="small" x="742" y="355">“stop, do X instead” redirects</text>
 
       <line x1="690" y1="232" x2="728" y2="70" marker-end="url(#arrow)"/>
       <line x1="690" y1="246" x2="728" y2="146" marker-end="url(#arrow)"/>
@@ -132,7 +132,7 @@
       <path class="wire" d="M742 500 V528 H120 V492" marker-end="url(#arrow)"/>
       <text class="small" x="300" y="522">after a spoken reply she listens again (follow-up)</text>
     </svg>
-    <figcaption>Voice passes three checks before the router sees it; typing and clicks skip them. The router sends anything it recognises to a quick action or a slash command, and only the rest costs a Claude turn. The dashed box is the rough edge in item 1 below.</figcaption>
+    <figcaption>Voice passes three checks before the router sees it; typing and clicks skip them. The router sends anything it recognises to a quick action or a slash command, and only the rest costs a Claude turn. “Stop” always halts her; a redirect cancels and switches.</figcaption>
   </figure>
 
   <h2>2. What happens without you</h2>
@@ -219,7 +219,7 @@
 
   <h2>4. Rough edges: what makes her feel buggy</h2>
   <ol class="edges">
-    <li><span class="tag bug">FLOW</span><strong>Talking to her mid-task cancels the task; typing doesn’t.</strong> A spoken request while she’s busy interrupts her work and starts the new one; the same words typed wait their turn (<code>src/index.ts:572</code>). Saying “Astra, what time is it?” halfway through a teardown throws the teardown away. Fix: queue spoken requests like typed ones, and keep interrupting only for “stop”.</li>
+    <li><span class="tag bug">FLOW</span><strong>✓ Fixed 4 Nov: talking to her mid-task cancelled the task; typing didn’t.</strong> Now a spoken request waits its turn too, and only a redirect (“stop, do X instead”, “no, the Temper one”, “never mind, …”) cancels. A spoken request while she’s busy interrupts her work and starts the new one; the same words typed wait their turn (<code>src/index.ts:572</code>). Saying “Astra, what time is it?” halfway through a teardown throws the teardown away. Fix: queue spoken requests like typed ones, and keep interrupting only for “stop”.</li>
     <li><span class="tag bug">KNOWLEDGE</span><strong>What she can do is written down in four places that drift apart.</strong> The quick-command patterns (<code>src/ui/control.ts</code>), the help text (<code>src/index.ts:55</code>), the <code>ui_control</code> description (<code>src/tools/server.ts:208</code>) and her instructions (<code>src/prompt.ts</code>). Demo mode was in two of them, so she told you it didn’t exist and paid a session to rebuild it. Fix: one list of her abilities that generates all four.</li>
     <li><span class="tag bug">RESTART</span><strong>A restart forgets the conversation.</strong> Every launch starts fresh unless you say “pick up where we left off”, so a question she asked just before is lost. Fix: after a restart she asked for or that came from a code change, resume the last conversation automatically.</li>
     <li><span class="tag bug">NOISE</span><strong>God mode announces the session you’re sitting in.</strong> It tells you this Claude Code session has finished every time it ends a turn, while you’re looking at it. Fix: skip a session whose window is in front, or only announce once it has waited a few minutes.</li>
