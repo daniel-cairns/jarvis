@@ -31,6 +31,11 @@ export type JarvisConfig = {
   reaCommand: string[];
   chromeBin: string;
   chromeDebugPort: number;
+  /**
+   * How her requests are paid for. "subscription" (Dan's Claude plan, the default): the dollar figures Claude Code
+   * reports are notional, so she ignores them. "api": an API key is set and every request is billed.
+   */
+  billing: "subscription" | "api";
   /** Keys for the public threat indexes a URL is checked against before she fetches it (each optional). */
   safeBrowsingKey?: string;
   urlhausKey?: string;
@@ -70,6 +75,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): JarvisConfig {
 
   return {
     home,
+    billing: env.ANTHROPIC_API_KEY?.trim() ? "api" : "subscription",
     brainDir: expandHome(env.JARVIS_BRAIN_DIR ?? path.join(home, "brain")),
     workspaceDir: expandHome(env.JARVIS_WORKSPACE_DIR ?? path.join(home, "workspace")),
     model: env.JARVIS_MODEL ?? "claude-opus-5-5",

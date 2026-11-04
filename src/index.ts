@@ -24,7 +24,7 @@ import { fileDiff, gitRoot, repoState, type RepoState } from "./tools/git.js";
 import { WorkLog, type ToolEvent } from "./ui/worklog.js";
 import { SessionRunner, type Job } from "./tools/runner.js";
 import type { SessionTools, WindowTools } from "./tools/server.js";
-import { appLinks, findSession, listSessions, liveStatus, resolveProject, type SessionSummary } from "./tools/sessions.js";
+import { appLinks, findSession, listSessions, liveStatus, resolveProject, sendRefusal, type SessionSummary } from "./tools/sessions.js";
 import { newlyWaiting, sitrep } from "./tools/sitrep.js";
 import { pickLastSession, saveLastSession } from "./tools/lastSession.js";
 import { stopServing } from "./tools/serve.js";
@@ -143,6 +143,8 @@ async function main(): Promise<void> {
     if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
   }
   const cfg = loadConfig();
+  /** " · $0.123" on a log line when an API key pays per request; nothing on a subscription, where it's notional. */
+  const costNote = (usd: number) => (cfg.billing === "api" ? ` · $${usd.toFixed(3)}` : "");
 
   let orb: Orb | null = null;
   let ownSpeech = "";
@@ -1002,7 +1004,7 @@ async function main(): Promise<void> {
       if (!result.ok) throw new Error(result.summary);
       await speaker.whenIdle();
       rememberSession();
-      console.log(`  (continued session ${pick.id} · $${result.costUsd.toFixed(3)})`);
+      console.log(`  (continued session ${pick.id}${costNote(result.costUsd)})`);
     } catch (err) {
       jarvis.resumeFrom(fresh);
       await say(`I couldn't pick up our last conversation (${(err as Error).message}). I'm staying in this fresh one.`);
@@ -1303,7 +1305,7 @@ async function main(): Promise<void> {
     },
     finished: (job) => {
       addLine(job, "end", job.status === "done" ? "Finished." : job.status === "stopped" ? "Stopped." : `Failed${job.lastText ? `: ${job.lastText.slice(0, 300)}` : "."}`);
-      console.log(`\n  [${job.id} ${job.label}] ${job.status} · $${job.costUsd.toFixed(3)}\n${job.lastText}\n`);
+      console.log(`\n  [${job.id} ${job.label}] ${job.status}${costNote(job.costUsd)}\n${job.lastText}\n`);
       if (job.unanswered.length) console.log(`  [${job.id} ${job.label}] unanswered: ${job.unanswered.join(" | ")}`);
       // She tells Dan in her own words (see Briefing): straight away if she's free, else as soon as she is.
       briefing.add(runFinishedNote(job), true);
@@ -1510,9 +1512,11 @@ async function main(): Promise<void> {
         lastReply: s.lastReply.slice(0, 6000),
       };
     },
-    send: async (ref, prompt) => {
+    send: async (ref, prompt, evenIfLong) => {
       const s = live(await sessionRef(ref));
       if (s.status === "working") throw new Error(`"${s.title}" is working right now; I only send to a session when it's idle.`);
+      const refusal = sendRefusal(s);
+      if (refusal && !evenIfLong) throw new Error(refusal);
       const job = sessionRunner.send(s.id, s.folder || cfg.workspaceDir, prompt, s.project);
       console.log(`  [${job.id} ${job.label}] resumed ${s.id} with ${job.permissionMode} permissions`);
       startTranscript(job);
@@ -1719,7 +1723,7 @@ async function main(): Promise<void> {
       const result = await jarvis.handle(notes + BRIEF_REQUEST);
       await speaker.whenIdle();
       rememberSession();
-      console.log(`  (briefed · $${result.costUsd.toFixed(3)})`);
+      console.log(`  (briefed${costNote(result.costUsd)})`);
     } catch (err) {
       console.log(`  (briefing failed: ${(err as Error).message})`);
       await say("A background session has finished; its report is in its transcript.");
@@ -1834,7 +1838,7 @@ async function main(): Promise<void> {
       // she has finished saying them (and only then does she listen for a follow-up).
       await speaker.whenIdle();
       rememberSession();
-      console.log(`  (${result.ok ? "done" : result.summary} · $${result.costUsd.toFixed(3)})`);
+      console.log(`  (${result.ok ? "done" : result.summary}${costNote(result.costUsd)})`);
       // Where the time went, so "she's slow" can be traced to a step (see timingLine).
       if (result.timings) console.log(`  (timing: ${timingLine(result.timings, firstSoundAt === null ? null : firstSoundAt - sentAt)})`);
       followUp = spoken && result.ok && !muted;

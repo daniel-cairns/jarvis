@@ -57,7 +57,7 @@ export type WindowTools = {
 export type SessionTools = {
   list(project?: string, includeAstra?: boolean): Promise<unknown>;
   read(session: string): Promise<unknown>;
-  send(session: string, prompt: string): Promise<string>;
+  send(session: string, prompt: string, evenIfLong?: boolean): Promise<string>;
   start(project: string, prompt: string, where: "background" | "app"): Promise<string>;
   open(session: string): Promise<string>;
   stop(job: string): string;
@@ -175,9 +175,9 @@ export function createJarvisServer(cfg: JarvisConfig, runner: Runner = realRunne
       ),
       tool(
         "session_send",
-        "Send a prompt to an existing Claude Code session (by id, title or project). It runs in the background, resumed from that session, only if the session is idle (not mid-turn). Its approval requests come to the user through you; you'll be told when it finishes.",
-        { session: z.string().min(1).max(120), prompt: z.string().min(1).max(8000) },
-        (args) => guarded(async () => (sessions ? sessions.send(args.session, args.prompt) : noSessions)),
+        "Send a prompt to an existing Claude Code session (by id, title or project). It runs in the background, resumed from that session, only if the session is idle (not mid-turn). Its approval requests come to the user through you; you'll be told when it finishes. Refused for a session Dan is using in the Claude app, or a long one (resuming re-reads its whole context, which is slow and heavy): start a fresh session with a short brief instead. For fixes to yourself, always start a fresh session. Set even_if_long only when Dan named that session and asked for it after hearing why.",
+        { session: z.string().min(1).max(120), prompt: z.string().min(1).max(8000), even_if_long: z.boolean().optional() },
+        (args) => guarded(async () => (sessions ? sessions.send(args.session, args.prompt, args.even_if_long) : noSessions)),
       ),
       tool(
         "session_start",
