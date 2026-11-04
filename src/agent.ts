@@ -48,7 +48,33 @@ export type JarvisIO = {
 
 export type Approval = { spoken: string; detail: string };
 
-export type TurnResult = { ok: boolean; costUsd: number; summary: string };
+export type TurnResult = { ok: boolean; costUsd: number; summary: string; timings?: TurnTimings };
+
+/** Where a request's time went, in ms from when it was sent (null if it never got that far). */
+export type TurnTimings = {
+  /** Claude Code started and connected its tools (the init message). */
+  readyMs: number | null;
+  /** The model's first output of any kind (thinking, a tool call or words). */
+  firstOutputMs: number | null;
+  /** Her first words to say. */
+  firstWordsMs: number | null;
+  totalMs: number;
+  /** Time spent waiting on the model, as Claude Code reports it. */
+  apiMs?: number;
+  steps?: number;
+};
+
+const sec = (ms: number | null | undefined) => (ms === null || ms === undefined ? "–" : `${(ms / 1000).toFixed(1)} s`);
+
+/** One log line of a request's timings; `heardMs` is when her voice first came out of the speakers. */
+export function timingLine(t: TurnTimings, heardMs?: number | null): string {
+  const parts = [`ready ${sec(t.readyMs)}`, `first output ${sec(t.firstOutputMs)}`, `first words ${sec(t.firstWordsMs)}`];
+  if (heardMs !== undefined) parts.push(`heard ${sec(heardMs)}`);
+  parts.push(`total ${sec(t.totalMs)}`);
+  if (t.apiMs !== undefined) parts.push(`model ${sec(t.apiMs)}`);
+  if (t.steps !== undefined) parts.push(`${t.steps} step${t.steps === 1 ? "" : "s"}`);
+  return parts.join(" · ");
+}
 
 type QueryFn = typeof query;
 
@@ -170,6 +196,8 @@ export class Jarvis {
     const abort = new AbortController();
     this.abort = abort;
     let result: TurnResult = { ok: false, costUsd: 0, summary: "No result" };
+    const started = performance.now();
+    this.turn = { started, readyMs: null, firstOutputMs: null, firstWordsMs: null };
 
     try {
       for await (const msg of this.runQuery({ prompt, options: this.buildOptions(abort) })) {
@@ -178,6 +206,8 @@ export class Jarvis {
         result = (await this.onMessage(msg)) ?? result;
       }
       if (abort.signal.aborted) return { ok: false, costUsd: result.costUsd, summary: "Cancelled" };
+      const { started: _started, ...marks } = this.turn;
+      result = { ...result, timings: { ...marks, totalMs: performance.now() - started, ...result.timings } };
     } catch (err) {
       if (abort.signal.aborted) return { ok: false, costUsd: 0, summary: "Cancelled" };
       throw err;
@@ -187,8 +217,17 @@ export class Jarvis {
     return result;
   }
 
+  /** The request in flight, for its timings. */
+  private turn = { started: 0, readyMs: null as number | null, firstOutputMs: null as number | null, firstWordsMs: null as number | null };
+
   private async onMessage(msg: SDKMessage): Promise<TurnResult | undefined> {
     for (const e of toolEvents(msg)) this.io.toolEvent?.(e);
+    const at = performance.now() - this.turn.started;
+    if (msg.type === "system" && msg.subtype === "init") this.turn.readyMs ??= at;
+    if (msg.type === "assistant" && msg.parent_tool_use_id === null) {
+      this.turn.firstOutputMs ??= at;
+      if (msg.message.content.some((b) => b.type === "text" && b.text.trim() && !isMetaReply(b.text))) this.turn.firstWordsMs ??= at;
+    }
     if (msg.type === "system" && msg.subtype === "init") {
       this.sessionId = msg.session_id;
       // Each server problem is reported once per run, not on every request.
@@ -222,7 +261,7 @@ export class Jarvis {
     if (msg.type === "result") {
       this.sessionId = msg.session_id;
       if (msg.subtype === "success") {
-        return { ok: !msg.is_error, costUsd: msg.total_cost_usd, summary: msg.result };
+        return { ok: !msg.is_error, costUsd: msg.total_cost_usd, summary: msg.result, timings: { apiMs: msg.duration_api_ms, steps: msg.num_turns } as TurnTimings };
       }
       const why: Record<typeof msg.subtype, string> = {
         error_max_turns: "I hit my step limit for one request.",

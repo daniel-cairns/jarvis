@@ -5,7 +5,7 @@ import readline from "node:readline";
 import { PassThrough } from "node:stream";
 import { setTimeout as sleep } from "node:timers/promises";
 import { activityGlyph, describeActivity, transferKind, type Transfer } from "./activity.js";
-import { Jarvis, type Approval } from "./agent.js";
+import { Jarvis, timingLine, type Approval } from "./agent.js";
 import { loadConfig } from "./config.js";
 import { parseAnswer, type Answer } from "./permissions.js";
 import { renderDetail } from "./ui/detail.js";
@@ -160,6 +160,8 @@ async function main(): Promise<void> {
   const spoken: { text: string; at: number }[] = [];
   let listening = false;
   let speaking = false;
+  /** When her voice first came out during the current request (performance.now), for its timing line. */
+  let firstSoundAt: number | null = null;
   let busy = false;
   const syncOrb = () =>
     orb?.send({ type: "state", state: listening ? "listening" : speaking ? "speaking" : busy ? "thinking" : "idle" });
@@ -169,6 +171,7 @@ async function main(): Promise<void> {
   const primaryTts = cfg.tts === "kokoro" ? new KokoroTts(cfg.voice, cfg.ttsCacheDir) : sayTts;
   const speaker = new Speaker(primaryTts, primaryTts === sayTts ? null : sayTts, speechEnabled, {
     onUtterance: (u) => {
+      firstSoundAt ??= performance.now();
       ownSpeech = u.text;
       lastSpokeAt = Date.now();
       spoken.push({ text: u.text, at: lastSpokeAt });
@@ -1815,12 +1818,16 @@ async function main(): Promise<void> {
       lastTranscript = null;
       // A new request: what was held for "more" belonged to the last one.
       more.clear();
+      const sentAt = performance.now();
+      firstSoundAt = null;
       const result = await jarvis.handle(context + request);
       // Her words are queued as they arrive rather than spoken before the next step is read; the turn is over when
       // she has finished saying them (and only then does she listen for a follow-up).
       await speaker.whenIdle();
       rememberSession();
       console.log(`  (${result.ok ? "done" : result.summary} · $${result.costUsd.toFixed(3)})`);
+      // Where the time went, so "she's slow" can be traced to a step (see timingLine).
+      if (result.timings) console.log(`  (timing: ${timingLine(result.timings, firstSoundAt === null ? null : firstSoundAt - sentAt)})`);
       followUp = spoken && result.ok && !muted;
     } catch (err) {
       await say(`That failed: ${(err as Error).message}`);
