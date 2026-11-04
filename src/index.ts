@@ -38,6 +38,7 @@ import { answeredNote, Briefing, BRIEF_REQUEST, runFinishedNote } from "./briefi
 import { Loops, loopsContext, plateHeadline, plateMarkdown } from "./loops.js";
 import { dropRepeats, headline, MoreQueue } from "./voice/brevity.js";
 import { Speaker } from "./voice/speaker.js";
+import { helpText } from "./abilities.js";
 import { runDemo } from "./demo.js";
 import { ENROL_SENTENCES, enrolPanel, VoiceCheck, WEAK_READING, wavlmEmbedder, type VoiceVerdict } from "./voice/voiceprint.js";
 import { KokoroTts, SayTts } from "./voice/tts.js";
@@ -52,7 +53,7 @@ import {
 import { clock, splitStop, transcriptMarkdown, wordCount, type TranscriptLine } from "./voice/transcript.js";
 import { matchWake, matchWakeAnywhere, speechHint, stripOwnSpeech } from "./voice/wake.js";
 
-const HELP = `Say "Astra" to wake her. Commands: /new (fresh conversation), /continue (pick up the last one), /brain, /stack (tidy her windows), /sitrep, /god on|off, /restart, /type (type only: mic off, silent), /voice, /transcript [title] (record until "stop recording"), /mute, /unmute, /wake on|off, /voiceprint (learn your voice; /voiceprint off forgets it), /demo (a tour of everything she does), /help, /quit. Ctrl-C or Esc on the orb stops her.`;
+const HELP = helpText();
 // Prefixed to each request while god mode is on.
 const GOD_MODE =
   "(God mode is on: you command the user's Claude Code sessions. Hand project work to them rather than doing it yourself: " +

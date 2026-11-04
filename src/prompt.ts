@@ -1,3 +1,4 @@
+import { abilitiesSection } from "./abilities.js";
 import type { JarvisConfig } from "./config.js";
 
 /** Appended to the Claude Code system prompt, so Astra keeps its coding tools and gains a voice. */
@@ -88,6 +89,8 @@ Use the actual tool list and schemas the server gives you; the names below are s
   the evidence in each node's detail.
 - Save the map in the teardown note as a fenced code block tagged astra-graph holding {"nodes": [...], "edges": [...]},
   so "show me the Notes map" later can read the note and call show_graph without redoing the teardown.
+
+${abilitiesSection()}
 
 ## What things cost
 ${cfg.billing === "api"
