@@ -6,6 +6,7 @@ const { app, BrowserWindow, Menu, Tray, clipboard, globalShortcut, ipcMain, nati
 const path = require("node:path");
 const readline = require("node:readline");
 const { layoutPanels, placeNew, minFor } = require("./layout.cjs");
+const { housekeep, overCap } = require("./housekeeping.cjs");
 
 const ANSWERS = new Set(["yes", "always", "no"]);
 
@@ -263,6 +264,8 @@ app.whenReady().then(() => {
   // "auto" popped up while she worked (closed when she finishes), "astra" she showed you on purpose (kept until the
   // end of her next request), "user" you opened or clicked into (never closed for you).
   const RANK = { auto: 0, astra: 1, user: 2 };
+  /** Panels that refresh themselves while open; a refresh isn't Dan using them. */
+  const REFRESHED = new Set(["sessions", "tallyline"]);
   let requestNo = 0;
   const TIDY_MS = 6000;
 
@@ -323,7 +326,8 @@ app.whenReady().then(() => {
     const slab = slabs[kind];
     slab.last = msg;
     slab.request = requestNo;
-    slab.lastUsed = Date.now();
+    // A list refreshing itself on a timer isn't use: it would keep the panel open for ever (see housekeeping.cjs).
+    if (raise || !REFRESHED.has(kind)) slab.lastUsed = Date.now();
     const webApp = !!slab.url;
     const appUrl = webApp ? `${TALLYLINE_ORIGIN}${typeof msg.path === "string" && msg.path.startsWith("/") ? msg.path : "/"}` : null;
     if (slab.win && !slab.win.isDestroyed()) {
@@ -386,7 +390,10 @@ app.whenReady().then(() => {
     });
     // Resized by hand (not by the layout): it keeps the size and place you gave it until it closes or you tidy up.
     w.on("resized", () => {
-      if (Date.now() > layingOutUntil) slab.pinned = true;
+      if (Date.now() > layingOutUntil) {
+        slab.pinned = true;
+        slab.lastUsed = Date.now();
+      }
     });
     w.on("closed", () => {
       slab.collapsed = false;
@@ -403,6 +410,7 @@ app.whenReady().then(() => {
       // Opened on request, so it comes forward with the keyboard (unlike her panels, which never take focus).
       w.once("ready-to-show", () => {
         w.show();
+        closeOverCap(kind);
         sendPanels();
         relayout();
       });
@@ -413,10 +421,30 @@ app.whenReady().then(() => {
     w.webContents.once("did-finish-load", () => {
       w.webContents.send("jarvis", msg);
       w.showInactive();
+      closeOverCap(kind);
       sendPanels();
       relayout();
     });
   };
+
+  /** The open panels, as housekeeping.cjs sees them. */
+  const openPanels = () =>
+    Object.entries(slabs)
+      .filter(([, s]) => s.win && !s.win.isDestroyed() && s.win.isVisible())
+      .map(([kind, s]) => ({ kind, lastUsed: s.lastUsed ?? 0, focused: s.win.isFocused(), pinned: !!s.pinned }));
+
+  /** A panel just opened: close the ones used longest ago if that makes too many. */
+  const closeOverCap = (opened) => {
+    for (const kind of overCap(openPanels(), opened)) slabs[kind].win.close();
+  };
+
+  // Every half minute: close panels nobody has used for a while, and fold hand-placed ones back into the layout.
+  setInterval(() => {
+    const { close, rejoin } = housekeep(openPanels(), Date.now());
+    for (const kind of close) slabs[kind].win.close();
+    for (const kind of rejoin) slabs[kind].pinned = false;
+    if (rejoin.length) relayout("rejoin");
+  }, 30_000).unref?.();
 
   // Window moves and resizes before this time are the layout's own (it animates), not yours.
   let layingOutUntil = 0;
@@ -676,7 +704,10 @@ app.whenReady().then(() => {
       clearInterval(drag?.timer);
       // A panel you've dragged keeps its place until it closes or you tidy up.
       const moved = Object.values(slabs).find((s) => s.win && s.win === drag?.target);
-      if (moved) moved.pinned = true;
+      if (moved) {
+        moved.pinned = true;
+        moved.lastUsed = Date.now();
+      }
       drag = null;
       return;
     }
