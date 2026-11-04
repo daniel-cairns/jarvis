@@ -54,7 +54,7 @@ await wait(300);
 send({ type: "scribe", state: "found" });
 await wait(500);
 send({ type: "scribe", state: null });
-// God mode's crown and halo, idle and working; coffee; the volume arc.
+// God mode's ring and gold aura, idle and working; coffee; the volume arc.
 send({ type: "mode", typeOnly: false, god: true });
 send({ type: "state", state: "idle" });
 await wait(300);

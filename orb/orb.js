@@ -550,9 +550,8 @@
       typeOnlyButton.setAttribute("aria-label", on ? "Back to voice: microphone and speech on" : "Type only: microphone off and silent");
       document.body.classList.toggle("god-mode", !!m.god);
       godMode = !!m.god;
-      godBadge.hidden = !godMode;
       god.setMode(godMode);
-      // The status says what she's doing; god mode has its own crown and halo, so idle reads as idle.
+      // The status says what she's doing; God mode shows in her ring, satellites and Eye, so idle reads as idle.
       LABELS.idle = on ? "Type only" : "Idle";
       if (state === "idle") stateLabel.textContent = LABELS.idle;
     } else if (m.type === "recording") {
@@ -753,7 +752,6 @@
 
   /** Coffee mode's water clock under her status: a slow silent drip while the Mac is kept awake. */
   const coffee = document.getElementById("coffee");
-  const godBadge = document.getElementById("god");
   function showCoffee(m) {
     coffee.hidden = !m.on;
     if (!m.on) return void coffee.replaceChildren();

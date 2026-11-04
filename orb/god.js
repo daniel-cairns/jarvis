@@ -79,7 +79,7 @@
     }
   }
 
-  /** A one-line toast under her crown of glyphs, announced politely. */
+  /** A one-line toast across the top of her frame, announced politely. */
   function showToast(text) {
     toast.textContent = text;
     toast.hidden = false;
