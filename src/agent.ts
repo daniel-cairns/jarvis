@@ -10,6 +10,7 @@ import { allowKey, decide, describeCall, parseAnswer, spokenQuestion, bringsInWe
 import { loadSafeSites } from "./safeSites.js";
 import { createFetchGuard, type FetchGuard } from "./security/fetchGuard.js";
 import { jarvisInstructions } from "./prompt.js";
+import { idleConnectors } from "./idleConnectors.js";
 import { sessionEnv } from "./tools/runner.js";
 import type { ComputerControl } from "./control/computer.js";
 import type { CoffeeMode } from "./power/coffee.js";
@@ -157,6 +158,8 @@ export class Jarvis {
           coffee: this.io.coffee,
         }),
         rea: { type: "stdio", command: reaCmd!, args: reaArgs },
+        // Connectors whose app is closed would make every request wait 30 s (see idleConnectors).
+        ...idleConnectors(),
       },
       permissionMode: "default",
       // Every page fetch is checked before it runs (even for sites your Claude Code settings allow) and after.
