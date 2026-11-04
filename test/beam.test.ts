@@ -18,3 +18,40 @@ describe("beamTarget: the window her beam points at", () => {
     expect(beamTarget([{ pid: 7 }], 7)).toBeNull();
   });
 });
+
+describe("the beam follows where she's working", () => {
+  it("after she opens Chrome, aims at Chrome's window (not the app that was in front before), and goes when the request ends", async () => {
+    const { ComputerControl } = await import("../src/control/computer.js");
+    let front = 100; // Dan's editor, in front before she acts
+    const helper = async (command: string, input?: any) => {
+      if (command === "perms") return { accessibility: true, screenRecording: true };
+      if (command === "front") return { pid: front };
+      if (command === "activate") {
+        front = 200; // opening Chrome brings it forward
+        return { pid: 200 };
+      }
+      if (command === "windows")
+        return [
+          { pid: 200, frame: { X: 50, Y: 40, Width: 1000, Height: 700 } },
+          { pid: 100, frame: { X: 0, Y: 25, Width: 1440, Height: 875 } },
+        ];
+      return { ok: true, input };
+    };
+    const beams: unknown[] = [];
+    const indicator: boolean[] = [];
+    const c = new ComputerControl(helper, {
+      confirm: async () => true,
+      log: () => {},
+      indicator: (on) => indicator.push(on),
+      open: async () => {},
+      beam: (t) => beams.push(t),
+    });
+    await c.openApp("Google Chrome");
+    await new Promise((r) => setTimeout(r, 10));
+    expect(beams.at(-1)).toEqual({ x: 50, y: 40, width: 1000, height: 700 });
+    expect(indicator.at(-1)).toBe(true);
+    c.done();
+    expect(indicator.at(-1)).toBe(false);
+    expect(beams.at(-1)).toBeNull();
+  });
+});

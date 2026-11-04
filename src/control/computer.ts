@@ -83,6 +83,9 @@ export function nativeHelper(binDir: string): Helper {
   };
 }
 
+/** How long the overlay and beam stay up after her last action, if the request doesn't end first. */
+const INDICATOR_LINGER_MS = 30_000;
+
 export class ComputerControl {
   readonly stopper = new StopSwitch();
   private indicatorOff?: NodeJS.Timeout;
@@ -158,13 +161,25 @@ export class ComputerControl {
       // The action may have brought another window forward: aim at where she is now.
       void this.aim();
       clearTimeout(this.indicatorOff);
-      this.indicatorOff = setTimeout(() => this.indicatorNow(false), 2500);
+      // Kept up between her steps (she thinks for several seconds between actions); done() puts it away when the
+      // request ends, and this is only the fallback.
+      this.indicatorOff = setTimeout(() => this.indicatorNow(false), INDICATOR_LINGER_MS);
     }
   }
 
-  /** Points the orb's beam at the front window of the app she's working in. */
+  /** The request has ended: the "controlling your Mac" overlay and her beam go. */
+  done(): void {
+    if (this.stopper.stopped) return;
+    this.indicatorNow(false);
+  }
+
+  /**
+   * Points the orb's beam at the front window of the app she's working in: whatever is in front after her action
+   * (opening Chrome brings Chrome forward), and failing that the app she last typed into.
+   */
   private async aim(): Promise<void> {
-    const pid = this.target ?? this.lastApp;
+    await this.noteFront();
+    const pid = this.lastApp ?? this.target;
     if (!this.hooks.beam || !pid) return;
     const windows = (await this.helper("windows").catch(() => [])) as ListedWindow[];
     this.hooks.beam(Array.isArray(windows) ? beamTarget(windows, pid) : null);

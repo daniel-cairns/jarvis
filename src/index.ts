@@ -1882,6 +1882,7 @@ async function main(): Promise<void> {
       await say(`That failed: ${(err as Error).message}`);
     } finally {
       busy = false;
+      computer.done();
       syncOrb();
       // A stopped request never reports its last results: clear her own transfers so the orb doesn't keep beaming.
       for (const [id, t] of transfers) if (t.source === "Astra") transfers.delete(id);
