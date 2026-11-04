@@ -421,6 +421,18 @@ async function main(): Promise<void> {
   /** The phrase just heard was refused by the voice check, so "I didn't catch anything" would be wrong. */
   let refusedVoice = false;
   const REFUSED = "That didn't sound like you, so I ignored it. If it was you, type /voiceprint off";
+  let voiceGuardHide: NodeJS.Timeout | undefined;
+  /** A phrase refused by the voice check: Anubis stands guard with red eyes for a moment, and the card says why. */
+  const showRefused = () => {
+    orb?.send({ type: "caption", role: "status", text: REFUSED });
+    // Not over the web guard: a page check in progress keeps its own Anubis.
+    if (checksRunning) return;
+    orb?.send({ type: "guard", state: "voice" });
+    clearTimeout(voiceGuardHide);
+    voiceGuardHide = setTimeout(() => {
+      if (!checksRunning) orb?.send({ type: "guard", state: null });
+    }, 3_000);
+  };
 
   /** Whether a phrase may be acted on: Dan's voice, or one that can't be judged (no voiceprint, too short). */
   const fromDan = async (check: ReturnType<typeof voiceCheckFor>): Promise<boolean> => {
@@ -518,7 +530,7 @@ async function main(): Promise<void> {
       // so her echo filters above decide; a bare "stop" counts from anyone.
       const acting = request !== null ? !isStopCommand(request) : Boolean(dialogParses && heard.trim());
       if (acting && !herVoice && !(await fromDan(check))) {
-        orb?.send({ type: "caption", role: "status", text: REFUSED });
+        showRefused();
         continue;
       }
       if (request !== null) onWake(request);
@@ -694,7 +706,8 @@ async function main(): Promise<void> {
     if (heard || !listenNow || refusedVoice) {
       const missed = refusedVoice ? REFUSED : "I didn't catch anything";
       console.log(heard ? `You: ${heard}` : `(${missed})`);
-      orb?.send({ type: "caption", role: heard ? "you" : "status", text: heard || missed });
+      if (!heard && refusedVoice) showRefused();
+      else orb?.send({ type: "caption", role: heard ? "you" : "status", text: heard || missed });
     }
     return heard;
   };

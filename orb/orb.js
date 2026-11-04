@@ -509,7 +509,7 @@
     else if (m.type === "activity-reset") resetActivity();
     // Transcript mode: "Recording 03:12" in place of "Listening…" until the state changes.
     else if (m.type === "state-label") stateLabel.textContent = m.text;
-    else if (m.type === "guard") guardState = m.state === "checking" || m.state === "blocked" ? m.state : null;
+    else if (m.type === "guard") guardState = m.state === "checking" || m.state === "blocked" || m.state === "voice" ? m.state : null;
     else if (m.type === "transfer") transferDir = m.dir === "up" || m.dir === "down" ? m.dir : null;
     else if (m.type === "coffee") showCoffee(m);
     else if (m.type === "mode") {
@@ -1230,7 +1230,8 @@
     if (downAmt > 0.01) drawMothership(cx, cy - r * 0.95, r, t, downAmt * st.wings);
 
     guardAmt = lerp(guardAmt, guardState && formTo === 1 ? 1 : 0, 0.07);
-    guardRed = lerp(guardRed, guardState === "blocked" ? 1 : 0, 0.12);
+    // Red eyes when he's stopped something: a blocked page, or a voice that isn't Dan's.
+    guardRed = lerp(guardRed, guardState === "blocked" || guardState === "voice" ? 1 : 0, 0.12);
     if (guardAmt > 0.01) drawGuardian(cx, t, guardAmt * st.wings, guardRed);
 
     // Sun rays while speaking

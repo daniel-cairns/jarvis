@@ -43,7 +43,8 @@ export type ToOrb =
   | { type: "recording"; on: boolean }
   | { type: "mode"; typeOnly: boolean; god: boolean }
   | { type: "transfer"; dir: "up" | "down" | null }
-  | { type: "guard"; state: "checking" | "blocked" | null }
+  /** Anubis on guard: checking a page, a page blocked, or (red eyes too) a voice that isn't Dan's refused. */
+  | { type: "guard"; state: "checking" | "blocked" | "voice" | null }
   | {
       type: "transcript";
       job: { id: string; label: string; status: string };
