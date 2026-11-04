@@ -12,9 +12,9 @@
   --page: #0a1020;
   --panel: rgba(10, 18, 44, 0.92);
   --edge: rgba(70, 224, 214, 0.4);
-  --basalt-light: #27312e;
-  --basalt-mid: #1d2624;
-  --basalt-dark: #161d1b;
+  --tip-bg: #060a18;      /* tooltips and toasts: rgba(6, 10, 24, 0.96) made opaque */
+  --lapis-top: #1d3a8a;   /* slate band, top and bottom gradient stops */
+  --lapis-deep: #0d1c4a;
   color-scheme: dark;
 }
 
@@ -81,41 +81,51 @@ body {
 }
 .add-event:hover { background: rgba(70, 224, 214, 0.16); }
 
-/* ── Stage ────────────────────────────────────────────────── */
-.stage {
-  display: grid;
-  grid-template-columns: 400px 1fr;
-  gap: 24px;
-  align-items: start;
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
-@media (max-width: 960px) { .stage { grid-template-columns: 1fr; } }
-.panels { display: grid; gap: 20px; }
 
-/* ── Mock orb and God mode indicator ─────────────────────── */
+/* ── Stage: the mock orb sits on the left or right of the screen. ── */
+.stage { display: flex; min-height: 560px; padding-top: 150px; }
+.stage.orb-left { justify-content: flex-start; }
+.stage.orb-right { justify-content: flex-end; }
+
+/* ── Mock orb, her wings and the God mode indicator ───────── */
 .orb-stage { position: relative; z-index: 2; display: flex; flex-direction: column; align-items: center; }
 .orb-field {
   --ring-r: 128px;
-  --sat-r: 170px;
+  --sat-r: 198px;
   position: relative;
-  width: 400px;
-  height: 400px;
+  width: 440px;
+  height: 440px;
 }
 .mock-orb {
   position: absolute;
   left: 50%;
   top: 50%;
+  z-index: 1;
   width: 170px;
   height: 170px;
   margin: -85px 0 0 -85px;
+  padding: 0;
+  border: 0;
   border-radius: 50%;
   background: radial-gradient(circle at 45% 40%, #e8fffd 0, var(--reactor) 22%, #1b6f7a 55%, #0a1838 82%);
   box-shadow:
     0 0 44px rgba(70, 224, 214, 0.45),
     inset 0 0 0 2px rgba(236, 188, 82, 0.85),
     0 0 0 6px rgba(236, 188, 82, 0.14);
+  cursor: pointer;
   animation: breathe 5s ease-in-out infinite;
 }
 @keyframes breathe { 50% { box-shadow: 0 0 60px rgba(70, 224, 214, 0.6), inset 0 0 0 2px rgba(236, 188, 82, 0.85), 0 0 0 6px rgba(236, 188, 82, 0.2); } }
+
+.orb-wings { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
 
 .glyph-ring { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none; }
 .ring-spin {
@@ -146,28 +156,26 @@ body {
 .ring-glyph .glyph path { stroke-width: 3.4; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-.orb-glyph-slot {
+/* Eye (left wing, God mode only) and sun (right wing, always): carved into the feathers. */
+.wing-btn {
   position: absolute;
-  left: 50%;
-  top: calc(50% - 66px);
-  display: flex;
-  gap: 6px;
-  transform: translateX(-50%);
-}
-.slot-btn {
+  z-index: 2;
   display: grid;
   place-items: center;
   width: 36px;
   height: 36px;
+  margin: -18px 0 0 -18px;
   padding: 0;
   border-radius: 50%;
-  border: 1px solid rgba(236, 188, 82, 0.8);
-  background: rgba(6, 12, 30, 0.78);
+  border: 1px solid rgba(236, 188, 82, 0.9);
+  background: radial-gradient(circle, #13245a 0, #0a1638 100%);
+  box-shadow: inset 1px 1px 3px rgba(0, 0, 0, 0.8), 0 0 0 2px rgba(42, 74, 168, 0.8);
   cursor: pointer;
 }
-.slot-btn:focus-visible, .sat:focus-visible { outline: 3px solid #fff; outline-offset: 2px; box-shadow: 0 0 0 7px var(--page); }
+.wing-btn:hover { box-shadow: inset 1px 1px 3px rgba(0, 0, 0, 0.8), 0 0 0 2px rgba(42, 74, 168, 0.8), 0 0 12px rgba(236, 188, 82, 0.6); }
+.mock-orb:focus-visible, .wing-btn:focus-visible, .sat:focus-visible { outline: 3px solid #fff; outline-offset: 2px; box-shadow: 0 0 0 7px var(--page); }
 
-.satellites { list-style: none; margin: 0; padding: 0; position: absolute; inset: 0; pointer-events: none; }
+.satellites { list-style: none; margin: 0; padding: 0; position: absolute; inset: 0; z-index: 3; pointer-events: none; }
 .orbit {
   position: absolute;
   left: 50%;
@@ -204,7 +212,7 @@ body {
   pointer-events: auto;
 }
 .dot, .key-dot { display: block; width: 12px; height: 12px; border-radius: 50%; }
-.working.dot, .sat.working .dot, .key-dot.working { background: #ffd978; box-shadow: 0 0 8px 2px rgba(236, 188, 82, 0.9); }
+.sat.working .dot, .key-dot.working { background: #ffd978; box-shadow: 0 0 8px 2px rgba(236, 188, 82, 0.9); }
 .sat.working .dot { animation: pulse 1.6s ease-in-out infinite; }
 .sat.idle .dot, .key-dot.idle { background: var(--gold-dim); }
 .sat.waiting .dot, .key-dot.waiting { background: var(--amber); box-shadow: 0 0 0 3px rgba(255, 159, 28, 0.4), 0 0 10px rgba(255, 159, 28, 0.8); }
@@ -218,7 +226,7 @@ body {
   padding: 3px 8px;
   border: 1px solid rgba(236, 188, 82, 0.6);
   border-radius: 6px;
-  background: rgba(6, 10, 24, 0.96);
+  background: var(--tip-bg);
   color: var(--ink);
   font-size: 13px;
   white-space: nowrap;
@@ -236,131 +244,108 @@ body {
 .sat-key li { display: flex; align-items: center; gap: 6px; }
 .sat-key .key-dot { width: 10px; height: 10px; }
 
-/* ── Panels ───────────────────────────────────────────────── */
-.panel-title {
-  margin: 0 0 12px;
-  font: 600 12px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
-  letter-spacing: 0.24em;
-  text-transform: uppercase;
-  color: var(--ink);
+/* ── The slate: a small wing of cartouches unfolding from the orb ── */
+.slate-wing {
+  position: absolute;
+  z-index: 4;
+  top: calc(50% + 12px);
 }
-.panel-title::before { content: "◈ "; color: var(--gold); }
+/* The root sits just outside the satellites' orbit, low on her side, so it reads as a third wing. */
+.slate-wing.to-left { right: calc(100% - 56px); transform-origin: right 62px; }
+.slate-wing.to-right { left: calc(100% - 56px); transform-origin: left 62px; }
 
-/* Basalt: cool grey-green gradient, feTurbulence grain, worn gold edge. */
-.basalt {
-  border: 2px solid transparent;
-  border-radius: 6px;
-  background:
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.82 0 0 0 0 0.9 0 0 0 0 0.86 0.14 0 0 0 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E") padding-box,
-    linear-gradient(165deg, var(--basalt-light), var(--basalt-mid) 55%, var(--basalt-dark)) padding-box,
-    linear-gradient(115deg, var(--gold), var(--gold-worn) 22%, #d9b25a 40%, #6d5a2c 58%, var(--gold) 74%, #7c6630 90%, #d9b25a) border-box;
-  box-shadow: inset 0 0 22px rgba(0, 0, 0, 0.55), 0 10px 30px rgba(0, 0, 0, 0.45);
+.wing-art { position: absolute; top: 0; overflow: visible; filter: drop-shadow(0 6px 10px rgba(0, 0, 0, 0.55)); }
+.to-right .wing-art { left: 0; }
+.to-left .wing-art { right: -16px; transform: scaleX(-1); }
+.wing-band {
+  fill: url(#slate-lapis);
+  stroke: var(--gold);
+  stroke-width: 1.6;
+  stroke-linejoin: round;
 }
 
-.slate { padding: 16px 18px 18px; }
+.slate-cells { position: absolute; inset: 0; margin: 0; padding: 0; list-style: none; }
+.slate-cell { position: absolute; width: 0; height: 0; transition: left 0.4s ease, top 0.4s ease; }
 
-.band-glyphs {
+.slate-wing .cartouche {
+  position: absolute;
+  left: -18px;
+  top: -23px;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(128px, 1fr));
-  gap: 14px 0;
-  margin: 0;
+  place-items: center;
+  width: 36px;
+  height: 46px;
   padding: 0;
-  list-style: none;
-}
-.column { display: flex; flex-direction: column; align-items: center; padding: 0 6px; }
-
-.cartouche {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  width: 112px;
-  min-height: 132px;
-  padding: 12px 8px 14px;
-  border: 2px solid rgba(236, 188, 82, 0.85);
-  border-radius: 56px / 44px;
-  background: rgba(0, 0, 0, 0.16);
-  box-shadow: inset 2px 2px 3px rgba(0, 0, 0, 0.75), inset -1px -1px 2px rgba(214, 232, 222, 0.16);
-  color: var(--ink);
-  font: inherit;
+  border: 1.5px solid rgba(236, 188, 82, 0.95);
+  border-radius: 18px / 23px;
+  background: rgba(3, 8, 24, 0.45);
+  box-shadow: inset 2px 2px 3px rgba(0, 0, 0, 0.8), inset -1px -1px 2px rgba(214, 232, 222, 0.18);
   cursor: pointer;
 }
 /* The tie-bar at the foot of a cartouche. */
-.cartouche::after {
+.slate-wing .cartouche::after {
   content: "";
   position: absolute;
-  bottom: -7px;
-  left: 30%;
-  right: 30%;
-  height: 3px;
+  bottom: -5px;
+  left: 28%;
+  right: 28%;
+  height: 2px;
   border-radius: 2px;
   background: var(--gold);
   box-shadow: 1px 1px 0 rgba(0, 0, 0, 0.7);
 }
-.cartouche:hover { background: rgba(236, 188, 82, 0.08); }
-.cartouche.pinned { background: rgba(236, 188, 82, 0.14); border-color: var(--gold); }
-.cartouche-status { font-size: 12px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
-.cartouche-title { font-size: 13px; line-height: 1.25; text-align: center; }
+.slate-wing .cartouche:hover { background: rgba(236, 188, 82, 0.16); }
+.slate-wing .cartouche:focus-visible { outline: 3px solid var(--reactor); outline-offset: 2px; }
+.slate-cell.fresh .cartouche { animation: settle 1.4s ease-out; }
+@keyframes settle {
+  0% { box-shadow: 0 0 0 0 rgba(236, 188, 82, 0.7), inset 2px 2px 3px rgba(0, 0, 0, 0.8); }
+  100% { box-shadow: 0 0 0 12px rgba(236, 188, 82, 0), inset 2px 2px 3px rgba(0, 0, 0, 0.8); }
+}
 
-.plain-line {
-  width: 100%;
-  margin: 14px 0 0;
-  padding-top: 8px;
-  border-top: 1px solid rgba(0, 0, 0, 0.7);
-  box-shadow: inset 0 1px 0 rgba(214, 232, 222, 0.12);
-  color: var(--muted);
+/* Help text: the cartouche's visible label, on hover and on keyboard focus. */
+.slate-tip {
+  position: absolute;
+  bottom: 34px;
+  left: 0;
+  z-index: 5;
+  width: 260px;
+  padding: 8px 12px 10px;
+  border: 1px solid rgba(236, 188, 82, 0.75);
+  border-radius: 8px;
+  background: var(--tip-bg);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.55);
+  color: var(--ink);
   font-size: 13px;
-  text-align: center;
+  line-height: 1.4;
+  transform: translateX(-50%);
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.15s, visibility 0s linear 0.15s;
 }
+.slate-cell:hover .slate-tip, .slate-cell:focus-within .slate-tip {
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 0.15s;
+}
+.slate-tip p { margin: 0; }
+.tip-head { font-weight: 600; }
+.tip-meaning { color: var(--gold); text-transform: uppercase; letter-spacing: 0.06em; font-size: 12px; }
+.tip-line { color: var(--muted); margin-bottom: 6px !important; }
+.tip-detail { display: grid; gap: 2px; margin: 0; }
+.tip-detail div { display: flex; gap: 6px; }
+.tip-detail dt { color: var(--muted); white-space: nowrap; }
+.tip-detail dt::after { content: ":"; }
+.tip-detail dd { margin: 0; }
+.tip-detail .needs { padding-left: 6px; border-left: 3px solid var(--amber); }
 
-.band-detail {
-  min-height: 92px;
-  margin-top: 16px;
-  padding: 12px 14px;
-  border-top: 1px solid rgba(0, 0, 0, 0.7);
-  box-shadow: inset 0 1px 0 rgba(214, 232, 222, 0.12);
+/* Unfold from the orb's side, fold back into it. */
+.wing-enter-active, .wing-leave-active {
+  transition: transform 0.5s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.35s ease, clip-path 0.5s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
-.detail-head { margin: 0 0 6px; }
-.pin-note, .detail-hint { color: var(--muted); }
-.detail-hint { margin: 0; font-style: italic; }
-.detail-list { display: grid; grid-template-columns: repeat(3, auto); gap: 4px 24px; margin: 0; justify-content: start; }
-.detail-list dt { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; }
-.detail-list dd { margin: 0; }
-@media (max-width: 640px) { .detail-list { grid-template-columns: 1fr; } }
-
-/* Plain "On your plate" panel, Astra's usual glass look. */
-.plate { padding: 14px 16px; }
-.plate:not(.basalt) {
-  border: 1px solid var(--edge);
-  border-radius: 10px;
-  background: var(--panel);
-}
-.plate-list { margin: 0; padding: 0; list-style: none; }
-.plate-row {
-  display: grid;
-  grid-template-columns: auto 1fr auto;
-  gap: 12px;
-  align-items: start;
-  padding: 8px 0;
-  border-top: 1px solid rgba(157, 180, 200, 0.18);
-}
-.plate-row:first-child { border-top: 0; }
-.plate-dot { width: 10px; height: 10px; margin-top: 6px; border-radius: 50%; background: var(--gold); }
-.plate-text p { margin: 0; }
-.plate-title { font-weight: 600; }
-.plate-status {
-  margin-left: 6px;
-  padding: 1px 8px;
-  border: 1px solid rgba(236, 188, 82, 0.6);
-  border-radius: 999px;
-  font-size: 12px;
-  font-weight: 600;
-}
-.plate-line, .plate-time { color: var(--muted); font-size: 13px; }
-.plate-needs { margin-top: 2px !important; padding-left: 8px; border-left: 3px solid var(--amber); font-size: 13px; }
-.plate.basalt { border-radius: 6px; }
-.plate.basalt .plate-row { border-top: 1px solid rgba(0, 0, 0, 0.7); box-shadow: inset 0 1px 0 rgba(214, 232, 222, 0.1); }
+.wing-leave-active { transition-duration: 0.35s; }
+.to-left.wing-enter-from, .to-left.wing-leave-to { transform: rotate(-14deg) scaleX(0.12); opacity: 0; clip-path: inset(-60px 0 -20px 90%); }
+.to-right.wing-enter-from, .to-right.wing-leave-to { transform: rotate(14deg) scaleX(0.12); opacity: 0; clip-path: inset(-60px 90% -20px 0); }
+.wing-enter-to, .wing-leave-from { clip-path: inset(-200px -40px -40px -40px); }
 
 /* ── Glyphs: carved and gilded ───────────────────────────── */
 .glyph { overflow: visible; }
@@ -383,14 +368,10 @@ body {
   35% { filter: brightness(1.8) drop-shadow(0 0 4px #fff3c4); }
 }
 
-.fresh .cartouche { animation: settle 1.4s ease-out; }
-@keyframes settle { 0% { box-shadow: 0 0 0 0 rgba(236, 188, 82, 0.6), inset 2px 2px 3px rgba(0, 0, 0, 0.75); } 100% { box-shadow: 0 0 0 14px rgba(236, 188, 82, 0), inset 2px 2px 3px rgba(0, 0, 0, 0.75); } }
-
 .carve-enter-active { transition: opacity 0.5s ease; }
 .carve-enter-from { opacity: 0; }
-.carve-leave-active { transition: opacity 0.3s ease; position: absolute; }
+.carve-leave-active { transition: opacity 0.3s ease; }
 .carve-leave-to { opacity: 0; }
-.carve-move { transition: transform 0.4s ease; }
 
 /* ── Toast ───────────────────────────────────────────────── */
 .toast-region { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 10; }
@@ -399,7 +380,7 @@ body {
   padding: 10px 18px;
   border: 1px solid rgba(236, 188, 82, 0.7);
   border-radius: 999px;
-  background: rgba(6, 10, 24, 0.96);
+  background: var(--tip-bg);
   color: var(--ink);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
 }
@@ -407,18 +388,21 @@ body {
 .fade-enter-active, .fade-leave-active { transition: opacity 0.6s ease; }
 .fade-enter-from, .fade-leave-to { opacity: 0; }
 
-/* ── Reduced motion: no turning, orbiting or carving, only fades. ── */
+/* ── Reduced motion: no turning, orbiting, carving or unfolding, only fades. ── */
 .reduce-motion .ring-spin,
 .reduce-motion .orbit,
 .reduce-motion .upright,
 .reduce-motion .mock-orb,
 .reduce-motion .sat .dot,
-.reduce-motion .fresh .cartouche,
+.reduce-motion .slate-cell.fresh .cartouche,
 .reduce-motion .glyph.chisel .leaf { animation: none; }
 .reduce-motion .glyph.chisel path { animation: none; stroke-dashoffset: 0; }
-.reduce-motion .carve-move { transition: none; }
+.reduce-motion .slate-cell { transition: none; }
 /* The system setting also applies before the app has mounted. */
 @media (prefers-reduced-motion: reduce) {
-  .ring-spin, .orbit, .upright, .mock-orb, .sat .dot, .fresh .cartouche, .glyph.chisel .leaf { animation: none; }
+  .ring-spin, .orbit, .upright, .mock-orb, .sat .dot, .slate-cell.fresh .cartouche, .glyph.chisel .leaf { animation: none; }
   .glyph.chisel path { animation: none; stroke-dashoffset: 0; }
+  .slate-cell { transition: none; }
+  .wing-enter-active, .wing-leave-active { transition: opacity 0.35s ease; }
+  .wing-enter-from, .wing-leave-to { transform: none !important; clip-path: none !important; }
 }

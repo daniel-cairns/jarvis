@@ -13,16 +13,27 @@ const ratio = (a, b) => {
   return (hi + 0.05) / (lo + 0.05);
 };
 
-// Basalt: gradient stops, plus the lightest a noise speck can make the lightest stop.
-const BASALT = { "basalt dark #161d1b": "#161d1b", "basalt light #27312e": "#27312e", "noise peak #3f4a46": "#3f4a46" };
+// Backgrounds. Translucent fills are composited to the opaque colour they make over what sits beneath.
 const PAGE = { "page #0a1020": "#0a1020" };
+const TIP = { "tooltip #060a18": "#060a18" };
+const BAND = {
+  "lapis top #1d3a8a": "#1d3a8a",
+  "lapis deep #0d1c4a": "#0d1c4a",
+  "cartouche hover #3e4f81": "#3e4f81", // 16% gold over the lapis top, the lightest a cartouche gets
+};
+const WING_BTN = { "wing button #13245a": "#13245a" };
 
 const checks = [
-  ["Label text (ink) #eef3ef", "#eef3ef", BASALT, 4.5],
-  ["Secondary text (muted) #b9c7c1", "#b9c7c1", BASALT, 4.5],
-  ["Gold accent #ecbc52", "#ecbc52", BASALT, 3],
-  ["Gold leaf, darkest stop #d4a443", "#d4a443", BASALT, 3],
-  ["Focus ring (reactor) #46e0d6", "#46e0d6", BASALT, 3],
+  ["Tooltip text (ink) #eef3ef", "#eef3ef", TIP, 4.5],
+  ["Tooltip secondary (muted) #b9c7c1", "#b9c7c1", TIP, 4.5],
+  ["Tooltip glyph meaning (gold) #ecbc52", "#ecbc52", TIP, 4.5],
+  ["Needs-you bar (amber) #ff9f1c", "#ff9f1c", TIP, 3],
+  ["Cartouche edge (gold) #ecbc52", "#ecbc52", BAND, 3],
+  ["Gold leaf, darkest stop #d4a443", "#d4a443", BAND, 3],
+  ["Focus ring (reactor) #46e0d6", "#46e0d6", BAND, 3],
+  ["Gold leaf on wing button #d4a443", "#d4a443", WING_BTN, 3],
+  ["Gold feathers (top tier) #ecbc52", "#ecbc52", PAGE, 3],
+  ["Orb focus ring (white)", "#ffffff", PAGE, 3],
   ["Satellite working #ffd978", "#ffd978", PAGE, 3],
   ["Satellite idle (dim) #a88a4a", "#a88a4a", PAGE, 3],
   ["Satellite waiting (amber) #ff9f1c", "#ff9f1c", PAGE, 3],

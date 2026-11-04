@@ -6,7 +6,7 @@ export const SESSIONS = [
   { id: "s4", name: "Phanio kit export", state: "working" },
 ];
 
-/** Mock sessions and loops shown on the slate and the plate. */
+/** Mock sessions and loops shown on the slate. */
 export const ENTRIES = [
   { id: "e1", title: "Checkout redesign", glyph: "working", line: "Rebuilding the payment step", time: "09:42", lastAction: "Edited CheckoutStep.vue", needs: "Nothing yet" },
   { id: "e2", title: "Budget sync fix", glyph: "waiting", line: "Needs your go-ahead to push", time: "09:31", lastAction: "Ran the test suite (all green)", needs: "Approve the push to main" },
