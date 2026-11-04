@@ -765,7 +765,8 @@ app.whenReady().then(() => {
     if (controlOn && beamTarget) targets.push(beamTarget);
     for (const kind of flashes.keys()) targets.push(slabs[kind].win.getBounds());
     clearTimeout(flashTimer);
-    if (flashes.size) flashTimer = setTimeout(() => void sendBeam(), Math.max(50, Math.min(...flashes.values()) - now + 20));
+    // While a panel flows, keep re-aiming (it may still be gliding into place), and stop once the last has faded.
+    if (flashes.size) flashTimer = setTimeout(() => void sendBeam(), Math.max(50, Math.min(120, Math.min(...flashes.values()) - now + 20)));
     if (!targets.length || !win.isVisible()) {
       if (beamWin && !beamWin.isDestroyed()) {
         beamWin.webContents.send("jarvis", { type: "beam", from: null, targets: [] });
@@ -777,6 +778,9 @@ app.whenReady().then(() => {
     if (!beamWin || beamWin.isDestroyed()) {
       beamWin = new BrowserWindow({
         ...area, frame: false, transparent: true, hasShadow: false, focusable: false, resizable: false, movable: false,
+        // Without this macOS keeps the window clear of the menu bar and Dock: asked for (0, 0) it put it at (57, 34),
+        // so every stream landed that far off its window.
+        enableLargerThanScreen: true,
         skipTaskbar: true, show: false, webPreferences: WEB_PREFERENCES,
       });
       beamWin.setIgnoreMouseEvents(true);
@@ -794,10 +798,12 @@ app.whenReady().then(() => {
     const orb = win.getBounds();
     beamWin.setBounds(area);
     if (!beamWin.isVisible()) beamWin.showInactive();
+    // Where the layer really is, in case macOS still nudged it: every point is drawn relative to that.
+    const at = beamWin.getBounds();
     beamWin.webContents.send("jarvis", {
       type: "beam",
-      from: { x: orb.x + core[0] - area.x, y: orb.y + core[1] - area.y },
-      targets: targets.map((t) => ({ x: t.x - area.x, y: t.y - area.y, width: t.width, height: t.height })),
+      from: { x: orb.x + core[0] - at.x, y: orb.y + core[1] - at.y },
+      targets: targets.map((t) => ({ x: t.x - at.x, y: t.y - at.y, width: t.width, height: t.height })),
     });
   };
   const controlIndicator = (on) => {
@@ -808,6 +814,7 @@ app.whenReady().then(() => {
     if (!controlWin || controlWin.isDestroyed()) {
       controlWin = new BrowserWindow({
         ...bounds, frame: false, transparent: true, hasShadow: false, focusable: false, resizable: false, movable: false,
+        enableLargerThanScreen: true,
         skipTaskbar: true, show: false, webPreferences: { sandbox: true, contextIsolation: true },
       });
       controlWin.setIgnoreMouseEvents(true);
