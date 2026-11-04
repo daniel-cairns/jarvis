@@ -48,6 +48,8 @@ export type ToOrb =
   | { type: "transfer"; dir: "up" | "down" | null }
   /** Anubis on guard: checking a page, a page blocked, or (red eyes too) a voice that isn't Dan's refused. */
   | { type: "guard"; state: "checking" | "blocked" | "voice" | null }
+  /** Thoth behind the orb: researching, his one glint when it's found, or gone (src/scribe.ts). Anubis wins. */
+  | { type: "scribe"; state: "researching" | "found" | null }
   | {
       type: "transcript";
       job: { id: string; label: string; status: string };

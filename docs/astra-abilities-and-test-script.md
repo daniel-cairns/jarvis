@@ -56,6 +56,11 @@ her spoken commands ([control.ts](../src/ui/control.ts)) and her help text ([ind
   - `computer_permissions` checks Accessibility and Screen Recording.
 - **Coffee mode:** "coffee mode for two hours" keeps the Mac awake. It carries on through a restart.
 
+### Thoth, the scribe
+- While she researches for more than about 1.5 seconds, Thoth rises behind the orb. That covers web searches and page fetches, her brain, a teardown or report, and REA analysis that only reads.
+- His pen writes and his moon brightens. When she finds it, he glints and sinks away.
+- The status says "Researching…". Anubis takes priority over him.
+
 ### Teardowns (REA)
 - `launch_clean_browser`, plus REA's own tools, for reverse-engineering an app or site.
 - The results are saved to `teardowns/`, and she can show a 3D map with `show_graph`.
@@ -152,6 +157,7 @@ Tick each line as you go. **Expect** is what a pass looks like.
 | F6 | "Move to top left", then "nudge right". | The orb moves each time. |
 | F7 | During a session upload or download, watch the orb. | Anubis is always in front of the upload and download glyphs. |
 | F8 | "Show Tallyline." | A compact ledger panel; it starts Tallyline if it isn't running. |
+| F9 | Ask her to research something that takes a few seconds ("search the web for the latest Kokoro voices", or "read me the Signal teardown"). | After about 1.5 s Thoth, the ibis-headed scribe, rises behind the orb: his pen writes gold marks that drift up, and his moon brightens. The status says "Researching…". When she has it, one glint off the moon and he sinks away. A quick lookup shows nothing. If Anubis is needed meanwhile (a page check, a refused voice), Anubis takes the front. With reduced motion: a fade in and out only. Also in the demo, after Anubis. |
 
 ### G. Brain and transcripts
 | # | Do | Expect |

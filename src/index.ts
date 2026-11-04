@@ -40,6 +40,7 @@ import { dropRepeats, headline, MoreQueue } from "./voice/brevity.js";
 import { Speaker } from "./voice/speaker.js";
 import { helpText } from "./abilities.js";
 import { heldDuringDemo, runDemo } from "./demo.js";
+import { isResearch, Scribe } from "./scribe.js";
 import { ENROL_SENTENCES, enrolPanel, VoiceCheck, WEAK_READING, wavlmEmbedder, type VoiceVerdict } from "./voice/voiceprint.js";
 import { KokoroTts, SayTts } from "./voice/tts.js";
 import {
@@ -262,10 +263,13 @@ async function main(): Promise<void> {
   });
 
   /** Stops speech, listening, a pending approval, control of the Mac and the request in progress. Returns whether anything was running. */
+  // Thoth, the scribe: up while she researches for more than a moment (see scribe.ts).
+  const scribe = new Scribe((state) => orb?.send({ type: "scribe", state }));
   // The demo tour while it runs (see demo.ts): a stop ends it.
   let demoAbort: AbortController | null = null;
   const interrupt = (): boolean => {
     const active = speaking || listening || busy || demoAbort !== null;
+    scribe.reset();
     demoAbort?.abort();
     computer.stop();
     speaker.stop();
@@ -1203,6 +1207,11 @@ async function main(): Promise<void> {
   };
 
   const onToolEvent = (source: string, cwd: string, e: ToolEvent) => {
+    // Thoth rises while she herself researches (not her background runs, which have their own transcripts).
+    if (source === "Astra") {
+      if (e.kind === "use" && isResearch(e.name, e.input, cfg.brainDir)) scribe.start(e.id);
+      else if (e.kind === "result") scribe.end(e.id);
+    }
     const dir = e.kind === "use" ? transferKind(e.name, e.input) : null;
     if (dir) transfers.set(e.id, { dir, at: Date.now(), source });
     if (dir || (e.kind === "result" && transfers.delete(e.id))) syncTransfer();
@@ -1883,6 +1892,7 @@ async function main(): Promise<void> {
     } finally {
       busy = false;
       computer.done();
+      scribe.reset();
       syncOrb();
       // A stopped request never reports its last results: clear her own transfers so the orb doesn't keep beaming.
       for (const [id, t] of transfers) if (t.source === "Astra") transfers.delete(id);

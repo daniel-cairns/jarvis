@@ -34,7 +34,7 @@ describe("demo mode", () => {
     expect(glyphs).toEqual(new Set(["sun", "eye", "ankh", "djed", "water", "reed"]));
     const transfers = sent.flatMap((m) => (m.type === "transfer" ? [m.dir] : []));
     expect(transfers).toEqual(["up", "down", null]);
-    for (const kind of ["detail", "sessions", "graph", "terminal", "git", "tallyline", "guard", "control", "recording", "coffee"]) {
+    for (const kind of ["detail", "sessions", "graph", "terminal", "git", "tallyline", "guard", "scribe", "control", "recording", "coffee"]) {
       expect(sent.some((m) => m.type === kind), kind).toBe(true);
     }
   });

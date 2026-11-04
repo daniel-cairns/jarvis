@@ -32,7 +32,7 @@ export type DemoDeps = {
  */
 const HELD_TYPES = new Set<ToOrb["type"]>([
   "detail", "graph", "sessions", "tallyline", "terminal", "git", "git-diff-result", "transcript", "brain", "brain-note",
-  "activity", "activity-reset", "transfer", "guard", "ask", "question", "caption", "control", "recording",
+  "activity", "activity-reset", "transfer", "guard", "scribe", "ask", "question", "caption", "control", "recording",
 ]);
 
 export function heldDuringDemo(msg: ToOrb): boolean {
@@ -206,6 +206,22 @@ export async function runDemo(deps: DemoDeps, signal: AbortSignal): Promise<void
       show({ type: "guard", state: null });
     },
     async () => {
+      await say("And once I know your voice, Anubis's eyes go red when someone else speaks, and I ignore them.");
+      show({ type: "guard", state: "voice" });
+      await wait(2_500);
+      show({ type: "guard", state: null });
+    },
+    async () => {
+      await say("When I research, Thoth rises behind me. He writes as I read, and glints when I've found it.");
+      state("thinking");
+      show({ type: "scribe", state: "researching" });
+      await wait(4_500);
+      show({ type: "scribe", state: "found" });
+      await wait(1_400);
+      show({ type: "scribe", state: null });
+      state("idle");
+    },
+    async () => {
       await say("When I'm using your Mac's mouse and keyboard, this banner tells you so.");
       show({ type: "control", on: true });
       await wait(3_000);
@@ -294,7 +310,7 @@ export async function runDemo(deps: DemoDeps, signal: AbortSignal): Promise<void
     },
     async () => {
       deps.restore();
-      await say("Once I know your voice, I only listen to you. That's my tour. Ask me anything.");
+      await say("That's my tour. Ask me anything.");
     },
   ];
 
