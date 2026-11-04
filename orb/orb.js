@@ -43,7 +43,7 @@
    * glow, Anubis, Thoth and the transfer beams fade out softly instead of stopping at the frame's edges. With
    * click-through (hit.js) the extra room catches no clicks. Keep in step with #orb in orb.css.
    */
-  const PAD = { x: 40, top: 56, bottom: 24 };
+  const PAD = { x: 40, top: 56, bottom: 70 };
   /** The whole canvas, in drawing coordinates. */
   const FULL = [-PAD.x, -PAD.top, W + 2 * PAD.x, H + PAD.top + PAD.bottom];
   const R = 34;
@@ -68,8 +68,14 @@
   let colour = [...COLOURS.idle];
   /** God mode: a ring of carved glyphs turning slowly round her (see drawGodRing), in every state. */
   let godMode = false;
-  /** 0..1: the ring fades in and out with God mode. */
+  /** 0..1: the ring fades in and out with God mode, and her lower wings move out and back with it. */
   let godAmt = 0;
+  /**
+   * How far her lower wings (and the glyph buttons on them) move out in God mode, so the ring and the satellites'
+   * orbit (god.css --sat-r: 106px) never cross them: their inner edge goes from just outside the ring to just outside
+   * the orbit. Keep in step with orb.css (body.god-mode .orb-wrap) and god.js (ROOT_OFFSET).
+   */
+  const WINGS_OUT = 50;
   let level = 0;
   let spin = 0;
   let wingOpen = 0.6;
@@ -800,7 +806,8 @@
   }
 
   // God mode's ring: the slate's own glyphs (god-glyphs.js), carved twice round a thin gold band just outside the
-  // chevrons, turning once every 90 s (still with reduced motion). Where her wings wrap the ring, its glyphs fade out.
+  // chevrons, turning once every 90 s (still with reduced motion). Her lower wings move out past it (WINGS_OUT), so
+  // every glyph shows all the way round.
   const GOD_PATHS = new Map(Object.entries(window.astraGodGlyphs.GLYPHS).map(([name, g]) => [name, g.strokes.map((d) => new Path2D(d))]));
   const GOD_RING = [...window.astraGodGlyphs.RING_GLYPHS, ...window.astraGodGlyphs.RING_GLYPHS];
   function drawGodRing(cx, cy, gr, t, amt) {
@@ -819,10 +826,6 @@
     const size = 10;
     for (let i = 0; i < GOD_RING.length; i++) {
       const a = -Math.PI / 2 + turn + (i / GOD_RING.length) * Math.PI * 2;
-      // How far round from straight down (0) to straight up (π): under her wings (about 1.1 either side) they fade.
-      const fromDown = Math.abs(((((a - Math.PI / 2) % (Math.PI * 2)) + Math.PI * 3) % (Math.PI * 2)) - Math.PI);
-      const show = Math.max(0, Math.min(1, (fromDown - 1.05) / 0.3)) * amt;
-      if (show <= 0.01) continue;
       ctx.save();
       ctx.translate(cx + Math.cos(a) * mid, cy + Math.sin(a) * mid);
       ctx.rotate(a + Math.PI / 2);
@@ -832,10 +835,10 @@
       ctx.lineJoin = "round";
       ctx.lineWidth = 4.4;
       // Carved: a dark cut up and to the left of the gold leaf.
-      ctx.shadowColor = rgba([0, 0, 0], 0.9 * show);
+      ctx.shadowColor = rgba([0, 0, 0], 0.9 * amt);
       ctx.shadowOffsetX = -1;
       ctx.shadowOffsetY = -1;
-      ctx.strokeStyle = rgba([240, 200, 104], 0.95 * show);
+      ctx.strokeStyle = rgba([240, 200, 104], 0.95 * amt);
       for (const path of GOD_PATHS.get(GOD_RING[i])) ctx.stroke(path);
       ctx.restore();
     }
@@ -845,21 +848,22 @@
   /**
    * Lower wings that wrap the bottom of the glyph ring: three tiers of gold feathers laid along arcs concentric with the
    * ring, so they meet it cleanly and sweep up towards their tips. Stop (left) and minimise (right) sit on them; the
-   * DOM buttons are positioned over GLYPH_ANGLE, and this draws the glow behind each glyph.
+   * DOM buttons are positioned over GLYPH_ANGLE, and this draws the glow behind each glyph. `out` moves the whole
+   * wing that much further from her centre (God mode, WINGS_OUT); the feathers keep their size.
    */
   const GLYPH_ANGLE = 0.24;
   // Record and type-only, further out along the wings.
   const OUTER_ANGLE = 0.55;
   // The sun (right) and God mode's Eye (left), further out still (orb.css #front, god.css #eye).
   const SUN_ANGLE = 0.88;
-  function lowerWings(cx, cy, ringR, t, busy, hover, glow = 0) {
-    const base = ringR + 9; // just outside the ring's outer line
+  function lowerWings(cx, cy, ringR, t, busy, hover, glow = 0, out = 0) {
+    const base = ringR + 9 + out; // just outside the ring's outer line, or the satellites' orbit in God mode
     const tiers = [
       { h: 7, end: 1.08, alpha: 0.95 },
       { h: 8, end: 0.9, alpha: 0.8 },
       { h: 10, end: 0.7, alpha: 0.65 },
     ];
-    const step = 0.055;
+    const step = (0.055 * (ringR + 9)) / base;
     for (const side of [1, -1]) {
       let r0 = base;
       for (const tier of tiers) {
@@ -889,8 +893,8 @@
       }
     }
     const glyphR = base + 11;
-    const wingGlyphs = [["stop", -1, GLYPH_ANGLE], ["minimise", 1, GLYPH_ANGLE], ["record", -1, OUTER_ANGLE], ["type-only", 1, OUTER_ANGLE], ["front", 1, SUN_ANGLE], ["eye", -1, SUN_ANGLE]];
-    for (const [id, side, angle] of wingGlyphs) {
+    for (const { el, side, angle } of WING_BUTTONS) {
+      const id = el.id;
       const busyStop = (id === "stop" && busy) || (id === "record" && recording);
       const lit = (hover === id ? 1 : 0) + (busyStop ? 0.55 + 0.3 * Math.sin(t * 4) : 0);
       if (lit <= 0) continue;
@@ -901,6 +905,21 @@
       glow.addColorStop(1, rgba(busyStop ? [255, 110, 90] : GOLD, 0));
       ctx.fillStyle = glow;
       ctx.fillRect(x - 15, y - 15, 30, 30);
+    }
+  }
+
+  /** The glyph buttons on her lower wings, by id: which side (-1 left) and how far round from straight down. */
+  const WING_BUTTONS = [["stop", -1, GLYPH_ANGLE], ["minimise", 1, GLYPH_ANGLE], ["record", -1, OUTER_ANGLE], ["type-only", 1, OUTER_ANGLE], ["front", 1, SUN_ANGLE], ["eye", -1, SUN_ANGLE]].map(
+    ([id, side, angle]) => ({ el: document.getElementById(id), side, angle }),
+  );
+  let placedOut = 0;
+  /** Moves the wing buttons out with the drawn wings (orb.css holds their normal places). */
+  function placeWingButtons(out) {
+    const rounded = Math.round(out * 4) / 4;
+    if (rounded === placedOut) return;
+    placedOut = rounded;
+    for (const { el, side, angle } of WING_BUTTONS) {
+      el.style.translate = rounded ? `${(side * Math.sin(angle) * rounded).toFixed(2)}px ${(Math.cos(angle) * rounded).toFixed(2)}px` : "";
     }
   }
 
@@ -1589,7 +1608,8 @@
     ctx.translate(cx, cy);
     ctx.scale(0.4 + 0.6 * st.wings, 0.4 + 0.6 * st.wings);
     ctx.translate(-cx, -cy);
-    lowerWings(cx, cy, gr + 7, t, state !== "idle", hovered, listenGlow);
+    lowerWings(cx, cy, gr + 7, t, state !== "idle", hovered, listenGlow, WINGS_OUT * godAmt);
+    placeWingButtons(WINGS_OUT * godAmt);
     ctx.restore();
 
     drawSand(cx, cy, gr, state === "thinking" && formTo === 1, st.wings);

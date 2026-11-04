@@ -19,8 +19,8 @@
   const CENTRE = { x: 160, y: 136 };
   /** The orb window's own width (main.cjs ORB_WIDTH, orb.css main): the slate's room is added to it. */
   const BASE_WIDTH = 430;
-  /** How far from her centre the slate's root sits: just past the tips of her lower wings. */
-  const ROOT_OFFSET = 90;
+  /** How far from her centre the slate's root sits: just past the tips of her lower wings, moved out in God mode (orb.js WINGS_OUT). */
+  const ROOT_OFFSET = 134;
   const SLATE_TOP = CENTRE.y + 8;
   const CELL = 40;
   const ROOT_PAD = 18;

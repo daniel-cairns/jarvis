@@ -35,7 +35,11 @@ main {
 .orb-wrap { position: relative; width: 320px; height: 260px; flex: none; }
 /* The canvas spills past the orb's 320 × 260 frame (PAD in orb.js), so her glow and figures aren't cut off at its
    edges; the frame itself, and everything positioned in it, stays where it was. */
-#orb { width: 400px; height: 340px; margin: -56px -40px -24px; display: block; cursor: grab; }
+#orb { width: 400px; height: 386px; margin: -56px -40px -70px; display: block; cursor: grab; }
+/* God mode moves her lower wings out past the satellites' orbit (WINGS_OUT in orb.js), so her frame grows by as much
+   and the status pill below moves down with them. */
+body.god-mode .orb-wrap { height: 310px; }
+@media (prefers-reduced-motion: no-preference) { .orb-wrap { transition: height 0.8s ease; } }
 #orb.dragging { cursor: grabbing; }
 
 #talk {
