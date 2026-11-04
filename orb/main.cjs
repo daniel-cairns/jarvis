@@ -461,6 +461,8 @@ app.whenReady().then(() => {
   const movedFar = (a, b) => Math.abs(a.x - b.x) + Math.abs(a.y - b.y) > 24;
   const kindOf = (slab) => Object.keys(slabs).find((k) => slabs[k] === slab);
   const relayout = (mode = "new") => {
+    // The orb closes first when she quits or restarts; a layout timer firing after that has nothing to lay out.
+    if (win.isDestroyed()) return;
     const tidy = mode === "tidy";
     if (tidy) for (const s of Object.values(slabs)) s.pinned = false;
     const visible = Object.entries(slabs).filter(([, s]) => s.win && !s.win.isDestroyed() && s.win.isVisible());
@@ -552,6 +554,11 @@ app.whenReady().then(() => {
       const start = Date.now();
       const ease = (p) => (p < 0.5 ? 2 * p * p : 1 - (-2 * p + 2) ** 2 / 2);
       gliding = setInterval(() => {
+        if (win.isDestroyed()) {
+          clearInterval(gliding);
+          gliding = null;
+          return resolve();
+        }
         const p = Math.min(1, (Date.now() - start) / 450);
         win.setPosition(Math.round(x0 + (x - x0) * ease(p)), Math.round(y0 + (y - y0) * ease(p)));
         if (p === 1) {
@@ -756,6 +763,7 @@ app.whenReady().then(() => {
    * there's nothing to draw.
    */
   const sendBeam = async () => {
+    if (win.isDestroyed()) return;
     const now = Date.now();
     for (const [kind, until] of flashes) {
       const w = slabs[kind]?.win;
@@ -794,7 +802,7 @@ app.whenReady().then(() => {
     const core = await win.webContents
       .executeJavaScript(`(() => { const r = document.getElementById("talk").getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; })()`)
       .catch(() => null);
-    if (!Array.isArray(core) || beamWin.isDestroyed()) return;
+    if (!Array.isArray(core) || beamWin.isDestroyed() || win.isDestroyed()) return;
     const orb = win.getBounds();
     beamWin.setBounds(area);
     if (!beamWin.isVisible()) beamWin.showInactive();
