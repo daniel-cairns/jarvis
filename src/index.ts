@@ -39,7 +39,7 @@ import { Loops, loopsContext, plateHeadline, plateMarkdown } from "./loops.js";
 import { dropRepeats, headline, MoreQueue } from "./voice/brevity.js";
 import { Speaker } from "./voice/speaker.js";
 import { helpText } from "./abilities.js";
-import { runDemo } from "./demo.js";
+import { heldDuringDemo, runDemo } from "./demo.js";
 import { ENROL_SENTENCES, enrolPanel, VoiceCheck, WEAK_READING, wavlmEmbedder, type VoiceVerdict } from "./voice/voiceprint.js";
 import { KokoroTts, SayTts } from "./voice/tts.js";
 import {
@@ -1454,6 +1454,8 @@ async function main(): Promise<void> {
   const finishes = new FinishWatcher();
   let godTimer: NodeJS.Timeout | null = null;
   const watchSessions = async () => {
+    // Not during the demo: a real session's news would be spoken over the tour. It's announced after.
+    if (demoAbort) return;
     const now = await liveSessions({ limit: 30, exclude: [cfg.workspaceDir] }).catch(() => [] as SessionSummary[]);
     const finished = finishes.update(now);
     // Her own background runs are reported when they end anyway.
@@ -1696,14 +1698,17 @@ async function main(): Promise<void> {
     demoAbort = new AbortController();
     busy = true;
     syncOrb();
+    // Real updates (a run's card, a session refresh, a panel) wait until the tour ends; only the demo's own pass.
+    const screen = orb;
+    screen.hold(heldDuringDemo);
     try {
       await runDemo(
         {
-          send: (msg) => orb?.send(msg),
-          say: (text, signal) => say(text, signal),
+          send: (msg) => screen.trusted(() => screen.send(msg)),
+          say: (text, signal) => screen.trusted(() => say(text, signal)),
           render: renderDetail,
-          question: (spec, signal) => orb!.question(spec, signal),
-          ask: (spoken, detail, signal) => orb!.ask(spoken, detail, signal),
+          question: (spec, signal) => screen.trusted(() => screen.question(spec, signal)),
+          ask: (spoken, detail, signal) => screen.trusted(() => screen.ask(spoken, detail, signal)),
           restore: () => {
             sendMode();
             orb?.send({ type: "coffee", on: coffee.on, until: coffee.endsAt });
@@ -1712,6 +1717,7 @@ async function main(): Promise<void> {
         demoAbort.signal,
       );
     } finally {
+      screen.release();
       demoAbort = null;
       busy = false;
       await speaker.whenIdle();

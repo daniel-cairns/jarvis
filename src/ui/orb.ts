@@ -210,7 +210,40 @@ export class Orb {
 
   send(msg: ToOrb): void {
     if (this.exited) return;
+    if (this.held && this.trustedDepth === 0 && this.held.matches(msg)) {
+      this.held.queue.push(msg);
+      return;
+    }
     this.child.stdin?.write(`${JSON.stringify(msg)}\n`);
+  }
+
+  /** Messages held back while the demo runs (see hold), to be shown once it ends. */
+  private held: { matches: (msg: ToOrb) => boolean; queue: ToOrb[] } | null = null;
+  private trustedDepth = 0;
+
+  /**
+   * Holds back every message `matches` picks, except those sent inside `trusted`, until `release`. The demo uses it
+   * so real data (a run's card, a session refresh, a panel) never appears in the middle of the tour; none is lost.
+   */
+  hold(matches: (msg: ToOrb) => boolean): void {
+    this.held = { matches, queue: [] };
+  }
+
+  /** Stops holding and shows what was held, in the order it came. */
+  release(): void {
+    const queue = this.held?.queue ?? [];
+    this.held = null;
+    for (const msg of queue) this.send(msg);
+  }
+
+  /** Runs `run` with its messages (and the cards it opens) let through a hold. */
+  trusted<T>(run: () => T): T {
+    this.trustedDepth++;
+    try {
+      return run();
+    } finally {
+      this.trustedDepth--;
+    }
   }
 
   /** Shows the approval card. Resolves null if aborted or the orb goes away. */

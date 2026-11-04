@@ -26,6 +26,19 @@ export type DemoDeps = {
   wait?(ms: number, signal: AbortSignal): Promise<void>;
 };
 
+/**
+ * Orb messages that can carry real data: while the demo runs, any of these it didn't send itself waits until it ends
+ * (see Orb.hold). Her state, mode and window commands pass, since the demo drives and restores those itself.
+ */
+const HELD_TYPES = new Set<ToOrb["type"]>([
+  "detail", "graph", "sessions", "tallyline", "terminal", "git", "git-diff-result", "transcript", "brain", "brain-note",
+  "activity", "activity-reset", "transfer", "guard", "ask", "question", "caption", "control", "recording",
+]);
+
+export function heldDuringDemo(msg: ToOrb): boolean {
+  return HELD_TYPES.has(msg.type);
+}
+
 /** How long a card waits for a click before the tour moves on. */
 const CARD_MS = 7_000;
 
