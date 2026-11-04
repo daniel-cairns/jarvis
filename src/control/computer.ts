@@ -31,7 +31,27 @@ export type ComputerHooks = {
   open(target: string): Promise<void>;
   /** Astra's own process ids (her orb and its windows), which never count as the app she's working in. */
   ownPids?(): number[];
+  /** Where she's working: the window to aim the orb's beam at (screen points, top-left origin), or null for none. */
+  beam?(target: BeamTarget | null): void;
 };
+
+export type BeamTarget = { x: number; y: number; width: number; height: number };
+
+type ListedWindow = { pid?: number; frame?: { X?: number; Y?: number; Width?: number; Height?: number } };
+
+/**
+ * The window of `pid` to aim the beam at: its front one (the helper lists windows front to back), skipping slivers
+ * like a menu-bar extra. Null when it has none on screen.
+ */
+export function beamTarget(windows: readonly ListedWindow[], pid: number): BeamTarget | null {
+  for (const w of windows) {
+    const f = w.frame;
+    if (w.pid !== pid || !f || f.X === undefined || f.Y === undefined || !f.Width || !f.Height) continue;
+    if (f.Width < 80 || f.Height < 60) continue;
+    return { x: f.X, y: f.Y, width: f.Width, height: f.Height };
+  }
+  return null;
+}
 
 /** Builds the helper from source if it's missing or older than the source, and returns a runner for it. */
 export function nativeHelper(binDir: string): Helper {
@@ -128,15 +148,26 @@ export class ComputerControl {
     this.hooks.log(description);
     await this.noteFront();
     this.indicatorNow(true);
+    void this.aim();
     try {
       return await run(this.stopper.signal);
     } catch (err) {
       if (this.stopper.stopped) this.stopper.check();
       throw err;
     } finally {
+      // The action may have brought another window forward: aim at where she is now.
+      void this.aim();
       clearTimeout(this.indicatorOff);
       this.indicatorOff = setTimeout(() => this.indicatorNow(false), 2500);
     }
+  }
+
+  /** Points the orb's beam at the front window of the app she's working in. */
+  private async aim(): Promise<void> {
+    const pid = this.target ?? this.lastApp;
+    if (!this.hooks.beam || !pid) return;
+    const windows = (await this.helper("windows").catch(() => [])) as ListedWindow[];
+    this.hooks.beam(Array.isArray(windows) ? beamTarget(windows, pid) : null);
   }
 
   /** Remembers the app in front, unless it's Astra herself (her orb or a card Dan just answered). */
@@ -164,6 +195,7 @@ export class ComputerControl {
   private indicatorNow(on: boolean): void {
     clearTimeout(this.indicatorOff);
     this.hooks.indicator(on);
+    if (!on) this.hooks.beam?.(null);
   }
 
   async windows(): Promise<unknown> {

@@ -634,6 +634,7 @@ app.whenReady().then(() => {
     void arrange();
   });
   win.on("moved", () => {
+    void sendBeam();
     void arrange();
     // The panels follow the orb once it stops.
     scheduleLayout();
@@ -720,22 +721,45 @@ app.whenReady().then(() => {
   /** When she last acted on another app; work panels stay put for a minute after. */
   let lastControlAt = 0;
   const CONTROL_QUIET_MS = 60_000;
+  /** The window she's working in, for the beam (screen points), or null. */
+  let beamTarget = null;
+  /**
+   * Draws her beam on the control overlay: from the orb's core (the talk button's centre) to the target window, both
+   * in the overlay's own coordinates. Nothing while the overlay is hidden.
+   */
+  const sendBeam = async () => {
+    if (!controlWin || controlWin.isDestroyed() || !controlWin.isVisible()) return;
+    const area = controlWin.getBounds();
+    let to = null;
+    let from = null;
+    if (beamTarget && win.isVisible()) {
+      const core = await win.webContents
+        .executeJavaScript(`(() => { const r = document.getElementById("talk").getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; })()`)
+        .catch(() => null);
+      const orb = win.getBounds();
+      if (Array.isArray(core)) from = { x: orb.x + core[0] - area.x, y: orb.y + core[1] - area.y };
+      to = { x: beamTarget.x - area.x, y: beamTarget.y - area.y, width: beamTarget.width, height: beamTarget.height };
+    }
+    controlWin.webContents.send("jarvis", { type: "beam", from, to: from ? to : null });
+  };
   const controlIndicator = (on) => {
     if (!on) return void controlWin?.hide();
     const { bounds } = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
     if (!controlWin || controlWin.isDestroyed()) {
       controlWin = new BrowserWindow({
         ...bounds, frame: false, transparent: true, hasShadow: false, focusable: false, resizable: false, movable: false,
-        skipTaskbar: true, show: false, webPreferences: { sandbox: true, contextIsolation: true },
+        skipTaskbar: true, show: false, webPreferences: WEB_PREFERENCES,
       });
       controlWin.setIgnoreMouseEvents(true);
       controlWin.setAlwaysOnTop(true, "screen-saver");
       controlWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
       harden(controlWin);
       controlWin.loadFile(path.join(__dirname, "control.html"));
+      controlWin.webContents.on("did-finish-load", () => void sendBeam());
     }
     controlWin.setBounds(bounds);
     controlWin.showInactive();
+    void sendBeam();
   };
   // Control+Option+Escape: stop whatever she's doing, from any app.
   globalShortcut.register("Control+Alt+Escape", () => send({ type: "stop" }));
@@ -753,6 +777,10 @@ app.whenReady().then(() => {
       if (m.type === "control") {
         if (m.on) lastControlAt = Date.now();
         controlIndicator(!!m.on);
+      }
+      if (m.type === "beam") {
+        beamTarget = m.target && Number.isFinite(m.target.x) && Number.isFinite(m.target.y) ? m.target : null;
+        void sendBeam();
       }
       // Quitting folds her away first (she's gone either way within 1.6 s).
       else if (m.type === "quit") {

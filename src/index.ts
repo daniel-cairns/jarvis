@@ -254,6 +254,7 @@ async function main(): Promise<void> {
       orb?.send({ type: "caption", role: "status", text: line });
     },
     indicator: (on) => orb?.send({ type: "control", on }),
+    beam: (target) => orb?.send({ type: "beam", target }),
     open: async (target) => {
       if (/^(x-apple\.systempreferences|https?):/.test(target)) await realRunner.run("open", [target]);
       else await openApp(target);

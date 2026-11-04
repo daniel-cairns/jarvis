@@ -17,6 +17,7 @@ import type { RepoState } from "../tools/git.js";
 import type { TermEntry } from "./worklog.js";
 import type { Position, UiAction } from "./control.js";
 import type { TeardownGraph } from "./graph.js";
+import type { BeamTarget } from "../control/computer.js";
 
 /** What the sessions panel can do with a row. */
 export const SESSION_ACTIONS = ["open", "message", "stop", "transcript"] as const;
@@ -35,6 +36,8 @@ export type ToOrb =
   | { type: "caption"; role: "jarvis" | "you" | "status"; text: string }
   /** The "Astra is controlling your Mac" indicator (src/control/computer.ts). */
   | { type: "control"; on: boolean }
+  /** Her blue beam from the orb to the window she's working in (screen points), or null to put it away. */
+  | { type: "beam"; target: BeamTarget | null }
   | { type: "ask"; id: string; spoken: string; detail: string }
   | { type: "answered"; id: string }
   | { type: "detail"; title: string; html: string; follow?: boolean; owner?: "user" }
