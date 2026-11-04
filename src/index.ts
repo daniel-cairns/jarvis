@@ -10,7 +10,7 @@ import { loadConfig } from "./config.js";
 import { parseAnswer, type Answer } from "./permissions.js";
 import { renderDetail } from "./ui/detail.js";
 import { graphAsText, readGraph } from "./ui/graph.js";
-import { brainIndex, noteMap, readNote, saveNote, watchBrain } from "./tools/brain.js";
+import { brainIndex, noteBody, noteMap, readNote, saveNote, watchBrain } from "./tools/brain.js";
 import { openApp, realRunner } from "./tools/mac.js";
 import { ComputerControl, nativeHelper } from "./control/computer.js";
 import { CoffeeMode } from "./power/coffee.js";
@@ -733,8 +733,7 @@ async function main(): Promise<void> {
       if (msg.type === "brain-open") {
         const note = await readNote(cfg.brainDir, msg.path);
         const hasMap = /```astra-graph/.test(note.text);
-        const body = note.text
-          .replace(/^---[\s\S]*?---\n/, "")
+        const body = noteBody(note.text)
           .replace(/```astra-graph[\s\S]*?```/g, "*A 3D map is saved with this note: use Show map.*");
         orb?.send({ type: "brain-note", path: msg.path, title: note.title, html: renderDetail(body), hasMap });
         return;

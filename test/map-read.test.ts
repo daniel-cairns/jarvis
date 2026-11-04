@@ -43,3 +43,17 @@ describe("saveNote keeps every saved map openable", () => {
     await expect(saveNote(brain, { title: "bad", body: "```astra-graph\n{nodes: oops}\n```" })).rejects.toThrow(/isn't valid JSON/);
   });
 });
+
+describe("noteBody", () => {
+  it("drops the front matter and the opening # Title, so the brain browser shows the title once", async () => {
+    const { noteBody } = await import("../src/tools/brain.js");
+    const text = '---\ntitle: "Signal teardown"\n---\n\n# Signal teardown\n\nTarget: Signal.app\n\n## Summary\n';
+    expect(noteBody(text)).toBe("Target: Signal.app\n\n## Summary\n");
+  });
+
+  it("keeps a heading that isn't the note's first line, and notes without one", async () => {
+    const { noteBody } = await import("../src/tools/brain.js");
+    expect(noteBody("Intro first.\n\n# Later heading\n")).toBe("Intro first.\n\n# Later heading\n");
+    expect(noteBody("## Summary\nText")).toBe("## Summary\nText");
+  });
+});

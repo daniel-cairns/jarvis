@@ -209,6 +209,14 @@ export async function readNote(
 export type BrainEntry = NoteSummary & { folder: string; snippet: string; hasMap: boolean };
 
 
+/**
+ * A note's text without its front matter or the "# Title" line most notes open with: the brain browser already shows
+ * the title above the note, so leaving it in shows it twice.
+ */
+export function noteBody(text: string): string {
+  return text.replace(/^---[\s\S]*?---\n/, "").replace(/^\s*# [^\n]*\n+/, "");
+}
+
 /** Every note for the brain browser: newest first, with its folder, a plain-text snippet and whether it has a map. */
 export async function brainIndex(brainDir: string): Promise<BrainEntry[]> {
   const notes = await Promise.all((await walk(brainDir)).map((f) => summarise(brainDir, f)));
@@ -220,8 +228,7 @@ export async function brainIndex(brainDir: string): Promise<BrainEntry[]> {
       modified,
       folder: p.includes("/") ? p.split("/")[0]! : "notes",
       hasMap: MAP_BLOCK.test(content),
-      snippet: content
-        .replace(/^---[\s\S]*?---\n/, "")
+      snippet: noteBody(content)
         .replace(/```[\s\S]*?```/g, " ")
         .replace(/[#*_`>|-]+/g, " ")
         .replace(/\s+/g, " ")
