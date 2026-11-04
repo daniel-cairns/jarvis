@@ -1,5 +1,6 @@
 import type { TallylineSummary } from "../tools/tallyline.js";
 import type { SessionsView } from "./sessionsPanel.js";
+import type { GodEntry } from "./godSlate.js";
 /**
  * Talks to the orb window (orb/main.cjs, run by Electron) over JSON lines on stdin/stdout.
  * If Electron can't start, `alive` stays false and Astra falls back to the terminal and the pop-up.
@@ -46,6 +47,8 @@ export type ToOrb =
   | { type: "state-label"; text: string }
   | { type: "recording"; on: boolean }
   | { type: "mode"; typeOnly: boolean; god: boolean }
+  /** God mode's satellites and glyph slate (src/ui/godSlate.ts); empty when it's off. */
+  | { type: "god-sessions"; sessions: GodEntry[] }
   | { type: "transfer"; dir: "up" | "down" | null }
   /** Anubis on guard: checking a page, a page blocked, or (red eyes too) a voice that isn't Dan's refused. */
   | { type: "guard"; state: "checking" | "blocked" | "voice" | null }

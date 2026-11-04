@@ -11,6 +11,7 @@ import type { TeardownGraph } from "./ui/graph.js";
 import type { OrbState, ToOrb } from "./ui/orb.js";
 import type { SessionRow, SessionsView } from "./ui/sessionsPanel.js";
 import type { TermEntry } from "./ui/worklog.js";
+import { godSlate } from "./ui/godSlate.js";
 import type { QuestionAnswer, QuestionSpec } from "./voice/answers.js";
 
 export type DemoDeps = {
@@ -33,6 +34,7 @@ export type DemoDeps = {
 const HELD_TYPES = new Set<ToOrb["type"]>([
   "detail", "graph", "sessions", "tallyline", "terminal", "git", "git-diff-result", "transcript", "brain", "brain-note",
   "activity", "activity-reset", "transfer", "guard", "scribe", "ask", "question", "caption", "control", "recording",
+  "god-sessions",
 ]);
 
 export function heldDuringDemo(msg: ToOrb): boolean {
@@ -259,6 +261,7 @@ export async function runDemo(deps: DemoDeps, signal: AbortSignal): Promise<void
     async () => {
       await say("In god mode, I hand project work to your sessions and tell you when they're done.");
       show({ type: "mode", typeOnly: false, god: true });
+      show({ type: "god-sessions", sessions: godSlate(DEMO_SESSIONS, []) });
       await wait(3_000);
     },
     async () => {
