@@ -179,15 +179,16 @@ body.room-left main { margin-left: auto; }
 
 .slate-wing .cartouche {
   position: absolute;
-  left: -14px;
+  /* Raised 3 px off the band's centre line so the cartouche and its tie-bar together sit centred. */
+  left: -12px;
   top: -18px;
   display: grid;
   place-items: center;
-  width: 28px;
-  height: 36px;
+  width: 24px;
+  height: 30px;
   padding: 0;
   border: 1.5px solid rgba(236, 188, 82, 0.95);
-  border-radius: 14px / 18px;
+  border-radius: 12px / 15px;
   background: rgba(3, 8, 24, 0.45);
   box-shadow: inset 2px 2px 3px rgba(0, 0, 0, 0.8), inset -1px -1px 2px rgba(214, 232, 222, 0.18);
   cursor: pointer;

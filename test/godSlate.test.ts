@@ -168,24 +168,24 @@ describe("opening from a satellite or cartouche reuses the sessions panel's mess
 });
 
 describe("the slate's wing", () => {
-  // As god.js draws it: cartouches 36 px tall plus a 2 px tie-bar 4 px under them, 24 px below their centre.
+  // As god.js draws it: cartouches 30 px tall, raised 3 px, plus a 2 px tie-bar 4 px under them: 18 px below the line, 18 above.
   // Her lower wings' path: radius 131 round her centre, which sits 8 px above the slate and left of its foot.
-  const root = Math.sqrt(131 ** 2 - 92 ** 2);
-  const wing = page.slateWing({ width: 194, rootY: 56, lift: 22, rootHalf: 28, tipHalf: 26, hug: { x: -root, y: -8, r: 131 } });
+  const root = Math.sqrt(131 ** 2 - 86 ** 2);
+  const wing = page.slateWing({ width: 194, rootY: 56, lift: 22, rootHalf: 22, tipHalf: 20, hug: { x: -root, y: -8, r: 131 } });
 
   it("is tall enough for a whole cartouche and its tie-bar all along", () => {
     for (const x of [0, 50, 120, 194]) {
       const centre = wing.centreY(x);
-      expect(wing.bottom(x) - centre).toBeGreaterThan(24);
+      expect(wing.bottom(x) - centre).toBeGreaterThan(18);
       expect(centre - wing.top(x)).toBeGreaterThan(18);
       expect(wing.top(x)).toBeGreaterThan(6); // room for the covert feathers above it
     }
   });
 
   it("lays its root edge on her lower wings' path: on that circle round her, its foot at x = 0", () => {
-    expect(wing.rootX(84)).toBeCloseTo(0, 5);
-    for (const y of [28, 42, 56, 70, 84]) expect(Math.hypot(wing.rootX(y) + root, y + 8)).toBeCloseTo(131, 5);
-    expect(wing.rootX(28)).toBeGreaterThan(wing.rootX(56)); // further out at the top, as the circle curves round her
+    expect(wing.rootX(78)).toBeCloseTo(0, 5);
+    for (const y of [34, 45, 56, 67, 78]) expect(Math.hypot(wing.rootX(y) + root, y + 8)).toBeCloseTo(131, 5);
+    expect(wing.rootX(34)).toBeGreaterThan(wing.rootX(56)); // further out at the top, as the circle curves round her
   });
 
   it("keeps a straight root without hug", () => {

@@ -25,14 +25,14 @@
    */
   const WING_PATH = 131;
   /** How far right of her centre the slate's foot sits: where the band's foot (WING rootY + rootHalf) meets that path. */
-  const FOOT_DROP = 8 + 56 + 28; // SLATE_TOP below her centre, then down the band to its foot
+  const FOOT_DROP = 8 + 56 + 22; // SLATE_TOP below her centre, then down the band to its foot
   const ROOT_OFFSET = Math.sqrt(WING_PATH ** 2 - FOOT_DROP ** 2);
   const SLATE_TOP = CENTRE.y + 8;
   const CELL = 40;
   const ROOT_PAD = 40;
   const SLATE_HEIGHT = 120;
   /** The band is tall enough for a whole cartouche and its tie-bar all along; its root follows her lower wings' path. */
-  const WING = { rootY: 56, lift: 22, rootHalf: 28, tipHalf: 26, hug: { x: -ROOT_OFFSET, y: -8, r: WING_PATH } };
+  const WING = { rootY: 56, lift: 22, rootHalf: 22, tipHalf: 20, hug: { x: -ROOT_OFFSET, y: -8, r: WING_PATH } };
   /** Help text is 240 px wide, centred on its cartouche: how far it can reach past the slate's outer end. */
   const TIP_REACH = 120 - (8 + CELL / 2);
   /** Help text sits this far off its cartouche (god.css .slate-tip), and this far inside the window's edges. */
@@ -220,7 +220,7 @@
       li.style.top = `${wing.centreY(x)}px`;
       const button = li.querySelector("button");
       if (button.dataset.glyph !== entry.glyph) {
-        button.innerHTML = glyphSvg(entry.glyph, { carved: true, size: 20 });
+        button.innerHTML = glyphSvg(entry.glyph, { carved: true, size: 18 });
         button.dataset.glyph = entry.glyph;
       }
       button.setAttribute("aria-label", `${entry.meaning}: ${entry.title}`);
