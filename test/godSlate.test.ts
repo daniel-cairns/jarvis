@@ -16,6 +16,13 @@ const page = sandbox.module.exports as {
   slateSide(orbCentreX: number, areaX: number, areaWidth: number): "left" | "right";
   needsDan(entry: { needs: string }): boolean;
   notableChanges(previous: Map<string, string> | null, entries: Entry[]): Entry[];
+  slateWing(o: { width: number; rootY: number; lift: number; rootHalf: number; tipHalf: number; hug?: number }): {
+    band: string;
+    centreY(x: number): number;
+    top(x: number): number;
+    bottom(x: number): number;
+    rootX(y: number): number;
+  };
 };
 
 const NOW = Date.parse("2026-11-04T09:00:00Z");
@@ -157,5 +164,29 @@ describe("opening from a satellite or cartouche reuses the sessions panel's mess
     expect(parseFromOrb(JSON.stringify({ type: "session-action", action: "open", ref: "x".repeat(200) }))).toBeNull();
     expect(parseFromOrb('{"type":"session-action","action":"open","ref":"a","run":"rm -rf"}')).toBeNull();
     expect(parseFromOrb('{"type":"slate-room","side":"left","width":300}')).toBeNull();
+  });
+});
+
+describe("the slate's wing", () => {
+  // As god.js draws it: cartouches 36 px tall plus a 2 px tie-bar 4 px under them, 24 px below their centre.
+  const wing = page.slateWing({ width: 194, rootY: 56, lift: 22, rootHalf: 28, tipHalf: 26, hug: 72 });
+
+  it("is tall enough for a whole cartouche and its tie-bar all along", () => {
+    for (const x of [0, 50, 120, 194]) {
+      const centre = wing.centreY(x);
+      expect(wing.bottom(x) - centre).toBeGreaterThan(24);
+      expect(centre - wing.top(x)).toBeGreaterThan(18);
+      expect(wing.top(x)).toBeGreaterThan(6); // room for the covert feathers above it
+    }
+  });
+
+  it("scoops its root to her curve: corners at x = 0, the middle set back from her", () => {
+    expect(wing.rootX(56 - 28)).toBeCloseTo(0, 5);
+    expect(wing.rootX(56 + 28)).toBeCloseTo(0, 5);
+    expect(wing.rootX(56)).toBeCloseTo(72 - Math.sqrt(72 ** 2 - 28 ** 2), 5);
+  });
+
+  it("keeps a straight root without hug", () => {
+    expect(page.slateWing({ width: 100, rootY: 50, lift: 10, rootHalf: 20, tipHalf: 18 }).rootX(50)).toBe(0);
   });
 });

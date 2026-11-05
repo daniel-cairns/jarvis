@@ -118,59 +118,77 @@
   const LAPIS = "42, 74, 168";
 
   /**
-   * The slate's wing (after the prototype's wings.js): a lapis band rising gently from its root (x = 0, next to the
-   * orb) to its tip, a covert tier of short feathers above it and three tiers of flight feathers below. Drawn root
-   * left; mirror it for a slate that opens to her left. Returns plain SVG data.
+   * The slate's wing (after the prototype's wings.js): a lapis band rising gently from its root (next to the orb) to its
+   * tip, a covert tier of short feathers above it and three tiers of flight feathers below. With `hug` (her body's
+   * radius) the root edge is scooped to that circle, so the side nearest her follows her curve; its corners sit at
+   * x = 0. Feathers are cut like her own wings' (orb.js wing): narrow, leaning back towards
+   * her at their tips. Drawn root left; mirror it for a slate that opens to her left. Returns plain SVG data.
    */
-  function slateWing({ width, rootY, lift, rootHalf, tipHalf }) {
-    const centreY = (x) => rootY - lift * (x / width) ** 2;
-    const half = (x) => rootHalf + (tipHalf - rootHalf) * (x / width);
+  function slateWing({ width, rootY, lift, rootHalf, tipHalf, hug }) {
+    const along = (x) => Math.max(0, x) / width;
+    const centreY = (x) => rootY - lift * along(x) ** 2;
+    const half = (x) => rootHalf + (tipHalf - rootHalf) * along(x);
     const top = (x) => centreY(x) - half(x);
     const bottom = (x) => centreY(x) + half(x);
-    const xs = [];
-    for (let x = 0; x <= width; x += 8) xs.push(x);
-    if (xs[xs.length - 1] !== width) xs.push(width);
+    // The root scoop: an arc of her radius, centred level with the band's root, through its corners at x = 0.
+    const foot = bottom(0);
+    const reach = hug ? -Math.sqrt(Math.max(0, hug ** 2 - rootHalf ** 2)) : 0;
+    const rootX = (y) => (hug ? reach + Math.sqrt(Math.max(0, hug ** 2 - (y - rootY) ** 2)) : 0);
+    // Where the root arc meets the top edge (a few fixed-point steps: the top edge is nearly flat there).
+    let headX = 0;
+    for (let i = 0; i < 4; i++) headX = rootX(top(headX));
+    const span = (from) => {
+      const xs = [];
+      for (let x = from; x < width; x += 8) xs.push(x);
+      xs.push(width);
+      return xs;
+    };
 
-    const topEdge = xs.map((x) => [x, top(x)]);
-    const bottomEdge = xs.map((x) => [x, bottom(x)]).reverse();
+    const topEdge = span(headX).map((x) => [x, top(x)]);
+    const bottomEdge = span(0).map((x) => [x, bottom(x)]).reverse();
+    const rootEdge = [];
+    for (let k = 1; k < 6; k++) {
+      const y = foot + ((top(headX) - foot) * k) / 6;
+      rootEdge.push([rootX(y), y]);
+    }
     const tipX = width + tipHalf * 0.9;
     const band =
       `M${polygon(topEdge).split(" ").join(" L")}` +
       ` Q${fmt(tipX)},${fmt(centreY(width))} ${fmt(width)},${fmt(bottom(width))}` +
-      ` L${polygon(bottomEdge).split(" ").join(" L")} Z`;
+      ` L${polygon(bottomEdge).split(" ").join(" L")}` +
+      ` L${polygon(rootEdge).split(" ").join(" L")} Z`;
 
     const feathers = [];
     const lines = [];
-    const step = 10;
-    const layTier = (edge, h, end, alpha, direction) => {
-      for (let x = 2; x < width * end; x += step) {
+    const step = 6;
+    const lean = 1.2; // tips lean back towards her, as on her wings
+    const layTier = (edge, from, h, end, alpha, direction) => {
+      for (let x = from; x < width * end; x += step) {
         const f = x / (width * end);
         const fh = h * (1 - f * 0.4) * direction;
-        const x0 = x - step * 0.42;
-        const x1 = x + step * 0.42;
-        const slant = 3;
+        const x1 = x + 5;
         feathers.push({
-          points: polygon([[x0, edge(x0)], [x1, edge(x1)], [x1 + slant, edge(x1) + fh], [x0 + slant, edge(x0) + fh]]),
-          fill: `rgba(${GOLD}, ${fmt(alpha * (1 - f * 0.5) * 100) / 100})`,
+          points: polygon([[x, edge(x)], [x1, edge(x1)], [x1 - lean, edge(x1) + fh], [x - lean, edge(x) + fh]]),
+          fill: `rgba(${GOLD}, ${fmt(alpha * (1 - f * 0.55) * 100) / 100})`,
         });
       }
     };
-    layTier((x) => top(x) + 1, 6, 0.92, 0.55, -1);
+    layTier((x) => top(x) + 1, headX + 2, 6, 0.92, 0.55, -1);
     const tiers = [
       { h: 8, end: 1, alpha: 0.95 },
-      { h: 9, end: 0.82, alpha: 0.8 },
-      { h: 10, end: 0.62, alpha: 0.65 },
+      { h: 10, end: 0.8, alpha: 0.8 },
+      { h: 13, end: 0.58, alpha: 0.65 },
     ];
     let offset = -1;
     for (const tier of tiers) {
       const edge = (x) => bottom(x) + offset;
-      layTier(edge, tier.h, tier.end, tier.alpha, 1);
+      layTier(edge, 1.5, tier.h, tier.end, tier.alpha, 1);
       const line = [];
-      for (let x = 0; x <= width * tier.end; x += 8) line.push([x, edge(x) + tier.h * (1 - (x / (width * tier.end)) * 0.4)]);
+      for (let x = 0; x <= width * tier.end; x += 4) line.push([x, edge(x) + tier.h * (1 - (x / (width * tier.end)) * 0.4)]);
       lines.push({ points: polygon(line), stroke: `rgba(${LAPIS}, 0.85)` });
-      offset += tier.h - 2;
+      offset += tier.h - 1;
     }
-    return { band, feathers, lines, centreY };
+    return { band, feathers, lines, centreY, top, bottom, rootX };
   }
 
   /**

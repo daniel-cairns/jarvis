@@ -23,9 +23,10 @@
   const ROOT_OFFSET = 134;
   const SLATE_TOP = CENTRE.y + 8;
   const CELL = 40;
-  const ROOT_PAD = 18;
-  const SLATE_HEIGHT = 112;
-  const WING = { rootY: 54, lift: 22, rootHalf: 23, tipHalf: 18 };
+  const ROOT_PAD = 26;
+  const SLATE_HEIGHT = 120;
+  /** The band is tall enough for a whole cartouche and its tie-bar all along; its root is scooped to her body's curve (orb.js BODY_RADIUS). */
+  const WING = { rootY: 56, lift: 22, rootHalf: 28, tipHalf: 26, hug: 72 };
   /** Help text is 240 px wide, centred on its cartouche: how far it can reach past the slate's outer end. */
   const TIP_REACH = 120 - (8 + CELL / 2);
   /** Help text sits this far off its cartouche (god.css .slate-tip), and this far inside the window's edges. */
@@ -213,7 +214,7 @@
       li.style.top = `${wing.centreY(x)}px`;
       const button = li.querySelector("button");
       if (button.dataset.glyph !== entry.glyph) {
-        button.innerHTML = glyphSvg(entry.glyph, { carved: true, size: 22 });
+        button.innerHTML = glyphSvg(entry.glyph, { carved: true, size: 20 });
         button.dataset.glyph = entry.glyph;
       }
       button.setAttribute("aria-label", `${entry.meaning}: ${entry.title}`);
