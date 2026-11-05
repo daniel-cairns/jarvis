@@ -113,8 +113,8 @@
   }
 
   const fmt = (n) => Math.round(n * 10) / 10;
-  /** How far the slate's flight feathers swing out at its root, to meet her lower wings' tips (radians). */
-  const TILT = 0.6;
+  /** How far the slate's flight feathers swing at its root, to meet her lower wings' tips (radians; negative swings them in towards her). */
+  const TILT = -0.6;
   const polygon = (points) => points.map(([x, y]) => `${fmt(x)},${fmt(y)}`).join(" ");
   const GOLD = "236, 188, 82";
   const LAPIS = "42, 74, 168";
@@ -169,8 +169,8 @@
         const f = x / (width * end);
         const fh = h * (1 - f * 0.4);
         const x1 = x + 5;
-        // Square to the band's arch, tips leaning back towards her. Near her, the flight feathers swing out away from
-        // her (up to TILT), as her lower wings' tips do, so the two meet; they straighten by mid-band. Longer as they
+        // Square to the band's arch, tips leaning back towards her. Near her, the flight feathers swing in towards
+        // her (by TILT), as her lower wings' tips do, so the two meet; they straighten by mid-band. Longer as they
         // swing, so each tier still reaches the next.
         const slope = edge(x + 2.5 + 0.5) - edge(x + 2.5 - 0.5);
         const len = Math.hypot(1, slope);
