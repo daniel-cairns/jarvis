@@ -42,7 +42,10 @@ final class Launcher: NSObject, NSApplicationDelegate {
     source.setEventHandler {
       var status: Int32 = 0
       waitpid(pid, &status, 0)
-      NSApp.terminate(nil)
+      // From the run loop, not from inside this main-queue block: quitting can wait on the rest of her process group
+      // (applicationShouldTerminate), and a wait started inside a main-queue block never lets its own timer run, so
+      // the app hung with its Dock dot showing and nothing behind it.
+      RunLoop.main.perform { NSApp.terminate(nil) }
     }
     source.resume()
     exitSource = source
@@ -98,10 +101,13 @@ final class Launcher: NSObject, NSApplicationDelegate {
     // Checks the group, not just the script: anything it left behind (an orphaned Electron, say) is stopped too.
     if childGroup > 0, kill(-childGroup, 0) == 0 {
       kill(-childGroup, SIGTERM)
-      DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [childGroup] in
-        kill(-childGroup, SIGKILL)
+      // A timer in the common modes keeps running while AppKit waits for this reply (a modal run loop).
+      let group = childGroup
+      let timer = Timer(timeInterval: 3, repeats: false) { _ in
+        kill(-group, SIGKILL)
         sender.reply(toApplicationShouldTerminate: true)
       }
+      RunLoop.main.add(timer, forMode: .common)
       return .terminateLater
     }
     return .terminateNow
