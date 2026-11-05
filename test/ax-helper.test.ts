@@ -52,6 +52,14 @@ describe("the orb", () => {
     expect(main.replace(summon, "")).not.toMatch(/\bwin\.focus\(\)/);
   });
 
+  it("never drops a window that already floats (her orb) when lifting it to the front", () => {
+    const lift = main.slice(main.indexOf("const bringForward = (w) =>"), main.indexOf("/** The on-screen windows"));
+    expect(lift.indexOf("w.isAlwaysOnTop()")).toBeGreaterThan(-1);
+    expect(lift.indexOf("w.isAlwaysOnTop()")).toBeLessThan(lift.indexOf("w.setAlwaysOnTop(false)"));
+    const summon = main.slice(main.indexOf("const summon = async"), main.indexOf('require("node:fs").watch(home'));
+    expect(summon).not.toMatch(/bringForward\(win\)/);
+  });
+
   it("keeps work panels from popping up over an app she's operating", () => {
     expect(main).toMatch(/Date\.now\(\) - lastControlAt < CONTROL_QUIET_MS/);
   });

@@ -353,11 +353,13 @@ app.whenReady().then(() => {
    * Brings a panel in front of the app Dan is in, without taking his keyboard. Proven on 4 Nov with Chrome in front
    * and Stage Manager on: showInactive and moveTop leave a window of an app that isn't active behind (19th in the
    * window order, Chrome first), while a moment at the floating level puts it first and leaves Chrome the active app.
-   * It drops back to the normal level straight after, so other apps can still cover it later.
+   * It drops back to the normal level straight after, so other apps can still cover it later. A window that already
+   * floats (her orb) is left floating: dropping it put the orb behind Claude's window, so clicks on her went to Claude.
    */
   const bringForward = (w) => {
     if (!w || w.isDestroyed()) return;
     w.showInactive();
+    if (w.isAlwaysOnTop()) return void w.moveTop();
     w.setAlwaysOnTop(true, "floating");
     setTimeout(() => {
       if (!w.isDestroyed()) w.setAlwaysOnTop(false);
@@ -425,7 +427,7 @@ app.whenReady().then(() => {
       for (const slab of Object.values(slabs)) {
         if (slab.win && !slab.win.isDestroyed() && slab.win.isVisible()) bringForward(slab.win);
       }
-      bringForward(win);
+      win.moveTop(); // she floats already; just to the top of her level
       app.focus({ steal: true });
       win.focus();
     } finally {
