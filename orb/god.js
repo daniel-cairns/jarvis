@@ -23,10 +23,10 @@
    * The circle the slate's root edge lies on, round her centre: her lower wings' path in God mode (orb.js lowerWings:
    * tiers from radius 125), pulled in a touch so the slate sits close against her above their tips.
    */
-  const WING_PATH = 130;
+  const WING_PATH = 127;
   /** How far right of her centre the slate's foot sits: where the band's foot (WING rootY + rootHalf) meets that path. */
   /** How far the slate's box starts above her centre: its foot then sits above her lower wings' tips (about 61 below her). */
-  const SLATE_RISE = 30;
+  const SLATE_RISE = 34;
   const FOOT_DROP = -SLATE_RISE + 56 + 22; // from her centre down to the band's foot
   const ROOT_OFFSET = Math.sqrt(WING_PATH ** 2 - FOOT_DROP ** 2);
   const SLATE_TOP = CENTRE.y - SLATE_RISE;
