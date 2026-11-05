@@ -20,13 +20,13 @@
   /** The orb window's own width (main.cjs ORB_WIDTH, orb.css main): the slate's room is added to it. */
   const BASE_WIDTH = 430;
   /**
-   * Her lower wings' path in God mode (orb.js lowerWings: tiers from radius 125 round her centre, their tips about 131
-   * out): the slate's root edge lies on this circle, so it grows out of the wing tips.
+   * The circle the slate's root edge lies on, round her centre: her lower wings' path in God mode (orb.js lowerWings:
+   * tiers from radius 125), pulled in a touch so the slate sits close against her above their tips.
    */
-  const WING_PATH = 131;
+  const WING_PATH = 124;
   /** How far right of her centre the slate's foot sits: where the band's foot (WING rootY + rootHalf) meets that path. */
-  /** How far the slate's box starts above her centre: its foot then sits just above her lower wings' tips (about 61 below her). */
-  const SLATE_RISE = 20;
+  /** How far the slate's box starts above her centre: its foot then sits above her lower wings' tips (about 61 below her). */
+  const SLATE_RISE = 30;
   const FOOT_DROP = -SLATE_RISE + 56 + 22; // from her centre down to the band's foot
   const ROOT_OFFSET = Math.sqrt(WING_PATH ** 2 - FOOT_DROP ** 2);
   const SLATE_TOP = CENTRE.y - SLATE_RISE;

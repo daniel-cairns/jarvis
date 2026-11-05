@@ -165,10 +165,19 @@
     const layTier = (edge, from, h, end, alpha, direction) => {
       for (let x = from; x < width * end; x += step) {
         const f = x / (width * end);
-        const fh = h * (1 - f * 0.4) * direction;
+        const fh = h * (1 - f * 0.4);
         const x1 = x + 5;
+        // Square to the band's arch where it grows (as her lower wings' feathers are square to their arc), tips
+        // leaning back towards her.
+        const slope = edge(x + 2.5 + 0.5) - edge(x + 2.5 - 0.5);
+        const len = Math.hypot(1, slope);
+        const [nx, ny] = [(-slope / len) * direction, (1 / len) * direction];
+        const [tx, ty] = [1 / len, slope / len];
+        const out = ([px, py]) => [px + nx * fh - tx * lean, py + ny * fh - ty * lean];
+        const a = [x, edge(x)];
+        const b = [x1, edge(x1)];
         feathers.push({
-          points: polygon([[x, edge(x)], [x1, edge(x1)], [x1 - lean, edge(x1) + fh], [x - lean, edge(x) + fh]]),
+          points: polygon([a, b, out(b), out(a)]),
           fill: `rgba(${GOLD}, ${fmt(alpha * (1 - f * 0.55) * 100) / 100})`,
         });
       }
