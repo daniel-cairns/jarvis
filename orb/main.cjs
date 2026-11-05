@@ -411,6 +411,38 @@ app.whenReady().then(() => {
   };
 
   /**
+   * Dan chose Astra in Cmd-Tab or clicked her Dock icon: Astra.app (native/astra-launcher.swift) is only her launcher,
+   * so it writes ~/.jarvis/summon and the orb answers here. She comes back if tucked away, her open panels come up,
+   * and she takes the keyboard, as any app does when you switch to it.
+   */
+  const SUMMON = "summon";
+  let summoning = false;
+  const summon = async () => {
+    if (summoning || win.isDestroyed()) return;
+    summoning = true;
+    try {
+      if (!win.isVisible()) await show();
+      for (const slab of Object.values(slabs)) {
+        if (slab.win && !slab.win.isDestroyed() && slab.win.isVisible()) bringForward(slab.win);
+      }
+      bringForward(win);
+      app.focus({ steal: true });
+      win.focus();
+    } finally {
+      summoning = false;
+    }
+  };
+  try {
+    const home = process.env.JARVIS_HOME || path.join(require("node:os").homedir(), ".jarvis");
+    require("node:fs").mkdirSync(home, { recursive: true });
+    require("node:fs").watch(home, (_event, name) => {
+      if (name === SUMMON) void summon();
+    });
+  } catch (err) {
+    send({ type: "log", text: `couldn't watch for Cmd-Tab and Dock clicks: ${err.message}` });
+  }
+
+  /**
    * Opens a panel, or updates the open one. `raise` false is a live update (a transcript ticking, the terminal
    * scrolling): it refreshes the panel where it sits instead of pulling it over the one Dan is looking at.
    */

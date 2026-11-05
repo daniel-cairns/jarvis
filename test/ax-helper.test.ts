@@ -46,7 +46,10 @@ describe("the orb", () => {
   const main = readFileSync(new URL("../orb/main.cjs", import.meta.url), "utf8");
 
   it("never focuses itself when a card appears (that made Astra the active app)", () => {
-    expect(main).not.toMatch(/\bwin\.focus\(\)/);
+    // The one exception: Dan switching to her (Cmd-Tab, her Dock icon), where taking the keyboard is the point.
+    const summon = main.slice(main.indexOf("const summon = async"), main.indexOf('require("node:fs").watch(home'));
+    expect(summon).toMatch(/\bwin\.focus\(\)/);
+    expect(main.replace(summon, "")).not.toMatch(/\bwin\.focus\(\)/);
   });
 
   it("keeps work panels from popping up over an app she's operating", () => {
