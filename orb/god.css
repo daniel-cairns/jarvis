@@ -172,7 +172,8 @@ body.room-left main { margin-left: auto; }
 .slate-wing .wing-art * { pointer-events: visiblePainted; }
 .slate-wing.to-right .wing-art { left: 0; }
 .slate-wing.to-left .wing-art { right: -16px; transform: scaleX(-1); }
-.wing-band { fill: url(#slate-lapis); stroke: var(--god-gold); stroke-width: 1.6; stroke-linejoin: round; }
+/* No border: the band fades out from her towards its tip. */
+.wing-band { fill: url(#slate-lapis-fade); stroke: none; }
 
 .slate-cells { position: absolute; inset: 0; margin: 0; padding: 0; list-style: none; }
 .slate-cell { position: absolute; width: 0; height: 0; transition: left 0.4s ease, top 0.4s ease; }
