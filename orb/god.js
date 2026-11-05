@@ -3,7 +3,7 @@
 // from Astra as { type: "god-sessions" } (src/ui/godSlate.ts); opening one sends the sessions panel's own
 // "session-action" message, which Astra checks again before acting.
 (() => {
-  const { GLYPHS, slateSide, needsDan, notableChanges, slateWing, glyphSvg } = window.astraGodGlyphs;
+  const { GLYPHS, slateSide, needsDan, notableChanges, slateArc, glyphSvg } = window.astraGodGlyphs;
   const bridge = window.jarvis ?? { onMessage() {}, send() {} };
 
   const talk = document.getElementById("talk");
@@ -19,16 +19,17 @@
   const CENTRE = { x: 160, y: 136 };
   /** The orb window's own width (main.cjs ORB_WIDTH, orb.css main): the slate's room is added to it. */
   const BASE_WIDTH = 430;
-  /** How far from her centre the slate's root sits: just past the tips of her lower wings, moved out in God mode (orb.js WINGS_OUT). */
-  const ROOT_OFFSET = 134;
-  const SLATE_TOP = CENTRE.y + 8;
-  const CELL = 40;
-  const ROOT_PAD = 26;
-  const SLATE_HEIGHT = 120;
-  /** The band is tall enough for a whole cartouche and its tie-bar all along; its root is scooped to her body's curve (orb.js BODY_RADIUS). */
-  const WING = { rootY: 56, lift: 22, rootHalf: 28, tipHalf: 26, hug: 72 };
-  /** Help text is 240 px wide, centred on its cartouche: how far it can reach past the slate's outer end. */
-  const TIP_REACH = 120 - (8 + CELL / 2);
+  /**
+   * The slate's arc (god-glyphs.js slateArc): it grows out of the tip of her lower wing in God mode (orb.js lowerWings:
+   * tiers from radius 125, the longest ending 1.08 rad round from straight down) and carries on round her, past the tip
+   * of her upper wing (about 130 from her centre), up her side.
+   */
+  const ARC = { inner: 134, outer: 176, start: 0.95, cellArc: 34 };
+  /** The slate's box: her centre sits this far down it, and it's this tall (its art is drawn round her centre). */
+  const BOX_ABOVE = 210;
+  const BOX_HEIGHT = 420;
+  /** Help text is 240 px wide, centred on its cartouche. */
+  const TIP_HALF = 120;
   /** Help text sits this far off its cartouche (god.css .slate-tip), and this far inside the window's edges. */
   const TIP_GAP = 6;
   const TIP_MARGIN = 4;
@@ -137,6 +138,8 @@
   const cellByKey = new Map();
   let tipSeq = 0;
   let slateWidth = 0;
+  /** The slate's current arc (slateArc): where its cartouches sit, for placing them and sizing the window. */
+  let arc = null;
 
   /** The cartouche's help text: meaning and session, one line, then time, last action and what it needs from Dan. */
   function fillTip(tip, entry) {
@@ -164,25 +167,24 @@
     tip.replaceChildren(head, line, detail);
   }
 
-  /** Draws the wing for this many cartouches (mirrored when it opens to her left) and places it beside the orb. */
+  /** Draws the slate's arc for this many cartouches round her centre (mirrored when it opens to her left). */
   function renderSlate() {
     const list = onSlate();
-    slateWidth = ROOT_PAD + Math.max(1, list.length) * CELL + 8;
-    const wing = slateWing({ width: slateWidth, ...WING });
-    const art = slateWidth + 16;
-    slateArt.setAttribute("viewBox", `0 0 ${art} ${SLATE_HEIGHT}`);
-    slateArt.setAttribute("width", String(art));
-    slateArt.setAttribute("height", String(SLATE_HEIGHT));
-    const feathers = wing.feathers.map((f) => `<polygon points="${f.points}" fill="${f.fill}"/>`).join("");
-    const lines = wing.lines.map((l) => `<polyline points="${l.points}" stroke="${l.stroke}" fill="none" stroke-width="1.2"/>`).join("");
-    slateArt.innerHTML = `${feathers}${lines}<path class="wing-band" d="${wing.band}"/>`;
+    arc = slateArc({ count: list.length, ...ARC });
+    slateWidth = Math.ceil(arc.reach.right) + 4;
+    slateArt.setAttribute("viewBox", `0 ${-BOX_ABOVE} ${slateWidth} ${BOX_HEIGHT}`);
+    slateArt.setAttribute("width", String(slateWidth));
+    slateArt.setAttribute("height", String(BOX_HEIGHT));
+    const feathers = arc.feathers.map((f) => `<polygon points="${f.points}" fill="${f.fill}"/>`).join("");
+    const lines = arc.lines.map((l) => `<polyline points="${l.points}" stroke="${l.stroke}" fill="none" stroke-width="1.2"/>`).join("");
+    slateArt.innerHTML = `${feathers}${lines}<path class="wing-band" d="${arc.band}"/>`;
 
     slate.classList.toggle("to-left", side === "left");
     slate.classList.toggle("to-right", side === "right");
     slate.style.width = `${slateWidth}px`;
-    slate.style.height = `${SLATE_HEIGHT}px`;
-    slate.style.top = `${SLATE_TOP}px`;
-    slate.style.left = `${side === "left" ? CENTRE.x - ROOT_OFFSET - slateWidth : CENTRE.x + ROOT_OFFSET}px`;
+    slate.style.height = `${BOX_HEIGHT}px`;
+    slate.style.top = `${CENTRE.y - BOX_ABOVE}px`;
+    slate.style.left = `${side === "left" ? CENTRE.x - slateWidth : CENTRE.x}px`;
 
     const keep = new Set(list.map((e) => e.key));
     for (const [key, li] of cellByKey) {
@@ -209,9 +211,11 @@
         cellByKey.set(entry.key, li);
       }
       slateCells.append(li);
-      const x = ROOT_PAD + CELL * (i + 0.5);
+      const { x, y } = arc.cells[i];
       li.style.left = `${side === "left" ? slateWidth - x : x}px`;
-      li.style.top = `${wing.centreY(x)}px`;
+      li.style.top = `${y + BOX_ABOVE}px`;
+      // The cartouche's frame lies across the band, its tie-bar outwards; its glyph stays upright (god.css).
+      li.style.setProperty("--turn", `${side === "left" ? arc.cells[i].angle : -arc.cells[i].angle}rad`);
       const button = li.querySelector("button");
       if (button.dataset.glyph !== entry.glyph) {
         button.innerHTML = glyphSvg(entry.glyph, { carved: true, size: 20 });
@@ -252,8 +256,9 @@
   /** How much wider the window must be for the slate and its help text, on the side it opens. */
   function roomNeeded() {
     const orbLeft = (BASE_WIDTH - 320) / 2; // .orb-wrap's left edge in the window
-    if (side === "left") return Math.max(0, Math.ceil(-(orbLeft + CENTRE.x - ROOT_OFFSET - slateWidth - TIP_REACH)) + 10);
-    return Math.max(0, Math.ceil(orbLeft + CENTRE.x + ROOT_OFFSET + slateWidth + TIP_REACH - BASE_WIDTH) + 10);
+    const reach = Math.max(slateWidth, ...(arc?.cells ?? []).map((c) => c.x + TIP_HALF));
+    if (side === "left") return Math.max(0, Math.ceil(-(orbLeft + CENTRE.x - reach)) + 10);
+    return Math.max(0, Math.ceil(orbLeft + CENTRE.x + reach - BASE_WIDTH) + 10);
   }
 
   /** The side facing the middle of the screen, from where her centre is on it. */

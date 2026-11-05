@@ -118,77 +118,66 @@
   const LAPIS = "42, 74, 168";
 
   /**
-   * The slate's wing (after the prototype's wings.js): a lapis band rising gently from its root (next to the orb) to its
-   * tip, a covert tier of short feathers above it and three tiers of flight feathers below. With `hug` (her body's
-   * radius) the root edge is scooped to that circle, so the side nearest her follows her curve; its corners sit at
-   * x = 0. Feathers are cut like her own wings' (orb.js wing): narrow, leaning back towards
-   * her at their tips. Drawn root left; mirror it for a slate that opens to her left. Returns plain SVG data.
+   * The slate: a lapis band on an arc around her centre, just outside her lower wings (orb.js lowerWings), so it reads as
+   * one more tier of them. It starts below her at `start` (radians round from straight down, as her wings measure it)
+   * and sweeps up her side, `cellArc` px of arc per cartouche, with three tiers of feathers outside it cut and leaning
+   * like her wings'. Drawn to her right with her centre at (0, 0), y down; mirror it for a slate that opens to her left.
+   * Returns plain SVG data, each cartouche's centre and angle, and how far the drawing reaches.
    */
-  function slateWing({ width, rootY, lift, rootHalf, tipHalf, hug }) {
-    const along = (x) => Math.max(0, x) / width;
-    const centreY = (x) => rootY - lift * along(x) ** 2;
-    const half = (x) => rootHalf + (tipHalf - rootHalf) * along(x);
-    const top = (x) => centreY(x) - half(x);
-    const bottom = (x) => centreY(x) + half(x);
-    // The root scoop: an arc of her radius, centred level with the band's root, through its corners at x = 0.
-    const foot = bottom(0);
-    const reach = hug ? -Math.sqrt(Math.max(0, hug ** 2 - rootHalf ** 2)) : 0;
-    const rootX = (y) => (hug ? reach + Math.sqrt(Math.max(0, hug ** 2 - (y - rootY) ** 2)) : 0);
-    // Where the root arc meets the top edge (a few fixed-point steps: the top edge is nearly flat there).
-    let headX = 0;
-    for (let i = 0; i < 4; i++) headX = rootX(top(headX));
-    const span = (from) => {
-      const xs = [];
-      for (let x = from; x < width; x += 8) xs.push(x);
-      xs.push(width);
-      return xs;
+  function slateArc({ count, inner, outer, start, cellArc, pad = 0.05 }) {
+    const at = (a, r) => [Math.sin(a) * r, Math.cos(a) * r];
+    const mid = (inner + outer) / 2;
+    const cellAngle = cellArc / mid;
+    const cells = Array.from({ length: count }, (_, i) => {
+      const angle = start + pad + cellAngle * (i + 0.5);
+      const [x, y] = at(angle, mid);
+      return { x, y, angle };
+    });
+    const end = start + pad * 2 + cellAngle * Math.max(1, count);
+    const arcPoints = (r, from, to) => {
+      const n = Math.max(2, Math.ceil(((to - from) * r) / 6));
+      return Array.from({ length: n + 1 }, (_, k) => at(from + ((to - from) * k) / n, r));
     };
-
-    const topEdge = span(headX).map((x) => [x, top(x)]);
-    const bottomEdge = span(0).map((x) => [x, bottom(x)]).reverse();
-    const rootEdge = [];
-    for (let k = 1; k < 6; k++) {
-      const y = foot + ((top(headX) - foot) * k) / 6;
-      rootEdge.push([rootX(y), y]);
-    }
-    const tipX = width + tipHalf * 0.9;
+    // Round cap at the far end (a half-circle across the band), straight radial cut at the root.
+    const capR = (outer - inner) / 2;
     const band =
-      `M${polygon(topEdge).split(" ").join(" L")}` +
-      ` Q${fmt(tipX)},${fmt(centreY(width))} ${fmt(width)},${fmt(bottom(width))}` +
-      ` L${polygon(bottomEdge).split(" ").join(" L")}` +
-      ` L${polygon(rootEdge).split(" ").join(" L")} Z`;
+      `M${polygon(arcPoints(outer, start, end)).split(" ").join(" L")}` +
+      ` A${fmt(capR)},${fmt(capR)} 0 0 0 ${polygon([at(end, inner)])}` +
+      ` L${polygon(arcPoints(inner, end, start)).split(" ").join(" L")} Z`;
 
     const feathers = [];
     const lines = [];
-    const step = 6;
-    const lean = 1.2; // tips lean back towards her, as on her wings
-    const layTier = (edge, from, h, end, alpha, direction) => {
-      for (let x = from; x < width * end; x += step) {
-        const f = x / (width * end);
-        const fh = h * (1 - f * 0.4) * direction;
-        const x1 = x + 5;
+    const tiers = [
+      { h: 7, end: 1, alpha: 0.95 },
+      { h: 8, end: 0.8, alpha: 0.8 },
+      { h: 10, end: 0.6, alpha: 0.65 },
+    ];
+    let r0 = outer - 1;
+    for (const tier of tiers) {
+      const stop = start + (end - start) * tier.end;
+      const step = 6 / r0;
+      for (let a = start + step * 0.5; a < stop; a += step) {
+        const f = (a - start) / (stop - start);
+        const h = tier.h * (1 - f * 0.35);
+        const a0 = a - step * 0.42;
+        const a1 = a + step * 0.42;
+        const lean = step * 0.15; // tips lean back towards the root, as on her lower wings
         feathers.push({
-          points: polygon([[x, edge(x)], [x1, edge(x1)], [x1 - lean, edge(x1) + fh], [x - lean, edge(x) + fh]]),
-          fill: `rgba(${GOLD}, ${fmt(alpha * (1 - f * 0.55) * 100) / 100})`,
+          points: polygon([at(a0, r0), at(a1, r0), at(a1 - lean, r0 + h), at(a0 - lean, r0 + h)]),
+          fill: `rgba(${GOLD}, ${fmt(tier.alpha * (1 - f * 0.5) * 100) / 100})`,
         });
       }
-    };
-    layTier((x) => top(x) + 1, headX + 2, 6, 0.92, 0.55, -1);
-    const tiers = [
-      { h: 8, end: 1, alpha: 0.95 },
-      { h: 10, end: 0.8, alpha: 0.8 },
-      { h: 13, end: 0.58, alpha: 0.65 },
-    ];
-    let offset = -1;
-    for (const tier of tiers) {
-      const edge = (x) => bottom(x) + offset;
-      layTier(edge, 1.5, tier.h, tier.end, tier.alpha, 1);
-      const line = [];
-      for (let x = 0; x <= width * tier.end; x += 4) line.push([x, edge(x) + tier.h * (1 - (x / (width * tier.end)) * 0.4)]);
-      lines.push({ points: polygon(line), stroke: `rgba(${LAPIS}, 0.85)` });
-      offset += tier.h - 1;
+      lines.push({ points: polygon(arcPoints(r0 + tier.h, start, stop)), stroke: `rgba(${LAPIS}, 0.85)` });
+      r0 += tier.h - 1;
     }
-    return { band, feathers, lines, centreY, top, bottom, rootX };
+    // How far it reaches from her centre: right, up and down (feathers included).
+    const all = [...arcPoints(r0, start, end), ...arcPoints(inner, start, end), at(end, mid + capR)];
+    const reach = {
+      right: Math.max(...all.map(([x]) => x)) + capR,
+      top: Math.min(...all.map(([, y]) => y)) - capR,
+      bottom: Math.max(...all.map(([, y]) => y)),
+    };
+    return { band, feathers, lines, cells, end, reach };
   }
 
   /**
@@ -202,7 +191,7 @@
     return `<svg class="god-glyph" viewBox="0 0 48 48" width="${size}" height="${size}" aria-hidden="true" focusable="false">${cut}${paths("leaf")}</svg>`;
   }
 
-  const api = { GLYPHS, RING_GLYPHS, SATELLITE_STATES, slateSide, needsDan, notableChanges, slateWing, glyphSvg };
+  const api = { GLYPHS, RING_GLYPHS, SATELLITE_STATES, slateSide, needsDan, notableChanges, slateArc, glyphSvg };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.astraGodGlyphs = api;
 })(globalThis);

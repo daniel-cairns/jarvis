@@ -16,12 +16,11 @@ const page = sandbox.module.exports as {
   slateSide(orbCentreX: number, areaX: number, areaWidth: number): "left" | "right";
   needsDan(entry: { needs: string }): boolean;
   notableChanges(previous: Map<string, string> | null, entries: Entry[]): Entry[];
-  slateWing(o: { width: number; rootY: number; lift: number; rootHalf: number; tipHalf: number; hug?: number }): {
+  slateArc(o: { count: number; inner: number; outer: number; start: number; cellArc: number }): {
     band: string;
-    centreY(x: number): number;
-    top(x: number): number;
-    bottom(x: number): number;
-    rootX(y: number): number;
+    cells: { x: number; y: number; angle: number }[];
+    end: number;
+    reach: { right: number; top: number; bottom: number };
   };
 };
 
@@ -167,26 +166,26 @@ describe("opening from a satellite or cartouche reuses the sessions panel's mess
   });
 });
 
-describe("the slate's wing", () => {
-  // As god.js draws it: cartouches 36 px tall plus a 2 px tie-bar 4 px under them, 24 px below their centre.
-  const wing = page.slateWing({ width: 194, rootY: 56, lift: 22, rootHalf: 28, tipHalf: 26, hug: 72 });
+describe("the slate's arc", () => {
+  // As god.js draws it: out of the tip of her lower wing, round her centre.
+  const ARC = { inner: 134, outer: 176, start: 0.95, cellArc: 34 };
+  const arc = page.slateArc({ count: 5, ...ARC });
 
-  it("is tall enough for a whole cartouche and its tie-bar all along", () => {
-    for (const x of [0, 50, 120, 194]) {
-      const centre = wing.centreY(x);
-      expect(wing.bottom(x) - centre).toBeGreaterThan(24);
-      expect(centre - wing.top(x)).toBeGreaterThan(18);
-      expect(wing.top(x)).toBeGreaterThan(6); // room for the covert feathers above it
-    }
+  it("keeps every cartouche on the band, at the band's middle radius, round her centre", () => {
+    for (const c of arc.cells) expect(Math.hypot(c.x, c.y)).toBeCloseTo(155, 5);
   });
 
-  it("scoops its root to her curve: corners at x = 0, the middle set back from her", () => {
-    expect(wing.rootX(56 - 28)).toBeCloseTo(0, 5);
-    expect(wing.rootX(56 + 28)).toBeCloseTo(0, 5);
-    expect(wing.rootX(56)).toBeCloseTo(72 - Math.sqrt(72 ** 2 - 28 ** 2), 5);
+  it("lays cartouches out from her wing's tip upwards, a cell's arc apart", () => {
+    const angles = arc.cells.map((c) => c.angle);
+    expect(angles[0]).toBeGreaterThan(ARC.start);
+    for (let i = 1; i < angles.length; i++) expect((angles[i]! - angles[i - 1]!) * 155).toBeCloseTo(34, 5);
+    expect(arc.end).toBeGreaterThan(angles.at(-1)!);
   });
 
-  it("keeps a straight root without hug", () => {
-    expect(page.slateWing({ width: 100, rootY: 50, lift: 10, rootHalf: 20, tipHalf: 18 }).rootX(50)).toBe(0);
+  it("stays on her side and inside an orb window that's room enough for it, even with the slate full", () => {
+    const full = page.slateArc({ count: 8, ...ARC });
+    for (const c of full.cells) expect(c.x).toBeGreaterThan(0);
+    expect(full.reach.top).toBeGreaterThan(-210); // god.js BOX_ABOVE
+    expect(full.reach.bottom).toBeLessThan(210);
   });
 });

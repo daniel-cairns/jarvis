@@ -157,21 +157,20 @@ body.room-left main { margin-left: auto; }
   position: absolute;
   z-index: 4;
   pointer-events: none;
-  transition: transform 0.5s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.35s ease, clip-path 0.5s cubic-bezier(0.2, 0.8, 0.2, 1);
-  /* Room above and below for long help text (sized to the window in god.js fitTip). */
-  clip-path: inset(-1000px -150px -1000px -150px);
+  transition: transform 0.5s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.35s ease;
 }
 .slate-wing[hidden] { display: none; }
-.slate-wing.to-left { transform-origin: right 54px; }
-.slate-wing.to-right { transform-origin: left 54px; }
+/* It turns about her centre (god.js BOX_ABOVE), so it sweeps out along her lower wings and folds back into them. */
+.slate-wing.to-left { transform-origin: right 210px; }
+.slate-wing.to-right { transform-origin: left 210px; }
 .slate-wing.folded { opacity: 0; transition-duration: 0.35s; }
-.slate-wing.to-left.folded { transform: rotate(-14deg) scaleX(0.12); clip-path: inset(-60px 0 -20px 90%); }
-.slate-wing.to-right.folded { transform: rotate(14deg) scaleX(0.12); clip-path: inset(-60px 90% -20px 0); }
+.slate-wing.to-left.folded { transform: rotate(-40deg); }
+.slate-wing.to-right.folded { transform: rotate(40deg); }
 
 .slate-wing .wing-art { position: absolute; top: 0; overflow: visible; filter: drop-shadow(0 6px 10px rgba(0, 0, 0, 0.55)); }
 .slate-wing .wing-art * { pointer-events: visiblePainted; }
 .slate-wing.to-right .wing-art { left: 0; }
-.slate-wing.to-left .wing-art { right: -16px; transform: scaleX(-1); }
+.slate-wing.to-left .wing-art { right: 0; transform: scaleX(-1); }
 .wing-band { fill: url(#slate-lapis); stroke: var(--god-gold); stroke-width: 1.6; stroke-linejoin: round; }
 
 .slate-cells { position: absolute; inset: 0; margin: 0; padding: 0; list-style: none; }
@@ -192,7 +191,9 @@ body.room-left main { margin-left: auto; }
   box-shadow: inset 2px 2px 3px rgba(0, 0, 0, 0.8), inset -1px -1px 2px rgba(214, 232, 222, 0.18);
   cursor: pointer;
   pointer-events: auto;
+  transform: rotate(var(--turn, 0rad));
 }
+.slate-wing .cartouche .god-glyph { transform: rotate(calc(-1 * var(--turn, 0rad))); }
 /* The tie-bar at the foot of a cartouche. */
 .slate-wing .cartouche::after {
   content: "";
@@ -262,5 +263,5 @@ body.room-left main { margin-left: auto; }
   .orbit, .upright, .sat.working .dot, .god-toast { animation: none; }
   .slate-cell { transition: none; }
   .slate-wing { transition: opacity 0.35s ease; }
-  .slate-wing.to-left.folded, .slate-wing.to-right.folded { transform: none; clip-path: inset(-1000px -150px -1000px -150px); }
+  .slate-wing.to-left.folded, .slate-wing.to-right.folded { transform: none; }
 }
