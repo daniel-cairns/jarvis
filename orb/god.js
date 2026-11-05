@@ -25,14 +25,16 @@
    */
   const WING_PATH = 131;
   /** How far right of her centre the slate's foot sits: where the band's foot (WING rootY + rootHalf) meets that path. */
-  const FOOT_DROP = 8 + 56 + 22; // SLATE_TOP below her centre, then down the band to its foot
+  /** How far the slate's box starts above her centre: its foot then sits just above her lower wings' tips (about 61 below her). */
+  const SLATE_RISE = 20;
+  const FOOT_DROP = -SLATE_RISE + 56 + 22; // from her centre down to the band's foot
   const ROOT_OFFSET = Math.sqrt(WING_PATH ** 2 - FOOT_DROP ** 2);
-  const SLATE_TOP = CENTRE.y + 8;
+  const SLATE_TOP = CENTRE.y - SLATE_RISE;
   const CELL = 40;
   const ROOT_PAD = 40;
   const SLATE_HEIGHT = 120;
   /** The band is tall enough for a whole cartouche and its tie-bar all along; its root follows her lower wings' path. */
-  const WING = { rootY: 56, lift: 22, rootHalf: 22, tipHalf: 20, hug: { x: -ROOT_OFFSET, y: -8, r: WING_PATH } };
+  const WING = { rootY: 56, lift: 22, rootHalf: 22, tipHalf: 20, hug: { x: -ROOT_OFFSET, y: SLATE_RISE, r: WING_PATH } };
   /** Help text is 240 px wide, centred on its cartouche: how far it can reach past the slate's outer end. */
   const TIP_REACH = 120 - (8 + CELL / 2);
   /** Help text sits this far off its cartouche (god.css .slate-tip), and this far inside the window's edges. */
