@@ -7,37 +7,69 @@
   <link rel="stylesheet" href="orb.css">
   <link rel="stylesheet" href="frame.css">
   <link rel="stylesheet" href="glyph.css">
+  <link rel="stylesheet" href="god.css">
 </head>
 <body>
+  <!-- Shared gradients for God mode's glyphs and the slate's lapis band (god.css). -->
+  <svg class="svg-defs" aria-hidden="true" focusable="false" width="0" height="0">
+    <defs>
+      <linearGradient id="gold-leaf" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="48" y2="48">
+        <stop offset="0" stop-color="#f8de94"/>
+        <stop offset="0.45" stop-color="#ecbc52"/>
+        <stop offset="0.75" stop-color="#d4a443"/>
+        <stop offset="1" stop-color="#f1cd72"/>
+      </linearGradient>
+      <linearGradient id="slate-lapis" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#1d3a8a"/>
+        <stop offset="1" stop-color="#0d1c4a"/>
+      </linearGradient>
+      <!-- The slate's band: solid lapis at her, fading out towards its tip (the art is drawn root-left, mirrored on her left). -->
+      <linearGradient id="slate-lapis-fade" x1="0" y1="0" x2="1" y2="0">
+        <stop offset="0" stop-color="#1d3a8a" stop-opacity="0.95"/>
+        <stop offset="0.55" stop-color="#16307a" stop-opacity="0.6"/>
+        <stop offset="1" stop-color="#0d1c4a" stop-opacity="0.05"/>
+      </linearGradient>
+    </defs>
+  </svg>
   <main>
     <div class="orb-wrap">
       <canvas id="orb" width="320" height="260" aria-hidden="true" title="Drag to move"></canvas>
       <button id="talk" type="button" aria-label="Talk to Astra" title="Click to talk"></button>
-      <button id="stop" type="button" aria-label="Stop Astra" title="Stop (Esc)" disabled>
+      <!-- God mode: the Eye on her left wing shows and folds the slate. Straight after her in tab order, then the slate. -->
+      <button id="eye" type="button" aria-label="God mode is on. Show the slate" aria-expanded="false" aria-controls="slate" hidden>
+        <svg viewBox="0 0 48 48" aria-hidden="true"><path d="M5 22 C13 11 35 11 43 22"/><path d="M5 22 C13 30 35 30 43 22"/><path d="M24 17.5 a4.5 4.5 0 1 0 0.01 0"/><path d="M19 28 L16 38 C15 42 19 43 21 40"/><path d="M30 27 C33 31 37 33 41 32"/></svg>
+      </button>
+      <!-- The slate: glyph cartouches only; each is named, and its help text shows on hover and on focus. -->
+      <section id="slate" class="slate-wing folded" aria-label="The slate: sessions and loops" hidden>
+        <svg id="slate-art" class="wing-art" aria-hidden="true" focusable="false"></svg>
+        <ol id="slate-cells" class="slate-cells"></ol>
+      </section>
+      <button id="stop" type="button" aria-label="Stop Astra" aria-keyshortcuts="Escape" disabled>
         <!-- The "house" hieroglyph (O1): a square with an opening, so it still reads as stop. -->
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 19H5V5h14v14h-5"/><rect class="core" x="9" y="9" width="6" height="6" rx="0.5"/></svg>
       </button>
-      <button id="record" type="button" aria-label="Start a transcript" aria-pressed="false" title="Record a transcript · click again to stop">
+      <button id="record" type="button" aria-label="Start a transcript" aria-pressed="false">
         <!-- The scribe's palette hieroglyph (Y3): a palette with two ink wells and a reed pen. The wells glow red while recording. -->
         <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7.5" y="3" width="7" height="18" rx="1"/><circle class="well" cx="9.8" cy="6.2" r="1.1"/><circle class="well" cx="12.2" cy="6.2" r="1.1"/><path d="M11 10v8M17 21l3-14"/></svg>
       </button>
-      <button id="type-only" type="button" aria-label="Type only: microphone off and silent" aria-pressed="false" title="Type only · mic off, silent replies">
+      <button id="type-only" type="button" aria-label="Type only: microphone off and silent" aria-pressed="false">
         <!-- The mouth hieroglyph (D21), sealed by a bar while type-only mode is on. -->
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12c4-4.6 14-4.6 18 0c-4 4.6-14 4.6-18 0z"/><path class="seal" d="M5.5 12h13"/></svg>
       </button>
-      <button id="minimise" type="button" aria-label="Minimise Astra (reopen from the menu bar)" title="Minimise · reopen from the menu bar">
+      <button id="minimise" type="button" aria-label="Minimise Astra (reopen from the menu bar)">
         <!-- The "water" hieroglyph (N35): a ripple line, so it still reads as minimise. -->
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12.5l2.4-2.6 2.4 2.6 2.4-2.6 2.4 2.6 2.4-2.6 2.4 2.6 2.4-2.6 2.4 2.6"/></svg>
       </button>
-      <button id="front" type="button" aria-label="Bring all panels forward" title="Bring all panels forward">
+      <button id="front" type="button" aria-label="Bring all panels forward">
         <!-- The sun hieroglyph (N5): a disc with a dot, raising the panels over everything else. -->
         <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="7"/><circle class="core" cx="12" cy="12" r="1.8"/></svg>
       </button>
+      <ul id="satellites" class="satellites" aria-label="Commanded sessions" hidden></ul>
+      <p id="god-toast" class="god-toast" role="status" aria-live="polite" hidden></p>
+      <p id="god-news" class="visually-hidden" role="status" aria-live="polite"></p>
     </div>
     <div class="state-wrap">
       <p id="state" class="state" role="button" tabindex="0" aria-haspopup="menu" aria-controls="panel-menu" aria-expanded="false" title="Show panels">Idle</p>
-      <!-- God mode: a gold crown beside the status, so the status itself only ever says what she's doing. -->
-      <p id="god" class="god-badge" role="img" aria-label="God mode is on" title="God mode: she hands project work to your sessions" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 17.5 5 8l4.5 4.5L12 5l2.5 7.5L19 8l1.5 9.5z"/><path d="M4 20.5h16"/></svg></p>
       <!-- Coffee mode: the water clock (clepsydra), dripping while the Mac is kept awake. -->
       <p id="coffee" class="coffee" role="img" aria-label="Coffee mode is on" hidden></p>
     </div>
@@ -91,6 +123,9 @@
   <script src="panel-menu.js"></script>
   <script src="dial.js"></script>
   <script src="glyphs.js"></script>
+  <script src="god-glyphs.js"></script>
+  <script src="god.js"></script>
+  <script src="wing-tips.js"></script>
   <script src="orb.js"></script>
 </body>
 </html>

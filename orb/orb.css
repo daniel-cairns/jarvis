@@ -35,7 +35,11 @@ main {
 .orb-wrap { position: relative; width: 320px; height: 260px; flex: none; }
 /* The canvas spills past the orb's 320 × 260 frame (PAD in orb.js), so her glow and figures aren't cut off at its
    edges; the frame itself, and everything positioned in it, stays where it was. */
-#orb { width: 400px; height: 340px; margin: -56px -40px -24px; display: block; cursor: grab; }
+#orb { width: 400px; height: 386px; margin: -56px -40px -70px; display: block; cursor: grab; }
+/* God mode moves her lower wings out past the satellites' orbit (WINGS_OUT in orb.js), so her frame grows by as much
+   and the status pill below moves down with them. */
+body.god-mode .orb-wrap { height: 310px; }
+@media (prefers-reduced-motion: no-preference) { .orb-wrap { transition: height 0.8s ease; } }
 #orb.dragging { cursor: grabbing; }
 
 #talk {
@@ -287,8 +291,9 @@ body.type-only .card .caption { max-height: 18em; color: #e2f9ff; text-shadow: 0
 /* Record and type-only sit further out on the same wing arc (OUTER_ANGLE in orb.js): centred at (116, 209), (204, 209). */
 #record { left: 103px; top: 196px; }
 #type-only { left: 191px; top: 196px; }
-/* The sun (bring all panels forward) sits centred just under them, above the status label: centred at (160, 243). */
-#front { left: 147px; top: 230px; }
+/* The sun (bring all panels forward) sits further out on her right wing (SUN_ANGLE in orb.js), mirroring God mode's
+   Eye on her left: centred at (226, 190). */
+#front { left: 213px; top: 177px; }
 #stop:disabled { cursor: default; }
 #stop svg, #minimise svg, #record svg, #type-only svg, #front svg {
   width: 16px;
@@ -315,6 +320,42 @@ body.type-only #orb { filter: saturate(0.55) brightness(0.85); }
 body.god-mode #orb { filter: drop-shadow(0 0 9px rgba(236, 188, 82, 0.55)); }
 body.type-only.god-mode #orb { filter: saturate(0.55) brightness(0.85) drop-shadow(0 0 9px rgba(236, 188, 82, 0.55)); }
 #stop:focus-visible, #minimise:focus-visible, #record:focus-visible, #type-only:focus-visible, #front:focus-visible { outline: 2px solid var(--reactor); outline-offset: 2px; }
+
+/* The wing buttons' help text (wing-tips.js): dark glass, light text, a gold rim and key, like the god slate's. Placed
+   in the window's own coordinates and kept inside it. Clicks go through it to whatever it covers, but while it shows
+   it counts as part of her for click-through (wing-tips.js covers). */
+.wing-tip {
+  position: fixed;
+  z-index: 20;
+  max-width: 220px;
+  margin: 0;
+  padding: 5px 9px 6px;
+  border: 1px solid rgba(236, 188, 82, 0.75);
+  border-radius: 8px;
+  background: #060a18;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 8px 22px rgba(0, 0, 0, 0.55);
+  color: #eef3ef;
+  font: 12px/1.4 -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
+  text-shadow: none;
+  white-space: normal;
+  pointer-events: none;
+  animation: wing-tip-rise 0.14s ease-out;
+}
+.wing-tip[hidden] { display: none; }
+.wing-tip kbd {
+  display: inline-block;
+  margin-left: 2px;
+  padding: 0 5px;
+  border: 1px solid rgba(236, 188, 82, 0.6);
+  border-radius: 4px;
+  background: rgba(236, 188, 82, 0.1);
+  color: var(--accent);
+  font: 600 10.5px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.wing-tip-note { display: block; color: #b9c7c1; font-size: 11px; }
+@keyframes wing-tip-rise { from { opacity: 0; transform: translateY(3px); } }
+@keyframes wing-tip-fade { from { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .wing-tip { animation-name: wing-tip-fade; } }
 
 .hint {
   margin: 10px 0 0;
@@ -419,7 +460,3 @@ body.collapsed .state { cursor: pointer; text-decoration: underline dotted rgba(
 .state-wrap { position: relative; }
 .coffee { position: absolute; left: 100%; top: 50%; transform: translate(2px, -60%); margin: 0; color: var(--accent); font-size: 15px; line-height: 1; opacity: 0.9; }
 .coffee[hidden] { display: none; }
-/* God mode's crown: on the status pill's left, gold and glowing, whatever state she's in. */
-.god-badge { position: absolute; right: 100%; top: 50%; transform: translate(-3px, -58%); margin: 0; width: 16px; height: 16px; color: var(--accent); filter: drop-shadow(0 0 4px rgba(236, 188, 82, 0.85)); }
-.god-badge[hidden] { display: none; }
-.god-badge svg { width: 100%; height: 100%; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linejoin: round; stroke-linecap: round; }

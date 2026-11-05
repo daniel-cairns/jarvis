@@ -11,6 +11,8 @@ const { visibilityOf } = require("./visibility.cjs");
 const { execFile } = require("node:child_process");
 
 const ANSWERS = new Set(["yes", "always", "no"]);
+/** The orb window's own width, without the God mode slate's room. */
+const ORB_WIDTH = 430;
 
 /** Only well-formed messages from the page reach Astra. */
 function fromPage(m) {
@@ -141,7 +143,8 @@ app.dock?.hide();
 app.whenReady().then(() => {
   const { workArea } = screen.getPrimaryDisplay();
   // Wider than the cards, so her glow and figures have room at the sides (the empty space lets clicks through).
-  const width = 430;
+  // Keep in step with god.css (main) and god.js (BASE_WIDTH): the slate's room is added to this.
+  const width = ORB_WIDTH;
   const height = 480;
   const win = new BrowserWindow({
     width,
@@ -162,6 +165,33 @@ app.whenReady().then(() => {
   win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   harden(win);
   win.loadFile(path.join(__dirname, "index.html"));
+
+  /*
+   * God mode's slate pops out of the orb window itself, on the side facing the middle of the screen, so the window
+   * grows that way while it's out (and the page pins her to the other side, so she doesn't move). Everything that
+   * places things round the orb uses orbBounds: the window as if the slate weren't out.
+   */
+  let room = { side: null, width: 0 };
+  const orbBounds = () => {
+    const b = win.getBounds();
+    return { ...b, x: b.x + (room.side === "left" ? room.width : 0), width: b.width - room.width };
+  };
+  /** Gives the slate `width` points of room on `side` (0 takes it back), kept on the orb's display; tells the page. */
+  const setRoom = (side, width) => {
+    const base = orbBounds();
+    const { workArea: wa } = screen.getDisplayMatching(base);
+    const spare = side === "left" ? base.x - wa.x : wa.x + wa.width - (base.x + base.width);
+    const w = Math.max(0, Math.min(Math.round(width), spare));
+    room = w ? { side, width: w } : { side: null, width: 0 };
+    win.setBounds({ x: side === "left" ? base.x - w : base.x, y: base.y, width: base.width + w, height: base.height });
+    win.webContents.send("jarvis", { type: "slate-room", side, width: w });
+  };
+  /** Folds the slate at once and takes its room back (before the orb moves). */
+  const dropRoom = () => {
+    if (!room.width) return;
+    win.webContents.send("jarvis", { type: "slate-fold" });
+    setRoom(room.side, 0);
+  };
   let lastCoffee = null;
   win.webContents.on("did-finish-load", () => {
     if (lastCoffee) win.webContents.send("jarvis", lastCoffee);
@@ -410,7 +440,7 @@ app.whenReady().then(() => {
     }
     slab.owner = owner;
     slab.collapsed = false;
-    const bounds = win.getBounds();
+    const bounds = orbBounds();
     const { workArea } = screen.getDisplayMatching(bounds);
     const { width, height } = slab;
     const left = Math.max(workArea.x + 12, bounds.x - width - 8);
@@ -536,7 +566,7 @@ app.whenReady().then(() => {
     const tidy = mode === "tidy";
     if (tidy) for (const s of Object.values(slabs)) s.pinned = false;
     const visible = Object.entries(slabs).filter(([, s]) => s.win && !s.win.isDestroyed() && s.win.isVisible());
-    const orb = win.getBounds();
+    const orb = orbBounds();
     const { workArea } = screen.getDisplayMatching(orb);
     layingOutUntil = Date.now() + 700;
     // Once panels are arranged, an update never moves them: only panels not yet placed get a spot, a free one.
@@ -644,6 +674,7 @@ app.whenReady().then(() => {
   const NUDGE = 140;
   const moveTo = async (position) => {
     if (!win.isVisible()) show();
+    dropRoom();
     const b = win.getBounds();
     const { workArea: wa } = screen.getDisplayMatching(b);
     if (position.startsWith("nudge_")) {
@@ -757,6 +788,9 @@ app.whenReady().then(() => {
     if (m?.type === "transform-done" && sender === win) return transformWaiter?.();
     // The orb's empty space lets clicks through to the app underneath (orb/hit.js); forward keeps mouse moves coming.
     if (m?.type === "click-through" && sender === win) return void win.setIgnoreMouseEvents(!!m.on, { forward: true });
+    if (m?.type === "slate-room" && sender === win && (m.side === "left" || m.side === "right") && Number.isFinite(m.width) && m.width >= 0 && m.width <= 1200) {
+      return void setRoom(m.side, m.width);
+    }
     if (m?.type === "fit" && sender === win && Number.isFinite(m.height)) return void fitHeight(m.height, Number.isFinite(m.decision) ? m.decision : 0);
     // The compact Tallyline panel's expand control and issue links: open the full app at that page.
     if (m?.type === "tallyline-open" && sender && sender === slabs.tallyline.win) {

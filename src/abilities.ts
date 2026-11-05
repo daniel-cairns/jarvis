@@ -63,7 +63,7 @@ export const ABILITIES: readonly Ability[] = [
   },
   {
     name: "God mode",
-    what: "You command Dan's sessions: hand project work to them and announce when they finish. Shown by a crown and a gold halo on the orb.",
+    what: "You command Dan's sessions: hand project work to them and announce when they finish. Shown by a gold ring of glyphs round the orb, a satellite per commanded session and the Eye on her left wing.",
     say: ["god mode on", "god mode off"],
     slash: "/god on|off",
     ui: ["god_mode_on", "god_mode_off"],

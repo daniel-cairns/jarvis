@@ -18,6 +18,7 @@ import { ECHO_TAIL_MS, isEcho, recentSpeech } from "./voice/echo.js";
 import { Tallyline } from "./tools/tallyline.js";
 import { RESTART_CHECK_MS, RESTART_REPORT_MS, restartBlocker, stillBlockedMessage, waitingMessage, type RestartState } from "./ui/restart.js";
 import { buildSessionsView } from "./ui/sessionsPanel.js";
+import { godSlate } from "./ui/godSlate.js";
 import type { SessionAction } from "./ui/orb.js";
 import type { RunPhase } from "./ui/orb.js";
 import { fileDiff, gitRoot, repoState, type RepoState } from "./tools/git.js";
@@ -1289,12 +1290,15 @@ async function main(): Promise<void> {
   const transcriptTimers = new Map<string, NodeJS.Timeout>();
   /** What each run is doing right now, for the glyph row at the top of its transcript. */
   const runPhases = new Map<string, RunPhase>();
+  /** Each run's latest step in words, for the God mode slate's "last action". */
+  const runActions = new Map<string, string>();
   /** Shows a run's transcript (now, or within 250 ms so a burst of steps is one update). */
   const showTranscript = (job: Job, owner?: "user") => {
     const send = () => {
       transcriptTimers.delete(job.id);
       const lines = transcripts.get(job.id) ?? [];
       sessionsChanged();
+      godChanged();
       const state: RunPhase = job.status === "running" ? (runPhases.get(job.id) ?? { phase: "thinking" }) : { phase: job.status };
       orb?.send({ type: "transcript", job: { id: job.id, label: job.label, status: job.status }, lines, state, ...(owner ? { owner } : {}) });
     };
@@ -1320,6 +1324,7 @@ async function main(): Promise<void> {
   async function askQuestion(spec: QuestionSpec): Promise<QuestionAnswer | null> {
     console.log(`\n  Question: ${spec.question}`);
     const loop = loops.add("decision", spec.question);
+    godChanged();
     spec.options.forEach((o, i) => console.log(`    ${i + 1}. ${o.label}${o.description ? ` (${o.description})` : ""}`));
     const answer = await openDialog<QuestionAnswer>((signal) => {
       const viaCard = orb?.alive ? orb.question(spec, signal) : Promise.resolve(null);
@@ -1335,6 +1340,7 @@ async function main(): Promise<void> {
     console.log(`  → ${answer === null ? "(no answer)" : Array.isArray(answer) ? answer.join(", ") : answer}`);
     // Unanswered, it stays open: still waiting on Dan.
     if (answer !== null) loops.close(loop.id, Array.isArray(answer) ? answer.join(", ") : answer);
+    godChanged();
     return answer;
   }
 
@@ -1344,6 +1350,7 @@ async function main(): Promise<void> {
       console.log(`  [${job.id} ${job.label}] → ${tool}`);
       orb?.send({ type: "activity", text: `${job.label}: ${describeActivity(tool, input)}`, glyph: activityGlyph(tool) });
       runPhases.set(job.id, { phase: "tool", glyph: activityGlyph(tool) });
+      runActions.set(job.id, describeActivity(tool, input));
       addLine(job, "tool", describeActivity(tool, input));
     },
     said: (job, text) => {
@@ -1529,6 +1536,7 @@ async function main(): Promise<void> {
     // Not during the demo: a real session's news would be spoken over the tour. It's announced after.
     if (demoAbort) return;
     const now = await liveSessions({ limit: 30, exclude: [cfg.workspaceDir] }).catch(() => [] as SessionSummary[]);
+    void refreshGod(now, true);
     const finished = finishes.update(now);
     // Her own background runs are reported when they end anyway.
     const mine = new Set(sessionRunner.list().map((j) => j.sessionId));
@@ -1540,6 +1548,31 @@ async function main(): Promise<void> {
     if (transcribing || !fresh) console.log(`\n  (${text}${fresh ? "" : " · already said, not repeated"})`);
     else void say(fresh);
   };
+  // God mode's satellites and slate on the orb: sent on the 30 s watch and soon after a run, loop or session changes.
+  let lastGod = "";
+  let godSoon: NodeJS.Timeout | undefined;
+  /**
+   * Sends the orb what God mode is commanding, if it changed (or always, with `force`: the 30 s watch, so a list the
+   * orb missed while it was loading still arrives). `list` saves re-reading the sessions just read.
+   */
+  const refreshGod = async (list?: SessionSummary[], force = false) => {
+    if (!settings.godMode || !orb?.alive) return;
+    const now = Date.now();
+    const current = list ?? (await liveSessions({ limit: 30, exclude: [cfg.workspaceDir] }).catch(() => [] as SessionSummary[]));
+    const entries = godSlate(buildSessionsView(current, sessionRunner.list(), now, runPhases), loops.open(), now, runActions);
+    const json = JSON.stringify(entries);
+    if (!settings.godMode || (json === lastGod && !force)) return;
+    lastGod = json;
+    orb.send({ type: "god-sessions", sessions: entries });
+  };
+  /** Something God mode shows changed: refresh once things settle, at most once a second. */
+  const godChanged = () => {
+    if (!settings.godMode || godSoon) return;
+    godSoon = setTimeout(() => {
+      godSoon = undefined;
+      void refreshGod();
+    }, 1000);
+  };
   /** God mode on or off: commanding your sessions, with finish announcements. Remembered between runs. */
   const setGodMode = (on: boolean): string => {
     settings.godMode = on;
@@ -1547,6 +1580,8 @@ async function main(): Promise<void> {
     if (godTimer) clearInterval(godTimer);
     godTimer = null;
     finishes.reset();
+    lastGod = "";
+    if (!on) orb?.send({ type: "god-sessions", sessions: [] });
     if (on) {
       void watchSessions();
       godTimer = setInterval(() => void watchSessions(), 30_000);
@@ -1785,6 +1820,10 @@ async function main(): Promise<void> {
           ask: (spoken, detail, signal) => screen.trusted(() => screen.ask(spoken, detail, signal)),
           restore: () => {
             sendMode();
+            // The tour showed made-up sessions: put the real ones back.
+            lastGod = "";
+            if (settings.godMode) void refreshGod();
+            else orb?.send({ type: "god-sessions", sessions: [] });
             orb?.send({ type: "coffee", on: coffee.on, until: coffee.endsAt });
           },
         },

@@ -32,7 +32,8 @@ her spoken commands ([control.ts](../src/ui/control.ts)) and her help text ([ind
 - **Send and start:** `session_send` sends to an idle session. `session_start` starts one in the background, or in the app so you can watch.
 - **Open and stop:** `session_open` and `session_stop`. Approvals from her background runs come to you through her.
 - **Sit rep:** "sit rep" or `/sitrep` gives a panel for every session plus a spoken summary.
-- **God mode:** `/god on|off`. She hands project work to sessions rather than doing it herself, and announces when they finish.
+- **God mode:** `/god on|off`. She hands project work to sessions rather than doing it herself, and announces when they finish. While it's on, a gold ring of carved glyphs turns round the orb, a satellite per commanded session orbits her (bright pulse working, dim idle, amber waiting on you; click one to open it), and the Eye sits on her left wing. A one-line toast marks it turning on or off.
+- **The glyph slate:** hover or Tab to the orb (or click the Eye) in God mode and a small wing of glyph cartouches pops out on the side facing the middle of the screen: one per session, background run and open decision. Hover or focus a glyph for what it means, the session, a one-line summary, the time, its last action and what it needs from you; click to open the session. It folds after 6 s untouched, as you leave it, or on Escape.
 - **Live sessions panel:** "show the sessions panel". You can open, read, message or stop sessions from it.
 
 ### Her screen and windows
@@ -145,6 +146,7 @@ Tick each line as you go. **Expect** is what a pass looks like.
 | E3 | "Show the sessions panel." | A live panel. Open, read, message and stop work from it. |
 | E4 | `/god on`, then "get the jarvis session to run the tests". | She hands the work to a session, says who she gave it to, and announces when it finishes. `/god off` afterwards. |
 | E5 | "Start a session in jarvis in the app to list the docs folder." | It opens in the Claude app and runs there. |
+| E6 | `/god on` with a few sessions open. Hover the orb, then Tab from it into the slate; press Escape. | The ring turns, a satellite per session orbits, the Eye is on her left wing, and the toast shows. The slate pops out towards the middle of the screen; each glyph's help text shows on hover and focus; Escape folds it and focus goes back to the orb. Left alone, it folds after about 6 s. With reduced motion: no turning, orbiting or unfolding, only fades. |
 
 ### F. Panels, windows and orb
 | # | Do | Expect |
@@ -158,6 +160,7 @@ Tick each line as you go. **Expect** is what a pass looks like.
 | F7 | During a session upload or download, watch the orb. | Anubis is always in front of the upload and download glyphs. |
 | F8 | "Show Tallyline." | A compact ledger panel; it starts Tallyline if it isn't running. |
 | F9 | Ask her to research something that takes a few seconds ("search the web for the latest Kokoro voices", or "read me the Signal teardown"). | After about 1.5 s Thoth, the ibis-headed scribe, rises behind the orb: his pen writes gold marks that drift up, and his moon brightens. The status says "Researching…". When she has it, one glint off the moon and he sinks away. A quick lookup shows nothing. If Anubis is needed meanwhile (a page check, a refused voice), Anubis takes the front. With reduced motion: a fade in and out only. Also in the demo, after Anubis. |
+| F10 | Hover each glyph on her lower wings (stop, record, type-only, minimise, the sun, and the Eye in God mode), then Tab onto one and press Escape. | Each shows a small help tip saying what it does, with Esc on stop (and on the Eye while the slate is out); the tip stays inside the window. Escape on a focused button hides its tip without stopping her; a second Escape stops her. With reduced motion the tip only fades in. |
 
 ### G. Brain and transcripts
 | # | Do | Expect |
