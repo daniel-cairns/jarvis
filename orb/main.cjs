@@ -2,17 +2,22 @@
  * Astra's orb: a frameless, transparent, always-on-top window. Astra drives it with JSON lines on stdin and
  * hears back on stdout. Run by Electron as a child of the Astra CLI; quits when Astra closes stdin.
  */
-const { app, BrowserWindow, Menu, Tray, globalShortcut, ipcMain, nativeImage, screen, shell } = require("electron");
+const { app, BrowserWindow, Menu, Tray, clipboard, globalShortcut, ipcMain, nativeImage, screen, shell } = require("electron");
 const path = require("node:path");
 const readline = require("node:readline");
 const { layoutPanels, placeNew, minFor } = require("./layout.cjs");
+const { housekeep, overCap } = require("./housekeeping.cjs");
+const { visibilityOf } = require("./visibility.cjs");
+const { execFile } = require("node:child_process");
 
 const ANSWERS = new Set(["yes", "always", "no"]);
+/** The orb window's own width, without the God mode slate's room. */
+const ORB_WIDTH = 430;
 
 /** Only well-formed messages from the page reach Astra. */
 function fromPage(m) {
   if (!m || typeof m !== "object") return null;
-  if (m.type === "talk" || m.type === "stop" || m.type === "record") return { type: m.type };
+  if (m.type === "talk" || m.type === "stop" || m.type === "record" || m.type === "brain-request") return { type: m.type };
   if (m.type === "type-only" && typeof m.on === "boolean") return { type: "type-only", on: m.on };
   if (m.type === "typed" && typeof m.text === "string" && m.text.trim() && m.text.length <= 2000) return { type: "typed", text: m.text };
   if (m.type === "answer" && typeof m.id === "string" && ANSWERS.has(m.answer)) {
@@ -137,7 +142,9 @@ app.dock?.hide();
 
 app.whenReady().then(() => {
   const { workArea } = screen.getPrimaryDisplay();
-  const width = 350;
+  // Wider than the cards, so her glow and figures have room at the sides (the empty space lets clicks through).
+  // Keep in step with god.css (main) and god.js (BASE_WIDTH): the slate's room is added to this.
+  const width = ORB_WIDTH;
   const height = 480;
   const win = new BrowserWindow({
     width,
@@ -158,6 +165,33 @@ app.whenReady().then(() => {
   win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   harden(win);
   win.loadFile(path.join(__dirname, "index.html"));
+
+  /*
+   * God mode's slate pops out of the orb window itself, on the side facing the middle of the screen, so the window
+   * grows that way while it's out (and the page pins her to the other side, so she doesn't move). Everything that
+   * places things round the orb uses orbBounds: the window as if the slate weren't out.
+   */
+  let room = { side: null, width: 0 };
+  const orbBounds = () => {
+    const b = win.getBounds();
+    return { ...b, x: b.x + (room.side === "left" ? room.width : 0), width: b.width - room.width };
+  };
+  /** Gives the slate `width` points of room on `side` (0 takes it back), kept on the orb's display; tells the page. */
+  const setRoom = (side, width) => {
+    const base = orbBounds();
+    const { workArea: wa } = screen.getDisplayMatching(base);
+    const spare = side === "left" ? base.x - wa.x : wa.x + wa.width - (base.x + base.width);
+    const w = Math.max(0, Math.min(Math.round(width), spare));
+    room = w ? { side, width: w } : { side: null, width: 0 };
+    win.setBounds({ x: side === "left" ? base.x - w : base.x, y: base.y, width: base.width + w, height: base.height });
+    win.webContents.send("jarvis", { type: "slate-room", side, width: w });
+  };
+  /** Folds the slate at once and takes its room back (before the orb moves). */
+  const dropRoom = () => {
+    if (!room.width) return;
+    win.webContents.send("jarvis", { type: "slate-fold" });
+    setRoom(room.side, 0);
+  };
   let lastCoffee = null;
   win.webContents.on("did-finish-load", () => {
     if (lastCoffee) win.webContents.send("jarvis", lastCoffee);
@@ -263,6 +297,8 @@ app.whenReady().then(() => {
   // "auto" popped up while she worked (closed when she finishes), "astra" she showed you on purpose (kept until the
   // end of her next request), "user" you opened or clicked into (never closed for you).
   const RANK = { auto: 0, astra: 1, user: 2 };
+  /** Panels that refresh themselves while open; a refresh isn't Dan using them. */
+  const REFRESHED = new Set(["sessions", "tallyline", "brain"]);
   let requestNo = 0;
   const TIDY_MS = 6000;
 
@@ -273,7 +309,11 @@ app.whenReady().then(() => {
       if (requestNo !== at) return; // A new request started: leave everything for it.
       for (const slab of Object.values(slabs)) {
         if (!slab.win || slab.win.isDestroyed()) continue;
-        if (slab.owner === "auto" || (slab.owner === "astra" && slab.request < at)) slab.win.close();
+        if (slab.owner === "auto" || (slab.owner === "astra" && slab.request < at)) {
+          const kind = Object.keys(slabs).find((k) => slabs[k] === slab);
+          send({ type: "log", text: `closed the ${kind} panel: ${slab.owner === "auto" ? "it popped up while she worked and she has finished" : "she showed it during an earlier request"}` });
+          slab.win.close();
+        }
       }
     }, TIDY_MS);
   };
@@ -309,11 +349,100 @@ app.whenReady().then(() => {
    * The sun glyph (or "bring your panels forward"): every open panel in front of other apps' windows, the one used
    * most recently on top. Without focusing them, so typing stays where it was.
    */
-  const raisePanels = () => {
-    const open = Object.values(slabs).filter((s) => s.win && !s.win.isDestroyed() && s.win.isVisible());
-    open.sort((a, b) => (a.lastUsed ?? 0) - (b.lastUsed ?? 0));
-    for (const slab of open) slab.win.showInactive();
+  /**
+   * Brings a panel in front of the app Dan is in, without taking his keyboard. Proven on 4 Nov with Chrome in front
+   * and Stage Manager on: showInactive and moveTop leave a window of an app that isn't active behind (19th in the
+   * window order, Chrome first), while a moment at the floating level puts it first and leaves Chrome the active app.
+   * It drops back to the normal level straight after, so other apps can still cover it later. A window that already
+   * floats (her orb) is left floating: dropping it put the orb behind Claude's window, so clicks on her went to Claude.
+   */
+  const bringForward = (w) => {
+    if (!w || w.isDestroyed()) return;
+    w.showInactive();
+    if (w.isAlwaysOnTop()) return void w.moveTop();
+    w.setAlwaysOnTop(true, "floating");
+    setTimeout(() => {
+      if (!w.isDestroyed()) w.setAlwaysOnTop(false);
+    }, 250);
   };
+
+  /** The on-screen windows, front to back, from the Mac control helper; null if it can't be read. */
+  const HELPER = path.join(process.env.JARVIS_HOME || path.join(require("node:os").homedir(), ".jarvis"), "bin", "astra-ax");
+  const screenWindows = () =>
+    new Promise((resolve) => {
+      execFile(HELPER, ["windows"], { timeout: 3000 }, (err, stdout) => {
+        if (err) return resolve(null);
+        try {
+          const list = JSON.parse(stdout);
+          resolve(Array.isArray(list) ? list : null);
+        } catch {
+          resolve(null);
+        }
+      });
+    });
+
+  /** Whether these panels can really be seen now: [{ kind, onScreen, covered, coveredBy }], or null if unknown. */
+  const checkVisible = async (kinds) => {
+    const list = await screenWindows();
+    if (!list) return null;
+    return kinds.map((kind) => {
+      const w = slabs[kind]?.win;
+      if (!w || w.isDestroyed() || !w.isVisible()) return { kind, onScreen: false, covered: false, coveredBy: [] };
+      return { kind, ...visibilityOf(list, process.pid, w.getBounds()) };
+    });
+  };
+
+  /** Tells Astra whether a panel she just showed is really on screen, once it has had a moment to settle. */
+  const reportShown = (kind) => {
+    setTimeout(async () => {
+      const result = await checkVisible([kind]);
+      send({ type: "panel-shown", kind, result: result ? result[0] : null });
+    }, 450);
+  };
+
+  const raisePanels = async () => {
+    const open = Object.entries(slabs).filter(([, s]) => s.win && !s.win.isDestroyed() && s.win.isVisible());
+    open.sort(([, a], [, b]) => (a.lastUsed ?? 0) - (b.lastUsed ?? 0));
+    // The one used most recently is lifted last, so it ends up on top.
+    for (const [, slab] of open) {
+      bringForward(slab.win);
+      await new Promise((r) => setTimeout(r, 30));
+    }
+    await new Promise((r) => setTimeout(r, 450));
+    send({ type: "panels-front", results: open.length ? await checkVisible(open.map(([kind]) => kind)) : [] });
+  };
+
+  /**
+   * Dan chose Astra in Cmd-Tab or clicked her Dock icon: Astra.app (native/astra-launcher.swift) is only her launcher,
+   * so it writes ~/.jarvis/summon and the orb answers here. She comes back if tucked away, her open panels come up,
+   * and she takes the keyboard, as any app does when you switch to it.
+   */
+  const SUMMON = "summon";
+  let summoning = false;
+  const summon = async () => {
+    if (summoning || win.isDestroyed()) return;
+    summoning = true;
+    try {
+      if (!win.isVisible()) await show();
+      for (const slab of Object.values(slabs)) {
+        if (slab.win && !slab.win.isDestroyed() && slab.win.isVisible()) bringForward(slab.win);
+      }
+      win.moveTop(); // she floats already; just to the top of her level
+      app.focus({ steal: true });
+      win.focus();
+    } finally {
+      summoning = false;
+    }
+  };
+  try {
+    const home = process.env.JARVIS_HOME || path.join(require("node:os").homedir(), ".jarvis");
+    require("node:fs").mkdirSync(home, { recursive: true });
+    require("node:fs").watch(home, (_event, name) => {
+      if (name === SUMMON) void summon();
+    });
+  } catch (err) {
+    send({ type: "log", text: `couldn't watch for Cmd-Tab and Dock clicks: ${err.message}` });
+  }
 
   /**
    * Opens a panel, or updates the open one. `raise` false is a live update (a transcript ticking, the terminal
@@ -323,7 +452,8 @@ app.whenReady().then(() => {
     const slab = slabs[kind];
     slab.last = msg;
     slab.request = requestNo;
-    slab.lastUsed = Date.now();
+    // A list refreshing itself on a timer isn't use: it would keep the panel open for ever (see housekeeping.cjs).
+    if (raise || !REFRESHED.has(kind)) slab.lastUsed = Date.now();
     const webApp = !!slab.url;
     const appUrl = webApp ? `${TALLYLINE_ORIGIN}${typeof msg.path === "string" && msg.path.startsWith("/") ? msg.path : "/"}` : null;
     if (slab.win && !slab.win.isDestroyed()) {
@@ -334,13 +464,17 @@ app.whenReady().then(() => {
         return;
       }
       slab.win.webContents.send("jarvis", msg);
-      // showInactive orders the window to the front, so only a hidden panel or an explicit show gets it.
-      if (raise || !slab.win.isVisible()) slab.win.showInactive();
+      // Only a hidden panel or an explicit show comes forward (a live refresh stays where it sits).
+      if (raise || !slab.win.isVisible()) {
+        bringForward(slab.win);
+        flashPanel(kind);
+        reportShown(kind);
+      }
       return;
     }
     slab.owner = owner;
     slab.collapsed = false;
-    const bounds = win.getBounds();
+    const bounds = orbBounds();
     const { workArea } = screen.getDisplayMatching(bounds);
     const { width, height } = slab;
     const left = Math.max(workArea.x + 12, bounds.x - width - 8);
@@ -386,7 +520,10 @@ app.whenReady().then(() => {
     });
     // Resized by hand (not by the layout): it keeps the size and place you gave it until it closes or you tidy up.
     w.on("resized", () => {
-      if (Date.now() > layingOutUntil) slab.pinned = true;
+      if (Date.now() > layingOutUntil) {
+        slab.pinned = true;
+        slab.lastUsed = Date.now();
+      }
     });
     w.on("closed", () => {
       slab.collapsed = false;
@@ -403,6 +540,7 @@ app.whenReady().then(() => {
       // Opened on request, so it comes forward with the keyboard (unlike her panels, which never take focus).
       w.once("ready-to-show", () => {
         w.show();
+        closeOverCap(kind);
         sendPanels();
         relayout();
       });
@@ -412,11 +550,39 @@ app.whenReady().then(() => {
     w.loadFile(path.join(__dirname, slab.file));
     w.webContents.once("did-finish-load", () => {
       w.webContents.send("jarvis", msg);
-      w.showInactive();
+      bringForward(w);
+      closeOverCap(kind);
       sendPanels();
       relayout();
+      flashPanel(kind);
+      reportShown(kind);
     });
   };
+
+  /** The open panels, as housekeeping.cjs sees them. */
+  const openPanels = () =>
+    Object.entries(slabs)
+      .filter(([, s]) => s.win && !s.win.isDestroyed() && s.win.isVisible())
+      .map(([kind, s]) => ({ kind, lastUsed: s.lastUsed ?? 0, focused: s.win.isFocused(), pinned: !!s.pinned }));
+
+  /** A panel just opened: close the ones used longest ago if that makes too many. */
+  const closeOverCap = (opened) => {
+    for (const kind of overCap(openPanels(), opened)) {
+      send({ type: "log", text: `closed the ${kind} panel: more than four were open and it was used longest ago` });
+      slabs[kind].win.close();
+    }
+  };
+
+  // Every half minute: close panels nobody has used for a while, and fold hand-placed ones back into the layout.
+  setInterval(() => {
+    const { close, rejoin } = housekeep(openPanels(), Date.now());
+    for (const kind of close) {
+      send({ type: "log", text: `closed the ${kind} panel: nobody had used it for five minutes` });
+      slabs[kind].win.close();
+    }
+    for (const kind of rejoin) slabs[kind].pinned = false;
+    if (rejoin.length) relayout("rejoin");
+  }, 30_000).unref?.();
 
   // Window moves and resizes before this time are the layout's own (it animates), not yours.
   let layingOutUntil = 0;
@@ -425,11 +591,16 @@ app.whenReady().then(() => {
    * Lays every visible panel out so all can be seen at once (see layout.cjs) on the display the orb is on, skipping any you've
    * dragged or resized by hand. `tidy` (the "tidy up" action) brings those back into the layout too.
    */
+  /** A panel moved by more than a nudge (the layout settling by a few points doesn't count). */
+  const movedFar = (a, b) => Math.abs(a.x - b.x) + Math.abs(a.y - b.y) > 24;
+  const kindOf = (slab) => Object.keys(slabs).find((k) => slabs[k] === slab);
   const relayout = (mode = "new") => {
+    // The orb closes first when she quits or restarts; a layout timer firing after that has nothing to lay out.
+    if (win.isDestroyed()) return;
     const tidy = mode === "tidy";
     if (tidy) for (const s of Object.values(slabs)) s.pinned = false;
     const visible = Object.entries(slabs).filter(([, s]) => s.win && !s.win.isDestroyed() && s.win.isVisible());
-    const orb = win.getBounds();
+    const orb = orbBounds();
     const { workArea } = screen.getDisplayMatching(orb);
     layingOutUntil = Date.now() + 700;
     // Once panels are arranged, an update never moves them: only panels not yet placed get a spot, a free one.
@@ -438,6 +609,7 @@ app.whenReady().then(() => {
       for (const [, s] of visible) {
         if (s.placed || s.pinned) continue;
         const rect = placeNew({ area: workArea, orb, fixed, width: s.width, height: s.collapsed ? s.win.getBounds().height : s.height });
+        if (s.placed && movedFar(s.win.getBounds(), rect)) flashPanel(kindOf(s));
         s.win.setBounds(rect, true);
         s.placed = true;
         fixed.push(rect);
@@ -460,6 +632,7 @@ app.whenReady().then(() => {
       // The layout never goes below a panel's own minimum (a folded one is just its header).
       const [minW, minH] = minFor(kind);
       s.win.setMinimumSize(Math.min(minW, rects[kind].width), s.collapsed ? 60 : Math.min(minH, rects[kind].height));
+      if (s.placed && movedFar(s.win.getBounds(), rects[kind])) flashPanel(kind);
       s.win.setBounds(rects[kind], true);
       s.placed = true;
     }
@@ -515,6 +688,11 @@ app.whenReady().then(() => {
       const start = Date.now();
       const ease = (p) => (p < 0.5 ? 2 * p * p : 1 - (-2 * p + 2) ** 2 / 2);
       gliding = setInterval(() => {
+        if (win.isDestroyed()) {
+          clearInterval(gliding);
+          gliding = null;
+          return resolve();
+        }
         const p = Math.min(1, (Date.now() - start) / 450);
         win.setPosition(Math.round(x0 + (x - x0) * ease(p)), Math.round(y0 + (y - y0) * ease(p)));
         if (p === 1) {
@@ -530,6 +708,7 @@ app.whenReady().then(() => {
   const NUDGE = 140;
   const moveTo = async (position) => {
     if (!win.isVisible()) show();
+    dropRoom();
     const b = win.getBounds();
     const { workArea: wa } = screen.getDisplayMatching(b);
     if (position.startsWith("nudge_")) {
@@ -562,8 +741,10 @@ app.whenReady().then(() => {
    * her cards go below the orb whenever they fit above the bottom of the screen, otherwise above it. (With the cards
    * below, the orb is at the window's top, so it can also be dragged right up under the menu bar.)
    */
-  const ORB_SECTION = 290; // the orb, its state label and padding: the window's height with no cards showing
+  const ORB_SECTION = 346; // the orb, its state label, the room above it and padding: the height with no cards showing
   let layoutTop = true; // true: cards below the orb
+  let layoutSplit = false; // true: below, except the approval or question card, which opens above
+  let wantedDecision = 0;
   let orbOffset = null; // the orb's top inside the window
   let wantedHeight = ORB_SECTION;
   let arranging = false;
@@ -582,11 +763,17 @@ app.whenReady().then(() => {
         const { workArea: wa } = screen.getDisplayMatching(b);
         const orbScreenY = b.y + orbOffset;
         const height = Math.round(Math.min(Math.max(wantedHeight, ORB_SECTION), wa.height - 16));
-        const below = orbScreenY + height <= wa.y + wa.height - 4;
-        if (below === layoutTop && height === b.height) continue;
-        if (below !== layoutTop) {
+        const limit = wa.y + wa.height - 4;
+        const fitsBelow = orbScreenY + height <= limit;
+        // Not room below for everything, but there is for the transmission window: the approval or question card
+        // opens above the orb instead, and the transmission window stays where it is.
+        const split = !fitsBelow && wantedDecision > 0 && orbScreenY + (height - wantedDecision) <= limit && orbScreenY - wantedDecision >= wa.y;
+        const below = fitsBelow || split;
+        if (below === layoutTop && split === layoutSplit && height === b.height) continue;
+        if (below !== layoutTop || split !== layoutSplit) {
           layoutTop = below;
-          win.webContents.send("jarvis", { type: "layout", top: below });
+          layoutSplit = split;
+          win.webContents.send("jarvis", { type: "layout", top: below, split });
         }
         win.setBounds({ x: b.x, y: b.y, width: b.width, height });
         await settle();
@@ -600,19 +787,21 @@ app.whenReady().then(() => {
     }
   };
   win.webContents.on("did-finish-load", async () => {
-    win.webContents.send("jarvis", { type: "layout", top: layoutTop });
+    win.webContents.send("jarvis", { type: "layout", top: layoutTop, split: layoutSplit });
     await settle();
     orbOffset = await orbTop();
     void arrange();
   });
   win.on("moved", () => {
+    void sendBeam();
     void arrange();
     // The panels follow the orb once it stops.
     scheduleLayout();
   });
 
-  const fitHeight = (wanted) => {
+  const fitHeight = (wanted, decision = 0) => {
     wantedHeight = wanted;
+    wantedDecision = decision;
     void arrange();
   };
 
@@ -631,12 +820,21 @@ app.whenReady().then(() => {
     if (m?.type === "panel-restore" && sender === win && typeof m.kind === "string" && slabs[m.kind]) return restoreSlab(m.kind);
     if (m?.type === "panels-front" && sender === win) return raisePanels();
     if (m?.type === "transform-done" && sender === win) return transformWaiter?.();
-    if (m?.type === "fit" && sender === win && Number.isFinite(m.height)) return void fitHeight(m.height);
+    // The orb's empty space lets clicks through to the app underneath (orb/hit.js); forward keeps mouse moves coming.
+    if (m?.type === "click-through" && sender === win) return void win.setIgnoreMouseEvents(!!m.on, { forward: true });
+    if (m?.type === "slate-room" && sender === win && (m.side === "left" || m.side === "right") && Number.isFinite(m.width) && m.width >= 0 && m.width <= 1200) {
+      return void setRoom(m.side, m.width);
+    }
+    if (m?.type === "fit" && sender === win && Number.isFinite(m.height)) return void fitHeight(m.height, Number.isFinite(m.decision) ? m.decision : 0);
     // The compact Tallyline panel's expand control and issue links: open the full app at that page.
     if (m?.type === "tallyline-open" && sender && sender === slabs.tallyline.win) {
       const where = typeof m.path === "string" && /^\/[\w\-./?=&%]*$/.test(m.path) ? m.path : "/";
       closed.delete("tallyline-app");
       return void openSlab("tallyline-app", { type: "tallyline-app", path: where }, "user");
+    }
+    // A panel's Copy button: written here because the renderer's clipboard API needs focus and a secure context.
+    if (m?.type === "copy-text" && sender && sender !== win && typeof m.text === "string" && m.text.length <= 1_000_000) {
+      return clipboard.writeText(m.text);
     }
     if (m?.type === "panel-close") {
       // Closed by its ✕: it stays closed (see `closed`).
@@ -672,7 +870,10 @@ app.whenReady().then(() => {
       clearInterval(drag?.timer);
       // A panel you've dragged keeps its place until it closes or you tidy up.
       const moved = Object.values(slabs).find((s) => s.win && s.win === drag?.target);
-      if (moved) moved.pinned = true;
+      if (moved) {
+        moved.pinned = true;
+        moved.lastUsed = Date.now();
+      }
       drag = null;
       return;
     }
@@ -685,12 +886,104 @@ app.whenReady().then(() => {
   /** When she last acted on another app; work panels stay put for a minute after. */
   let lastControlAt = 0;
   const CONTROL_QUIET_MS = 60_000;
+  /** The window she's working in while she controls the Mac (screen points), or null. */
+  let beamTarget = null;
+  /** An upload or download in progress, drawn from her box up to the top of the screen: "up", "down" or null. */
+  let skyDir = null;
+  /** Anubis is up: the transfer fades out behind him, so he stands in front of it. */
+  let guardUp = false;
+  /** Whether the "controlling your Mac" overlay is up: the app beam only shows then. */
+  let controlOn = false;
+  /** Panels she has just opened or moved, each flowing with ether for a moment: kind → when it fades. */
+  const flashes = new Map();
+  const FLASH_MS = 2600;
+  let skyFadeUntil = 0;
+  /** Her beam layer: a transparent, click-through window over the orb's display, above everything (beam.html). */
+  let beamWin = null;
+  let flashTimer;
+
+  /** A panel she just showed or moved gets a stream of ether from the orb for a moment. */
+  const flashPanel = (kind) => {
+    if (!slabs[kind]?.win || slabs[kind].win.isDestroyed()) return;
+    flashes.set(kind, Date.now() + FLASH_MS);
+    void sendBeam();
+    // Again once its layout animation has settled, so the stream lands where the panel ended up.
+    setTimeout(() => void sendBeam(), 350);
+  };
+
+  /**
+   * Draws every stream on the beam layer: from the orb's core (the talk button's centre) to the app she's working
+   * in, and to each panel she has just shown or moved, all in the layer's own coordinates. Hides the layer when
+   * there's nothing to draw.
+   */
+  const sendBeam = async () => {
+    if (win.isDestroyed()) return;
+    const now = Date.now();
+    for (const [kind, until] of flashes) {
+      const w = slabs[kind]?.win;
+      if (until <= now || !w || w.isDestroyed() || !w.isVisible()) flashes.delete(kind);
+    }
+    const targets = [];
+    if (controlOn && beamTarget) targets.push(beamTarget);
+    for (const kind of flashes.keys()) targets.push(slabs[kind].win.getBounds());
+    clearTimeout(flashTimer);
+    // The sky part of a transfer fades out on the layer itself, so keep it up a moment after one ends.
+    if (!skyDir && skyFadeUntil > now) flashTimer = setTimeout(() => void sendBeam(), skyFadeUntil - now);
+    // While a panel flows, keep re-aiming (it may still be gliding into place), and stop once the last has faded.
+    if (flashes.size) flashTimer = setTimeout(() => void sendBeam(), Math.max(50, Math.min(120, Math.min(...flashes.values()) - now + 20)));
+    if (skyDir) skyFadeUntil = now + 1500;
+    const skyShowing = skyDir || skyFadeUntil > now;
+    if ((!targets.length && !skyShowing) || !win.isVisible()) {
+      if (beamWin && !beamWin.isDestroyed()) {
+        beamWin.webContents.send("jarvis", { type: "beam", from: null, targets: [] });
+        beamWin.hide();
+      }
+      return;
+    }
+    const { bounds: area } = screen.getDisplayMatching(win.getBounds());
+    if (!beamWin || beamWin.isDestroyed()) {
+      beamWin = new BrowserWindow({
+        ...area, frame: false, transparent: true, hasShadow: false, focusable: false, resizable: false, movable: false,
+        // Without this macOS keeps the window clear of the menu bar and Dock: asked for (0, 0) it put it at (57, 34),
+        // so every stream landed that far off its window.
+        enableLargerThanScreen: true,
+        skipTaskbar: true, show: false, webPreferences: WEB_PREFERENCES,
+      });
+      beamWin.setIgnoreMouseEvents(true);
+      beamWin.setAlwaysOnTop(true, "screen-saver");
+      beamWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+      harden(beamWin);
+      beamWin.loadFile(path.join(__dirname, "beam.html"));
+      beamWin.webContents.on("did-finish-load", () => void sendBeam());
+      return;
+    }
+    // Her core (the talk button's centre), and the top of her drawing box, where the sky part of a transfer begins.
+    const core = await win.webContents
+      .executeJavaScript(`(() => { const r = document.getElementById("talk").getBoundingClientRect(); const c = document.getElementById("orb"); const o = c.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2, o.top + Number(c.dataset.frameTop || 0)]; })()`)
+      .catch(() => null);
+    if (!Array.isArray(core) || beamWin.isDestroyed() || win.isDestroyed()) return;
+    const orb = win.getBounds();
+    beamWin.setBounds(area);
+    if (!beamWin.isVisible()) beamWin.showInactive();
+    // Where the layer really is, in case macOS still nudged it: every point is drawn relative to that.
+    const at = beamWin.getBounds();
+    beamWin.webContents.send("jarvis", {
+      type: "beam",
+      from: { x: orb.x + core[0] - at.x, y: orb.y + core[1] - at.y },
+      targets: targets.map((t) => ({ x: t.x - at.x, y: t.y - at.y, width: t.width, height: t.height })),
+      // The transfer runs from just above her core (radius 34) to the top of the screen; behind Anubis while he's up.
+      sky: { dir: skyDir, x: orb.x + core[0] - at.x, top: orb.y + core[2] - at.y, coreTop: orb.y + core[1] - 32 - at.y, guard: guardUp },
+    });
+  };
   const controlIndicator = (on) => {
+    controlOn = on;
+    void sendBeam();
     if (!on) return void controlWin?.hide();
     const { bounds } = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
     if (!controlWin || controlWin.isDestroyed()) {
       controlWin = new BrowserWindow({
         ...bounds, frame: false, transparent: true, hasShadow: false, focusable: false, resizable: false, movable: false,
+        enableLargerThanScreen: true,
         skipTaskbar: true, show: false, webPreferences: { sandbox: true, contextIsolation: true },
       });
       controlWin.setIgnoreMouseEvents(true);
@@ -719,6 +1012,19 @@ app.whenReady().then(() => {
         if (m.on) lastControlAt = Date.now();
         controlIndicator(!!m.on);
       }
+      // Uploads and downloads also reach up to the top of the screen, on the beam layer (sky.js).
+      if (m.type === "guard") {
+        guardUp = m.state === "checking" || m.state === "blocked" || m.state === "voice";
+        if (skyDir) void sendBeam();
+      }
+      if (m.type === "transfer") {
+        skyDir = m.dir === "up" || m.dir === "down" ? m.dir : null;
+        void sendBeam();
+      }
+      if (m.type === "beam") {
+        beamTarget = m.target && Number.isFinite(m.target.x) && Number.isFinite(m.target.y) ? m.target : null;
+        void sendBeam();
+      }
       // Quitting folds her away first (she's gone either way within 1.6 s).
       else if (m.type === "quit") {
         foldingToQuit = true;
@@ -745,6 +1051,12 @@ app.whenReady().then(() => {
       else if (m.type === "transcript" && m.owner !== "user" && closed.has("transcript")) {
         slabs.transcript.last = m;
         sendPanels();
+      }
+      // The brain browser's list changed on disk: refresh it if it's open, where it sits; never open it for that.
+      else if (m.type === "brain" && m.refresh) {
+        const slab = slabs.brain;
+        if (slab.win && !slab.win.isDestroyed()) openSlab("brain", m, "auto", false);
+        else if (slab.last) slab.last = m;
       }
       // Detail, map and brain come from Astra's show tools (or "show me…"): explicit, so they open even if closed.
       else if (m.type === "detail" || m.type === "graph" || m.type === "brain" || m.type === "transcript") {

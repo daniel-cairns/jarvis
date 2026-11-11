@@ -2,8 +2,10 @@
  * The "second brain": a folder of plain markdown notes Astra can write, search and read back.
  * Plain files on purpose — you can open the same folder in any editor or knowledge-graph tool.
  */
+import { watch } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { readGraph } from "../ui/graph.js";
 
 export type NoteSummary = { path: string; title: string; modified: string };
 export type SearchHit = NoteSummary & { snippet: string; score: number };
@@ -49,11 +51,31 @@ function titleOf(content: string, fallback: string): string {
   return h1?.[1]?.trim() ?? fallback;
 }
 
+const MAP_BLOCK = /```astra-graph\s*\n([\s\S]*?)\n```/;
+
+/**
+ * A note's map rewritten in the one shape the map window reads, so every saved map opens. A map that can't be read
+ * at all stops the save, saying why, rather than leaving a "Show map" button that does nothing.
+ */
+function canonicalMap(body: string): string {
+  const block = body.match(MAP_BLOCK);
+  if (!block) return body;
+  let raw: unknown;
+  try {
+    raw = JSON.parse(block[1]!);
+  } catch {
+    throw new Error("Not saved: the note's astra-graph block isn't valid JSON.");
+  }
+  const graph = readGraph(raw);
+  return body.replace(MAP_BLOCK, () => `\`\`\`astra-graph\n${JSON.stringify(graph)}\n\`\`\``);
+}
+
 export async function saveNote(
   brainDir: string,
   note: { title: string; body: string; folder?: string; tags?: string[] },
   now: Date = new Date(),
 ): Promise<string> {
+  const body = canonicalMap(note.body);
   const folder = checkFolder(note.folder ?? "notes");
   const dir = path.join(brainDir, folder);
   await fs.mkdir(dir, { recursive: true });
@@ -69,7 +91,7 @@ export async function saveNote(
     `tags: [${tags.join(", ")}]`,
     "---",
     "",
-    note.body.trimEnd(),
+    body.trimEnd(),
     "",
   ].join("\n");
 
@@ -186,7 +208,14 @@ export async function readNote(
 
 export type BrainEntry = NoteSummary & { folder: string; snippet: string; hasMap: boolean };
 
-const MAP_BLOCK = /```astra-graph\s*\n([\s\S]*?)\n```/;
+
+/**
+ * A note's text without its front matter or the "# Title" line most notes open with: the brain browser already shows
+ * the title above the note, so leaving it in shows it twice.
+ */
+export function noteBody(text: string): string {
+  return text.replace(/^---[\s\S]*?---\n/, "").replace(/^\s*# [^\n]*\n+/, "");
+}
 
 /** Every note for the brain browser: newest first, with its folder, a plain-text snippet and whether it has a map. */
 export async function brainIndex(brainDir: string): Promise<BrainEntry[]> {
@@ -199,8 +228,7 @@ export async function brainIndex(brainDir: string): Promise<BrainEntry[]> {
       modified,
       folder: p.includes("/") ? p.split("/")[0]! : "notes",
       hasMap: MAP_BLOCK.test(content),
-      snippet: content
-        .replace(/^---[\s\S]*?---\n/, "")
+      snippet: noteBody(content)
         .replace(/```[\s\S]*?```/g, " ")
         .replace(/[#*_`>|-]+/g, " ")
         .replace(/\s+/g, " ")
@@ -219,4 +247,28 @@ export async function noteMap(brainDir: string, relPath: string): Promise<unknow
   } catch {
     throw new Error("The note's map block isn't valid JSON");
   }
+}
+
+/**
+ * Calls `onChange` once a burst of note changes in the brain folder settles (a teardown is often written in several
+ * goes), whoever made them: her own saves, a session's, or Dan's editor. Returns a function that stops watching.
+ */
+export function watchBrain(brainDir: string, onChange: () => void, settleMs = 800): () => void {
+  let timer: NodeJS.Timeout | undefined;
+  let watcher: ReturnType<typeof watch>;
+  try {
+    watcher = watch(brainDir, { recursive: true }, (_event, file) => {
+      if (file && !String(file).endsWith(".md")) return;
+      clearTimeout(timer);
+      timer = setTimeout(onChange, settleMs);
+    });
+  } catch (err) {
+    console.log(`  (not watching the brain for new notes: ${(err as Error).message})`);
+    return () => {};
+  }
+  watcher.on("error", (err) => console.log(`  (stopped watching the brain: ${err.message})`));
+  return () => {
+    clearTimeout(timer);
+    watcher.close();
+  };
 }

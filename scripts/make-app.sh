@@ -1,6 +1,7 @@
 #!/bin/sh
 # Builds Astra.app and installs it in /Applications (npm run app). Opening it starts Astra like a normal app: no
-# Terminal window, just her orb and menu-bar icon (scripts/astra-launch.sh, logs in ~/.jarvis/logs).
+# Terminal window, her orb and menu-bar icon, and her icon in the Dock (with its running dot) and in Cmd-Tab
+# (scripts/astra-launch.sh, logs in ~/.jarvis/logs).
 #
 # The app is a small native launcher (native/astra-launcher.swift) that stays running as the parent of everything
 # Astra starts, so macOS grants Microphone, Accessibility and Screen Recording to Astra.app itself. It's signed with a
@@ -66,8 +67,8 @@ for size in 16 32 128 256 512; do
 done
 iconutil -c icns "$iconset" -o "$app/Contents/Resources/Astra.icns"
 
-# 3. Info.plist. LSUIElement keeps her out of the Dock (she lives in the menu bar). The usage descriptions are what
-# macOS shows when it asks; without the microphone one it refuses without asking, and she hears nothing.
+# 3. Info.plist. No LSUIElement: she's a regular app, in the Dock and Cmd-Tab. The usage descriptions are what macOS
+# shows when it asks; without the microphone one it refuses without asking, and she hears nothing.
 plist="$app/Contents/Info.plist"
 cat > "$plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -85,7 +86,6 @@ cat > "$plist" <<EOF
   <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
   <key>LSApplicationCategoryType</key><string>public.app-category.productivity</string>
   <key>LSMinimumSystemVersion</key><string>13.0</string>
-  <key>LSUIElement</key><true/>
   <key>NSHighResolutionCapable</key><true/>
   <key>NSMicrophoneUsageDescription</key><string>Astra listens for her name and for what you ask her.</string>
   <key>NSAppleEventsUsageDescription</key><string>Astra operates apps for you when you ask her to.</string>

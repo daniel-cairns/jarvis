@@ -8,7 +8,7 @@ import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import type * as ort from "onnxruntime-node";
-import { encodeWav16 } from "./audio.js";
+import { decodeWav16, encodeWav16 } from "./audio.js";
 import { loadVadModel, SileroVad, VAD_RATE, VadCapture } from "./vad.js";
 
 const execFileAsync = promisify(execFile);
@@ -331,7 +331,11 @@ export class Listener {
     }, 250);
   }
 
-  async stopAndTranscribe(): Promise<string> {
+  /**
+   * Stops recording and transcribes it. `onAudio` gets the recording (16 kHz mono) before transcription starts, so a
+   * voice check can run alongside it.
+   */
+  async stopAndTranscribe(opts: { onAudio?: (samples: Float32Array) => void } = {}): Promise<string> {
     const rec = this.recorder;
     const wav = this.wavPath;
     if (!rec || !wav) throw new Error("Not recording");
@@ -343,15 +347,18 @@ export class Listener {
     // SIGINT lets sox finish writing the WAV header; SIGKILL is only the last resort.
     await stopGracefully(rec);
     // On the speech-detector path the audio is in memory: write what it kept (lead-in plus speech) as the WAV.
+    let samples: Float32Array | null = null;
     if (capture) {
       await capture.settle();
       const { pcm } = capture.result();
-      await fs.writeFile(wav, encodeWav16({ samples: Float32Array.from(pcm, (s) => s / 32_768), rate: VAD_RATE }));
+      samples = Float32Array.from(pcm, (s) => s / 32_768);
+      await fs.writeFile(wav, encodeWav16({ samples, rate: VAD_RATE }));
     }
 
     try {
       const size = await fs.stat(wav).then((s) => s.size, () => 0);
       if (size < this.minBytes) return "";
+      if (opts.onAudio) opts.onAudio(samples ?? decodeWav16(await fs.readFile(wav)).samples);
       const { stdout } = await execFileAsync(
         this.cfg.whisperBin,
         ["-m", this.cfg.whisperModel, "-f", wav, "-l", "en", "-nt", "-np", ...(this.cfg.hint ? ["--prompt", this.cfg.hint] : [])],

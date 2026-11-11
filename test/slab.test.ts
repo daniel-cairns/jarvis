@@ -3,6 +3,8 @@ import vm from "node:vm";
 import { describe, expect, it } from "vitest";
 
 const SOURCE = readFileSync(new URL("../orb/slab.js", import.meta.url), "utf8");
+// Folding lives in fold.js (every panel's fold button, plus the status line where a panel has one).
+const FOLD = readFileSync(new URL("../orb/fold.js", import.meta.url), "utf8");
 
 /** A minimal element: classes, attributes, text and click listeners. */
 function element(classes: string[] = [], text = "") {
@@ -24,22 +26,25 @@ function element(classes: string[] = [], text = "") {
   };
 }
 
-/** Runs slab.js against a fake page whose fold control is `collapse`. */
+/** Runs slab.js and fold.js against a fake page whose status line (fold control) is `collapse`. */
 function load(collapse: ReturnType<typeof element>) {
-  const slab = element(["slab"]);
   const shelf = element();
+  const slab = Object.assign(element(["slab"]), { querySelector: () => shelf });
   const close = element();
+  const fold = Object.assign(element(), { dataset: { panel: "transcript" } });
   const sent: unknown[] = [];
-  let onMessage: (m: { type: string }) => void = () => {};
+  const handlers: ((m: { type: string }) => void)[] = [];
+  const onMessage = (m: { type: string }) => handlers.forEach((fn) => fn(m));
   const window = {
-    jarvis: { send: (m: unknown) => sent.push(m), onMessage: (fn: typeof onMessage) => (onMessage = fn) },
+    jarvis: { send: (m: unknown) => sent.push(m), onMessage: (fn: (m: { type: string }) => void) => handlers.push(fn) },
     addEventListener() {},
   } as Record<string, unknown>;
   const document = {
-    getElementById: (id: string) => ({ collapse, close })[id],
+    getElementById: (id: string) => ({ collapse, close, fold })[id],
     querySelector: (sel: string) => ({ ".slab": slab, ".shelf": shelf })[sel],
   };
   vm.runInNewContext(SOURCE, { window, document });
+  vm.runInNewContext(FOLD, { window, document });
   return { slab, sent, message: (m: { type: string }) => onMessage(m) };
 }
 

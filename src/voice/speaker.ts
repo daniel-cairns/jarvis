@@ -31,6 +31,8 @@ export class Speaker {
   private generation = 0;
   private tail: Promise<void> = Promise.resolve();
   private pending = 0;
+  /** The signal of the text playing now, so aborting it cuts that line and no other. */
+  private playingSignal: AbortSignal | undefined;
   private speakingNow = false;
   /** 0..1, applied to each sentence as it's played; the next sentence picks up a change. */
   volume = 1;
@@ -58,15 +60,39 @@ export class Speaker {
 
   /**
    * Queues text to be spoken after anything already queued, so lines never overlap or cut each other off.
-   * Resolves when this text has been spoken (or dropped by stop()).
+   * Resolves when this text has been spoken (or dropped by stop()). When `signal` aborts, this text alone is dropped,
+   * or cut off if it's playing: a card's spoken question once the card has been answered.
    */
-  speak(markdown: string): Promise<void> {
-    if (!this.enabled) return Promise.resolve();
-    const chunks = chunkForSpeech(toSpeakable(markdown));
-    if (!chunks.length) return Promise.resolve();
+  speak(markdown: string, opts: { onStart?: () => void; signal?: AbortSignal } = {}): Promise<void> {
+    const chunks = this.enabled ? chunkForSpeech(toSpeakable(markdown)) : [];
+    if (!chunks.length) {
+      // Nothing to say (or speech is off): whatever was waiting on these words still happens, in its place.
+      if (opts.onStart) this.cue(opts.onStart);
+      return Promise.resolve();
+    }
     const gen = this.generation;
+    const { signal } = opts;
+    const cut = () => {
+      if (this.playingSignal !== signal) return;
+      this.player?.kill("SIGTERM");
+      this.player = null;
+    };
+    signal?.addEventListener("abort", cut, { once: true });
     this.pending++;
-    const run = this.tail.then(() => this.speakChunks(chunks, gen)).finally(() => {
+    let started = false;
+    const start = () => {
+      if (started) return;
+      started = true;
+      try {
+        opts.onStart?.();
+      } catch {
+        // A visual that fails mustn't stop her talking.
+      }
+    };
+    const run = this.tail.then(() => this.speakChunks(chunks, gen, start, signal)).finally(() => {
+      signal?.removeEventListener("abort", cut);
+      // Stopped before it began: the visual tied to it still appears.
+      start();
       this.pending--;
       if (this.pending === 0 && this.speakingNow) {
         this.speakingNow = false;
@@ -75,6 +101,23 @@ export class Speaker {
     });
     this.tail = run.catch(() => {});
     return run;
+  }
+
+  /**
+   * Runs `fn` when everything queued before it has been spoken: a panel opening in its place in what she's saying,
+   * rather than whenever its tool happened to run. Immediate when nothing is queued or speech is off; a stop()
+   * doesn't drop it.
+   */
+  cue(fn: () => void): void {
+    const run = () => {
+      try {
+        fn();
+      } catch {
+        // A visual that fails mustn't stop the queue.
+      }
+    };
+    if (!this.enabled || this.pending === 0) return run();
+    this.tail = this.tail.then(run, run);
   }
 
   /** Resolves once everything queued has been spoken. */
@@ -97,19 +140,29 @@ export class Speaker {
     }
   }
 
-  private async speakChunks(chunks: string[], gen: number): Promise<void> {
-    if (gen !== this.generation) return;
+  private async speakChunks(chunks: string[], gen: number, onStart?: () => void, signal?: AbortSignal): Promise<void> {
+    const dropped = () => gen !== this.generation || signal?.aborted === true;
+    if (dropped()) return;
     let next = this.render(chunks[0]!);
     for (let i = 0; i < chunks.length; i++) {
       const pcm = await next;
-      if (gen !== this.generation) return;
+      if (dropped()) return;
       if (i + 1 < chunks.length) next = this.render(chunks[i + 1]!);
       if (!this.speakingNow) {
         this.speakingNow = true;
         this.events.onSpeaking?.(true);
       }
-      if (pcm) await this.playOne(chunks[i]!, pcm, gen);
-      if (gen !== this.generation) return;
+      // The moment the first sentence starts playing (rendered, so nothing waits on the voice model after this).
+      if (i === 0) onStart?.();
+      if (pcm) {
+        this.playingSignal = signal;
+        try {
+          await this.playOne(chunks[i]!, pcm, gen);
+        } finally {
+          this.playingSignal = undefined;
+        }
+      }
+      if (dropped()) return;
     }
   }
 
@@ -141,7 +194,7 @@ export class Speaker {
       const samples = this.volume === 1 ? pcm.samples : pcm.samples.map((s) => s * this.volume);
       await fs.writeFile(wav, encodeWav16({ samples, rate: pcm.rate }));
       // Checked again after the file write: a stop() during it must not let this line start playing anyway.
-      if (gen !== this.generation) return;
+      if (gen !== this.generation || this.playingSignal?.aborted) return;
       await new Promise<void>((resolve) => {
         const child = this.play(wav);
         this.player = child;

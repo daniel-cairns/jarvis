@@ -1,0 +1,408 @@
+/* Astra palette, taken from orb/orb.css, orb/frame.css and orb/panel.css. */
+:root {
+  --gold: #ecbc52;
+  --gold-worn: #8f7434;
+  --reactor: #46e0d6;
+  --lapis: #2a4aa8;
+  --ink: #eef3ef;          /* label text: near-white */
+  --muted: #b9c7c1;        /* secondary text */
+  --accent-ink: #1a1204;   /* text on solid gold */
+  --amber: #ff9f1c;
+  --gold-dim: #a88a4a;
+  --page: #0a1020;
+  --panel: rgba(10, 18, 44, 0.92);
+  --edge: rgba(70, 224, 214, 0.4);
+  --tip-bg: #060a18;      /* tooltips and toasts: rgba(6, 10, 24, 0.96) made opaque */
+  --lapis-top: #1d3a8a;   /* slate band, top and bottom gradient stops */
+  --lapis-deep: #0d1c4a;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+
+html, body { margin: 0; }
+body {
+  min-height: 100vh;
+  background: radial-gradient(ellipse at 30% 20%, #142251 0, var(--page) 60%);
+  color: var(--ink);
+  font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
+}
+
+.svg-defs { position: absolute; width: 0; height: 0; overflow: hidden; }
+
+:focus-visible { outline: 3px solid var(--reactor); outline-offset: 3px; }
+
+.app { max-width: 1240px; margin: 0 auto; padding: 24px; }
+.app-header h1 { margin: 0 0 4px; font-size: 22px; font-weight: 600; }
+.intro, .hint { color: var(--muted); }
+.intro { margin: 0 0 16px; }
+.hint { font-size: 13px; }
+
+/* ── Controls ─────────────────────────────────────────────── */
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: stretch;
+  margin-bottom: 20px;
+}
+.controls fieldset {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 8px 14px 10px;
+  border: 1px solid rgba(236, 188, 82, 0.4);
+  border-radius: 8px;
+}
+.controls legend { padding: 0 4px; font-weight: 600; }
+.controls label { display: flex; gap: 8px; align-items: center; cursor: pointer; }
+.controls input { accent-color: var(--gold); width: 16px; height: 16px; margin: 0; }
+.controls input:disabled + * , .controls input:disabled { cursor: not-allowed; }
+
+.god-toggle, .add-event {
+  align-self: center;
+  min-height: 44px;
+  padding: 8px 18px;
+  border-radius: 999px;
+  font: inherit;
+  cursor: pointer;
+}
+.god-toggle {
+  border: 2px solid var(--gold);
+  background: transparent;
+  color: var(--ink);
+}
+.god-toggle[aria-pressed="true"] { background: var(--gold); color: var(--accent-ink); }
+.add-event {
+  border: 1px solid var(--edge);
+  background: rgba(70, 224, 214, 0.08);
+  color: var(--ink);
+}
+.add-event:hover { background: rgba(70, 224, 214, 0.16); }
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* ── Stage: the mock orb sits on the left or right of the screen. ── */
+.stage { display: flex; min-height: 560px; padding-top: 150px; }
+.stage.orb-left { justify-content: flex-start; }
+.stage.orb-right { justify-content: flex-end; }
+
+/* ── Mock orb, her wings and the God mode indicator ───────── */
+.orb-stage { position: relative; z-index: 2; display: flex; flex-direction: column; align-items: center; }
+.orb-field {
+  --ring-r: 128px;
+  --sat-r: 198px;
+  position: relative;
+  width: 440px;
+  height: 440px;
+}
+.mock-orb {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  z-index: 1;
+  width: 170px;
+  height: 170px;
+  margin: -85px 0 0 -85px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: radial-gradient(circle at 45% 40%, #e8fffd 0, var(--reactor) 22%, #1b6f7a 55%, #0a1838 82%);
+  box-shadow:
+    0 0 44px rgba(70, 224, 214, 0.45),
+    inset 0 0 0 2px rgba(236, 188, 82, 0.85),
+    0 0 0 6px rgba(236, 188, 82, 0.14);
+  cursor: pointer;
+  animation: breathe 5s ease-in-out infinite;
+}
+@keyframes breathe { 50% { box-shadow: 0 0 60px rgba(70, 224, 214, 0.6), inset 0 0 0 2px rgba(236, 188, 82, 0.85), 0 0 0 6px rgba(236, 188, 82, 0.2); } }
+
+.orb-wings { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+
+.glyph-ring { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none; }
+.ring-spin {
+  position: relative;
+  width: calc(var(--ring-r) * 2 + 26px);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  animation: spin 90s linear infinite;
+}
+.ring-spin::before, .ring-spin::after {
+  content: "";
+  position: absolute;
+  border-radius: 50%;
+  border: 1px solid rgba(236, 188, 82, 0.75);
+}
+.ring-spin::before { inset: 0; }
+.ring-spin::after { inset: 26px; }
+.ring-glyph {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 16px;
+  height: 16px;
+  margin: -8px 0 0 -8px;
+  filter: drop-shadow(-0.6px -0.6px 0 #000) drop-shadow(0.6px 0.6px 0 rgba(255, 255, 255, 0.25));
+}
+.ring-glyph .glyph { display: block; }
+.ring-glyph .glyph path { stroke-width: 3.4; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Eye (left wing, God mode only) and sun (right wing, always): carved into the feathers. */
+.wing-btn {
+  position: absolute;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  margin: -18px 0 0 -18px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid rgba(236, 188, 82, 0.9);
+  background: radial-gradient(circle, #13245a 0, #0a1638 100%);
+  box-shadow: inset 1px 1px 3px rgba(0, 0, 0, 0.8), 0 0 0 2px rgba(42, 74, 168, 0.8);
+  cursor: pointer;
+}
+.wing-btn:hover { box-shadow: inset 1px 1px 3px rgba(0, 0, 0, 0.8), 0 0 0 2px rgba(42, 74, 168, 0.8), 0 0 12px rgba(236, 188, 82, 0.6); }
+.mock-orb:focus-visible, .wing-btn:focus-visible, .sat:focus-visible { outline: 3px solid #fff; outline-offset: 2px; box-shadow: 0 0 0 7px var(--page); }
+
+.satellites { list-style: none; margin: 0; padding: 0; position: absolute; inset: 0; z-index: 3; pointer-events: none; }
+.orbit {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 0;
+  height: 0;
+  transform: rotate(var(--start));
+  animation: orbit 60s linear infinite;
+}
+.arm { position: absolute; transform: translateY(calc(-1 * var(--sat-r))); }
+.upright {
+  position: absolute;
+  transform: rotate(calc(-1 * var(--start)));
+  animation: counter 60s linear infinite;
+}
+@keyframes orbit { from { transform: rotate(var(--start)); } to { transform: rotate(calc(var(--start) + 360deg)); } }
+@keyframes counter { from { transform: rotate(calc(-1 * var(--start))); } to { transform: rotate(calc(-1 * var(--start) - 360deg)); } }
+/* Hold still while Dan is pointing at or tabbing through them. */
+.satellites:hover .orbit, .satellites:hover .upright,
+.satellites:focus-within .orbit, .satellites:focus-within .upright { animation-play-state: paused; }
+
+.sat {
+  position: absolute;
+  width: 32px;
+  height: 32px;
+  margin: -16px 0 0 -16px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  pointer-events: auto;
+}
+.dot, .key-dot { display: block; width: 12px; height: 12px; border-radius: 50%; }
+.sat.working .dot, .key-dot.working { background: #ffd978; box-shadow: 0 0 8px 2px rgba(236, 188, 82, 0.9); }
+.sat.working .dot { animation: pulse 1.6s ease-in-out infinite; }
+.sat.idle .dot, .key-dot.idle { background: var(--gold-dim); }
+.sat.waiting .dot, .key-dot.waiting { background: var(--amber); box-shadow: 0 0 0 3px rgba(255, 159, 28, 0.4), 0 0 10px rgba(255, 159, 28, 0.8); }
+@keyframes pulse { 50% { transform: scale(1.35); box-shadow: 0 0 14px 5px rgba(255, 217, 120, 0.95); } }
+
+.tip {
+  position: absolute;
+  top: 20px;
+  left: 0;
+  transform: translateX(-50%);
+  padding: 3px 8px;
+  border: 1px solid rgba(236, 188, 82, 0.6);
+  border-radius: 6px;
+  background: var(--tip-bg);
+  color: var(--ink);
+  font-size: 13px;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s;
+  z-index: 2;
+}
+.upright:hover .tip, .sat:focus-visible + .tip { opacity: 1; }
+
+.orb-caption { margin: 0; text-align: center; max-width: 360px; }
+.orb-name { display: block; font-weight: 600; letter-spacing: 0.2em; text-transform: uppercase; }
+.orb-name::before, .orb-name::after { content: "◈"; margin: 0 0.6em; color: var(--gold); }
+.sat-key { display: flex; flex-wrap: wrap; gap: 6px 16px; justify-content: center; margin: 10px 0 0; padding: 0; list-style: none; color: var(--muted); font-size: 13px; }
+.sat-key li { display: flex; align-items: center; gap: 6px; }
+.sat-key .key-dot { width: 10px; height: 10px; }
+
+/* ── The slate: a small wing of cartouches unfolding from the orb ── */
+.slate-wing {
+  position: absolute;
+  z-index: 4;
+  top: calc(50% + 12px);
+}
+/* The root sits just outside the satellites' orbit, low on her side, so it reads as a third wing. */
+.slate-wing.to-left { right: calc(100% - 56px); transform-origin: right 62px; }
+.slate-wing.to-right { left: calc(100% - 56px); transform-origin: left 62px; }
+
+.wing-art { position: absolute; top: 0; overflow: visible; filter: drop-shadow(0 6px 10px rgba(0, 0, 0, 0.55)); }
+.to-right .wing-art { left: 0; }
+.to-left .wing-art { right: -16px; transform: scaleX(-1); }
+.wing-band {
+  fill: url(#slate-lapis);
+  stroke: var(--gold);
+  stroke-width: 1.6;
+  stroke-linejoin: round;
+}
+
+.slate-cells { position: absolute; inset: 0; margin: 0; padding: 0; list-style: none; }
+.slate-cell { position: absolute; width: 0; height: 0; transition: left 0.4s ease, top 0.4s ease; }
+
+.slate-wing .cartouche {
+  position: absolute;
+  left: -18px;
+  top: -23px;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 46px;
+  padding: 0;
+  border: 1.5px solid rgba(236, 188, 82, 0.95);
+  border-radius: 18px / 23px;
+  background: rgba(3, 8, 24, 0.45);
+  box-shadow: inset 2px 2px 3px rgba(0, 0, 0, 0.8), inset -1px -1px 2px rgba(214, 232, 222, 0.18);
+  cursor: pointer;
+}
+/* The tie-bar at the foot of a cartouche. */
+.slate-wing .cartouche::after {
+  content: "";
+  position: absolute;
+  bottom: -5px;
+  left: 28%;
+  right: 28%;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--gold);
+  box-shadow: 1px 1px 0 rgba(0, 0, 0, 0.7);
+}
+.slate-wing .cartouche:hover { background: rgba(236, 188, 82, 0.16); }
+.slate-wing .cartouche:focus-visible { outline: 3px solid var(--reactor); outline-offset: 2px; }
+.slate-cell.fresh .cartouche { animation: settle 1.4s ease-out; }
+@keyframes settle {
+  0% { box-shadow: 0 0 0 0 rgba(236, 188, 82, 0.7), inset 2px 2px 3px rgba(0, 0, 0, 0.8); }
+  100% { box-shadow: 0 0 0 12px rgba(236, 188, 82, 0), inset 2px 2px 3px rgba(0, 0, 0, 0.8); }
+}
+
+/* Help text: the cartouche's visible label, on hover and on keyboard focus. */
+.slate-tip {
+  position: absolute;
+  bottom: 34px;
+  left: 0;
+  z-index: 5;
+  width: 260px;
+  padding: 8px 12px 10px;
+  border: 1px solid rgba(236, 188, 82, 0.75);
+  border-radius: 8px;
+  background: var(--tip-bg);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.55);
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.4;
+  transform: translateX(-50%);
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.15s, visibility 0s linear 0.15s;
+}
+.slate-cell:hover .slate-tip, .slate-cell:focus-within .slate-tip {
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 0.15s;
+}
+.slate-tip p { margin: 0; }
+.tip-head { font-weight: 600; }
+.tip-meaning { color: var(--gold); text-transform: uppercase; letter-spacing: 0.06em; font-size: 12px; }
+.tip-line { color: var(--muted); margin-bottom: 6px !important; }
+.tip-detail { display: grid; gap: 2px; margin: 0; }
+.tip-detail div { display: flex; gap: 6px; }
+.tip-detail dt { color: var(--muted); white-space: nowrap; }
+.tip-detail dt::after { content: ":"; }
+.tip-detail dd { margin: 0; }
+.tip-detail .needs { padding-left: 6px; border-left: 3px solid var(--amber); }
+
+/* Unfold from the orb's side, fold back into it. */
+.wing-enter-active, .wing-leave-active {
+  transition: transform 0.5s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.35s ease, clip-path 0.5s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.wing-leave-active { transition-duration: 0.35s; }
+.to-left.wing-enter-from, .to-left.wing-leave-to { transform: rotate(-14deg) scaleX(0.12); opacity: 0; clip-path: inset(-60px 0 -20px 90%); }
+.to-right.wing-enter-from, .to-right.wing-leave-to { transform: rotate(14deg) scaleX(0.12); opacity: 0; clip-path: inset(-60px 90% -20px 0); }
+.wing-enter-to, .wing-leave-from { clip-path: inset(-200px -40px -40px -40px); }
+
+/* ── Glyphs: carved and gilded ───────────────────────────── */
+.glyph { overflow: visible; }
+.glyph path { fill: none; stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; }
+.glyph .leaf path { stroke: url(#gold-leaf); }
+.glyph .cut-shadow path { stroke: #030504; stroke-width: 3.2; opacity: 0.9; }
+.glyph .cut-light path { stroke: rgba(214, 232, 222, 0.3); stroke-width: 3; }
+
+/* Chiselled in: each stroke cut in turn, then a glint across the leaf. */
+.glyph.chisel path {
+  stroke-dasharray: 1 1;
+  stroke-dashoffset: 1;
+  animation: carve 0.42s ease-out forwards;
+  animation-delay: calc(var(--i) * 0.32s);
+}
+.glyph.chisel .leaf { animation: glint 0.9s ease-out var(--glint-delay) both; }
+@keyframes carve { to { stroke-dashoffset: 0; } }
+@keyframes glint {
+  0%, 100% { filter: none; }
+  35% { filter: brightness(1.8) drop-shadow(0 0 4px #fff3c4); }
+}
+
+.carve-enter-active { transition: opacity 0.5s ease; }
+.carve-enter-from { opacity: 0; }
+.carve-leave-active { transition: opacity 0.3s ease; }
+.carve-leave-to { opacity: 0; }
+
+/* ── Toast ───────────────────────────────────────────────── */
+.toast-region { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 10; }
+.toast {
+  margin: 0;
+  padding: 10px 18px;
+  border: 1px solid rgba(236, 188, 82, 0.7);
+  border-radius: 999px;
+  background: var(--tip-bg);
+  color: var(--ink);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+
+.fade-enter-active, .fade-leave-active { transition: opacity 0.6s ease; }
+.fade-enter-from, .fade-leave-to { opacity: 0; }
+
+/* ── Reduced motion: no turning, orbiting, carving or unfolding, only fades. ── */
+.reduce-motion .ring-spin,
+.reduce-motion .orbit,
+.reduce-motion .upright,
+.reduce-motion .mock-orb,
+.reduce-motion .sat .dot,
+.reduce-motion .slate-cell.fresh .cartouche,
+.reduce-motion .glyph.chisel .leaf { animation: none; }
+.reduce-motion .glyph.chisel path { animation: none; stroke-dashoffset: 0; }
+.reduce-motion .slate-cell { transition: none; }
+/* The system setting also applies before the app has mounted. */
+@media (prefers-reduced-motion: reduce) {
+  .ring-spin, .orbit, .upright, .mock-orb, .sat .dot, .slate-cell.fresh .cartouche, .glyph.chisel .leaf { animation: none; }
+  .glyph.chisel path { animation: none; stroke-dashoffset: 0; }
+  .slate-cell { transition: none; }
+  .wing-enter-active, .wing-leave-active { transition: opacity 0.35s ease; }
+  .wing-enter-from, .wing-leave-to { transform: none !important; clip-path: none !important; }
+}

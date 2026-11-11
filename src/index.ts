@@ -5,36 +5,45 @@ import readline from "node:readline";
 import { PassThrough } from "node:stream";
 import { setTimeout as sleep } from "node:timers/promises";
 import { activityGlyph, describeActivity, transferKind, type Transfer } from "./activity.js";
-import { Jarvis, type Approval } from "./agent.js";
+import { Jarvis, timingLine, type Approval } from "./agent.js";
 import { loadConfig } from "./config.js";
 import { parseAnswer, type Answer } from "./permissions.js";
 import { renderDetail } from "./ui/detail.js";
-import { checkGraph, graphAsText, graphShape } from "./ui/graph.js";
-import { brainIndex, noteMap, readNote, saveNote } from "./tools/brain.js";
+import { graphAsText, readGraph } from "./ui/graph.js";
+import { brainIndex, noteBody, noteMap, readNote, saveNote, watchBrain } from "./tools/brain.js";
 import { openApp, realRunner } from "./tools/mac.js";
 import { ComputerControl, nativeHelper } from "./control/computer.js";
 import { CoffeeMode } from "./power/coffee.js";
+import { ECHO_TAIL_MS, isEcho, recentSpeech } from "./voice/echo.js";
 import { Tallyline } from "./tools/tallyline.js";
 import { RESTART_CHECK_MS, RESTART_REPORT_MS, restartBlocker, stillBlockedMessage, waitingMessage, type RestartState } from "./ui/restart.js";
 import { buildSessionsView } from "./ui/sessionsPanel.js";
+import { godSlate } from "./ui/godSlate.js";
 import type { SessionAction } from "./ui/orb.js";
 import type { RunPhase } from "./ui/orb.js";
 import { fileDiff, gitRoot, repoState, type RepoState } from "./tools/git.js";
 import { WorkLog, type ToolEvent } from "./ui/worklog.js";
 import { SessionRunner, type Job } from "./tools/runner.js";
 import type { SessionTools, WindowTools } from "./tools/server.js";
-import { appLinks, findSession, listSessions, liveStatus, resolveProject, type SessionSummary } from "./tools/sessions.js";
-import { newlyWaiting, sitrep } from "./tools/sitrep.js";
-import { pickLastSession, saveLastSession } from "./tools/lastSession.js";
-import { z } from "zod";
+import { appLinks, findSession, listSessions, liveStatus, resolveProject, sendRefusal, type SessionSummary } from "./tools/sessions.js";
+import { FinishWatcher, sitrep } from "./tools/sitrep.js";
+import { markRestart, pickLastSession, saveLastSession, takeRestartMark } from "./tools/lastSession.js";
 import { stopServing } from "./tools/serve.js";
-import { isStopCommand, localCommand, type UiAction, type UiCommand } from "./ui/control.js";
+import { isStopCommand, localCommand, redirectRequest, type UiAction, type UiCommand } from "./ui/control.js";
 import { WindowHistory, type WindowKind } from "./ui/windows.js";
 import { clampVolume, loadSettings, saveSettings } from "./settings.js";
 import { askDialog } from "./ui/dialog.js";
 import { Orb, type ToOrb } from "./ui/orb.js";
 import { Listener } from "./voice/listener.js";
+import { answeredNote, Briefing, BRIEF_REQUEST, runFinishedNote } from "./briefing.js";
+import { Loops, loopsContext, plateHeadline, plateMarkdown } from "./loops.js";
+import { dropRepeats, headline, MoreQueue } from "./voice/brevity.js";
 import { Speaker } from "./voice/speaker.js";
+import { helpText } from "./abilities.js";
+import { heldDuringDemo, runDemo } from "./demo.js";
+import { frontReport, shownReport, type PanelVisibility } from "./ui/visibility.js";
+import { isResearch, Scribe } from "./scribe.js";
+import { ENROL_SENTENCES, enrolPanel, VoiceCheck, WEAK_READING, wavlmEmbedder, type VoiceVerdict } from "./voice/voiceprint.js";
 import { KokoroTts, SayTts } from "./voice/tts.js";
 import {
   parseSpokenChoice,
@@ -47,7 +56,7 @@ import {
 import { clock, splitStop, transcriptMarkdown, wordCount, type TranscriptLine } from "./voice/transcript.js";
 import { matchWake, matchWakeAnywhere, speechHint, stripOwnSpeech } from "./voice/wake.js";
 
-const HELP = `Say "Astra" to wake her. Commands: /new (fresh conversation), /continue (pick up the last one), /brain, /stack (tidy her windows), /sitrep, /god on|off, /restart, /type (type only: mic off, silent), /voice, /transcript [title] (record until "stop recording"), /mute, /unmute, /wake on|off, /help, /quit. Ctrl-C or Esc on the orb stops her.`;
+const HELP = helpText();
 // Prefixed to each request while god mode is on.
 const GOD_MODE =
   "(God mode is on: you command the user's Claude Code sessions. Hand project work to them rather than doing it yourself: " +
@@ -138,14 +147,27 @@ async function main(): Promise<void> {
     if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
   }
   const cfg = loadConfig();
+  /** " · $0.123" on a log line when an API key pays per request; nothing on a subscription, where it's notional. */
+  const costNote = (usd: number) => (cfg.billing === "api" ? ` · $${usd.toFixed(3)}` : "");
 
   let orb: Orb | null = null;
   let ownSpeech = "";
   let lastSpokeAt = 0;
+  /** When her voice last stopped coming out of the speakers (the echo tail is measured from here). */
+  let lastSpeechEnd = 0;
+  /** Waits out the echo tail if she has only just stopped talking, so the mic doesn't catch the end of her. */
+  const echoTail = async () => {
+    const quietFor = Date.now() - lastSpeechEnd;
+    if (quietFor < ECHO_TAIL_MS) await sleep(ECHO_TAIL_MS - quietFor);
+  };
+  /** Whether something the mic heard is her own recent speech coming back (see voice/echo.ts). */
+  const herEcho = (heard: string) => isEcho(heard, recentSpeech(spoken));
   // Her recent sentences with when she said them, to cut her own voice out of what the mic heard.
   const spoken: { text: string; at: number }[] = [];
   let listening = false;
   let speaking = false;
+  /** When her voice first came out during the current request (performance.now), for its timing line. */
+  let firstSoundAt: number | null = null;
   let busy = false;
   const syncOrb = () =>
     orb?.send({ type: "state", state: listening ? "listening" : speaking ? "speaking" : busy ? "thinking" : "idle" });
@@ -155,6 +177,7 @@ async function main(): Promise<void> {
   const primaryTts = cfg.tts === "kokoro" ? new KokoroTts(cfg.voice, cfg.ttsCacheDir) : sayTts;
   const speaker = new Speaker(primaryTts, primaryTts === sayTts ? null : sayTts, speechEnabled, {
     onUtterance: (u) => {
+      firstSoundAt ??= performance.now();
       ownSpeech = u.text;
       lastSpokeAt = Date.now();
       spoken.push({ text: u.text, at: lastSpokeAt });
@@ -163,6 +186,7 @@ async function main(): Promise<void> {
     },
     onSpeaking: (on) => {
       speaking = on;
+      if (!on) lastSpeechEnd = Date.now();
       syncOrb();
     },
     onFallback: (from, to, err) => console.log(`  (The ${from} voice isn't available: ${err.message}. Using ${to}.)`),
@@ -205,6 +229,13 @@ async function main(): Promise<void> {
   // Long transcript mode: the recording in progress, a transcript asked for mid-request (it starts when the request
   // ends), and the last one saved, which the next request is told about so "summarise that" works.
   let transcribing: AbortController | null = null;
+  // Background news for her next turn: Dan's answers on runs' cards, runs finishing (see Briefing).
+  const briefing = new Briefing();
+  // What's waiting, for Dan or on him (see Loops). A restart ends her runs and closes her cards, so theirs close too.
+  const loops = new Loops(cfg.home);
+  loops.closeWhere((l) => l.kind === "run", "ended when Astra restarted");
+  loops.closeWhere((l) => l.kind === "decision", "its card closed when Astra restarted");
+  const runLoops = new Map<string, string>();
   let pendingTranscript: { title?: string } | null = null;
   let lastTranscript: string | null = null;
   // Asked to restart while working or running background sessions: she restarts once all of that has finished.
@@ -226,6 +257,7 @@ async function main(): Promise<void> {
       orb?.send({ type: "caption", role: "status", text: line });
     },
     indicator: (on) => orb?.send({ type: "control", on }),
+    beam: (target) => orb?.send({ type: "beam", target }),
     open: async (target) => {
       if (/^(x-apple\.systempreferences|https?):/.test(target)) await realRunner.run("open", [target]);
       else await openApp(target);
@@ -233,8 +265,14 @@ async function main(): Promise<void> {
   });
 
   /** Stops speech, listening, a pending approval, control of the Mac and the request in progress. Returns whether anything was running. */
+  // Thoth, the scribe: up while she researches for more than a moment (see scribe.ts).
+  const scribe = new Scribe((state) => orb?.send({ type: "scribe", state }));
+  // The demo tour while it runs (see demo.ts): a stop ends it.
+  let demoAbort: AbortController | null = null;
   const interrupt = (): boolean => {
-    const active = speaking || listening || busy;
+    const active = speaking || listening || busy || demoAbort !== null;
+    scribe.reset();
+    demoAbort?.abort();
     computer.stop();
     speaker.stop();
     transcribing?.abort();
@@ -264,6 +302,18 @@ async function main(): Promise<void> {
       },
       onBrain: (msg) => void onBrain(msg),
       onGitDiff: (msg) => void onGitDiff(msg),
+      onPanelShown: (kind, result) => {
+        if (result && (!result.onScreen || result.covered)) console.log(`  [orb] ${shownReport(kind, "", result)}`);
+        for (const f of shownWaiters.get(kind) ?? []) f(result);
+        shownWaiters.delete(kind);
+      },
+      onPanelsFront: (results) => {
+        const waiting = frontWaiters;
+        frontWaiters = [];
+        for (const f of waiting) f(results);
+        if (!waiting.length) console.log(`  [orb] ${frontReport(results)}`);
+      },
+      onLog: (text) => console.log(`  [orb] ${text}`),
       onPanelClosed: (kind) => {
         if (kind === "sessions") sessionsPanelOpen = false;
         if (kind === "tallyline") tallylineOpen = false;
@@ -337,19 +387,92 @@ async function main(): Promise<void> {
   };
 
   // Queued: lines never overlap (see Speaker). Resolves when this line has been spoken.
-  const say = async (text: string) => {
+  /** Says `text` (or captions it when she's silent); `signal` drops it if it aborts first, as a card answered does. */
+  const say = async (text: string, signal?: AbortSignal) => {
     console.log(`\nAstra: ${text}\n`);
     if (muted || settings.typeOnly || !speechEnabled) orb?.send({ type: "caption", role: "jarvis", text });
-    else await speaker.speak(text);
+    else await speaker.speak(text, { signal });
+  };
+
+  // What "tell me more" reads next: the rest of her last long reply, or the detail panel she last opened.
+  const more = new MoreQueue();
+
+  /**
+   * Her own words (her replies, not system lines): spoken cut to the headline, with the rest on screen until Dan says
+   * "more", and without sentences she said in the last few minutes. Silent, she shows the whole reply.
+   */
+  const sayReply = async (text: string) => {
+    if (muted || settings.typeOnly || !speechEnabled) return say(text);
+    const { spoken: head, rest } = headline(text);
+    const fresh = dropRepeats(head, spoken);
+    if (fresh) await say(fresh);
+    else console.log(`\nAstra (already said, not repeated): ${head}\n`);
+    if (rest) {
+      more.setRest(rest);
+      console.log(`  (held for "more": ${rest})`);
+      orb?.send({ type: "caption", role: "jarvis", text: rest });
+      orb?.send({ type: "caption", role: "status", text: "Say “more” to hear the rest" });
+    }
   };
 
   let lastInputWasVoice = false;
+
+  // Only Dan's voice (see VoiceCheck): once he has enrolled, phrases in other voices are ignored.
+  const voice = new VoiceCheck(cfg.home, wavlmEmbedder(path.join(cfg.home, "models", "speaker")));
+
+  /**
+   * A voice check for one recording. Eager, it starts as soon as the audio arrives, alongside transcription; lazy, only
+   * when asked (the always-on listener hears plenty that's never acted on, and needn't check it).
+   */
+  const voiceCheckFor = (eager: boolean) => {
+    let audio: Float32Array | null = null;
+    let pending: Promise<VoiceVerdict | null> | null = null;
+    const start = () => (pending ??= audio && voice.enrolled ? voice.verdict(audio).catch(() => null) : Promise.resolve(null));
+    return {
+      onAudio: (samples: Float32Array) => {
+        audio = samples;
+        if (eager) start();
+      },
+      result: start,
+    };
+  };
+
+  /** The phrase just heard was refused by the voice check, so "I didn't catch anything" would be wrong. */
+  let refusedVoice = false;
+  const REFUSED = "That didn't sound like you, so I ignored it. If it was you, type /voiceprint off";
+  let voiceGuardHide: NodeJS.Timeout | undefined;
+  /** A phrase refused by the voice check: Anubis stands guard with red eyes for a moment, and the card says why. */
+  const showRefused = () => {
+    orb?.send({ type: "caption", role: "status", text: REFUSED });
+    // Not over the web guard: a page check in progress keeps its own Anubis.
+    if (checksRunning) return;
+    orb?.send({ type: "guard", state: "voice" });
+    clearTimeout(voiceGuardHide);
+    voiceGuardHide = setTimeout(() => {
+      if (!checksRunning) orb?.send({ type: "guard", state: null });
+    }, 3_000);
+  };
+
+  /** Whether a phrase may be acted on: Dan's voice, or one that can't be judged (no voiceprint, too short). */
+  const fromDan = async (check: ReturnType<typeof voiceCheckFor>): Promise<boolean> => {
+    const v = await check.result();
+    if (!v) return true;
+    console.log(`  (voice ${v.ok ? "is Dan's" : "isn't Dan's, ignored"}: ${v.score.toFixed(3)} against ${v.threshold.toFixed(3)} over ${v.seconds.toFixed(1)} s)`);
+    if (!v.ok) refusedVoice = true;
+    return v.ok;
+  };
 
   /**
    * Records one spoken phrase and transcribes it. Ends when you pause or when `earlyStop` resolves (Enter or a click);
    * returns null if `signal` aborts or Astra is stopped. "Astra, …" at the start is stripped.
    */
-  const listenOnce = async (noSpeechMs: number, signal?: AbortSignal, earlyStop?: Promise<unknown>): Promise<string | null> => {
+  const listenOnce = async (
+    noSpeechMs: number,
+    signal?: AbortSignal,
+    earlyStop?: Promise<unknown>,
+    /** Hands over the recording and skips the voice check (enrolment records Dan before there's a voiceprint). */
+    onAudio?: (samples: Float32Array) => void,
+  ): Promise<string | null> => {
     refreshHint();
     await listener.start({ autoStop: true, pauseSec: cfg.pauseSec, gainDb: cfg.micGainDb, noSpeechMs });
     listening = true;
@@ -372,8 +495,12 @@ async function main(): Promise<void> {
       await listener.cancel();
       return null;
     }
-    const raw = await listener.stopAndTranscribe();
-    return matchWake(raw) ?? raw;
+    const check = voiceCheckFor(true);
+    const raw = await listener.stopAndTranscribe({ onAudio: onAudio ?? check.onAudio });
+    const text = matchWake(raw) ?? raw;
+    // Someone else: as if nothing was heard. "Stop" counts from anyone.
+    if (!onAudio && text.trim() && !isStopCommand(text) && !(await fromDan(check))) return "";
+    return text;
   };
 
   /**
@@ -403,13 +530,28 @@ async function main(): Promise<void> {
       await wakeListener.whenDone();
       clearInterval(watch);
       if (!wakeListener.recording) continue;
-      const heard = await wakeListener.stopAndTranscribe();
+      const check = voiceCheckFor(false);
+      const heard = await wakeListener.stopAndTranscribe({ onAudio: check.onAudio });
       // If she spoke at any point during the recording, her voice is in it, so the name may come anywhere.
-      const herVoice = talking || speaking || lastSpokeAt >= startedAt;
+      // Her voice is in the recording if she spoke during it, or had only just stopped when it began (the echo tail).
+      const herVoice = talking || speaking || lastSpokeAt >= startedAt || lastSpeechEnd >= startedAt - ECHO_TAIL_MS;
       const raw = herVoice ? matchWakeAnywhere(heard, ownSpeech) : matchWake(heard);
-      const request =
+      let request =
         raw !== null && herVoice ? stripOwnSpeech(raw, spoken.filter((s) => s.at >= startedAt - 15_000).map((s) => s.text)) : raw;
+      // Her own sentence coming back with a misheard "Astra" in it ("Astra's teardown was two days ago" from "the last
+      // teardown…"): not Dan. A bare "stop" always counts, so he can still halt her over her own voice.
+      if (request !== null && !isStopCommand(request) && herEcho(request)) {
+        if (process.env.JARVIS_DEBUG_WAKE) console.log(`  (wake: "${request}" is my own voice; ignored)`);
+        request = null;
+      }
       if (process.env.JARVIS_DEBUG_WAKE) console.log(`  (wake ${herVoice ? "over her voice" : "idle"} heard: "${heard}" → ${request === null ? "ignored" : `"${request}"`})`);
+      // Checked only when it would be acted on. Over her own voice the recording mixes two voices and can't be judged,
+      // so her echo filters above decide; a bare "stop" counts from anyone.
+      const acting = request !== null ? !isStopCommand(request) : Boolean(dialogParses && heard.trim());
+      if (acting && !herVoice && !(await fromDan(check))) {
+        showRefused();
+        continue;
+      }
       if (request !== null) onWake(request);
       else if (dialogParses && heard.trim()) answerWithoutName(heard, herVoice, startedAt);
     }
@@ -422,7 +564,7 @@ async function main(): Promise<void> {
    * stops talking and listens for it properly.
    */
   const answerWithoutName = (heard: string, herVoice: boolean, startedAt: number) => {
-    if (!dialogParses || !dialogWake) return;
+    if (!dialogParses || !dialogWake || herEcho(heard)) return;
     if (!herVoice) {
       if (dialogParses(heard)) {
         chime();
@@ -469,11 +611,17 @@ async function main(): Promise<void> {
       return void runUi(local.ui);
     }
     if (dialogWake) return dialogWake(request);
-    // A slash command ("start a new conversation" → /new) doesn't interrupt what she's doing; a request does.
-    const line = local ? local.slash : request;
-    if (!local || local.slash === "/quit") {
+    // While she works, a new request waits its turn (as a typed one does): only a redirect ("stop, do X instead")
+    // throws her work away. While she's only talking, cutting in is how conversation goes, so that stops her voice.
+    const redirect = local ? null : redirectRequest(request);
+    const line = local ? local.slash : (redirect ?? request);
+    if (local?.slash === "/quit" || redirect) {
       if (busy || speaking) interrupt();
-    }
+    } else if (!local && busy) {
+      console.log(`\n  (queued: ${line})`);
+      orb?.send({ type: "caption", role: "you", text: request });
+      orb?.send({ type: "caption", role: "status", text: "Queued: I'll do that next" });
+    } else if (!local && speaking) interrupt();
     if (line) wokeWith = line;
     lines.inject(line);
   };
@@ -504,12 +652,13 @@ async function main(): Promise<void> {
         } else if (tries < 2 || woke === "") {
           woke = null;
           tries++;
+          await echoTail();
           console.log("  🎙  listening for your answer…");
           const startedAt = Date.now();
           heard = await listenOnce(12_000, signal);
-          // She started talking while this was recording (a line queued after the question): that's her voice,
-          // not an answer. Throw it away and listen again once she's done.
-          if (heard && lastSpokeAt >= startedAt) {
+          // She started talking while this was recording (a line queued after the question), or it's her question
+          // coming back: that's her voice, not an answer. Throw it away and listen again once she's done.
+          if (heard && (lastSpokeAt >= startedAt || herEcho(heard))) {
             console.log("  (that was my own voice; listening again)");
             tries--;
             continue;
@@ -561,14 +710,23 @@ async function main(): Promise<void> {
       .next("🎙  Listening... (I'll stop when you pause; Enter or click the orb to stop now) ",
         AbortSignal.any([early.signal, ...(signal ? [signal] : [])]))
       .then((line) => (line === null ? new Promise<never>(() => {}) : line));
-    const heard = await listenOnce(listenNow ? 8_000 : 15_000, signal, pressed);
+    // Straight after she has spoken, wait out the echo tail so the recording doesn't start with the end of her.
+    if (listenNow) await echoTail();
+    refusedVoice = false;
+    let heard = await listenOnce(listenNow ? 8_000 : 15_000, signal, pressed);
+    if (heard && !isStopCommand(heard) && herEcho(heard)) {
+      console.log("  (that was my own voice)");
+      heard = "";
+    }
     early.abort();
     if (lines.isClosed || signal?.aborted) return null;
     if (heard === null) return "";
     lastInputWasVoice = true;
-    if (heard || !listenNow) {
-      console.log(heard ? `You: ${heard}` : "(I didn't catch anything)");
-      orb?.send({ type: "caption", role: heard ? "you" : "status", text: heard || "I didn't catch anything" });
+    if (heard || !listenNow || refusedVoice) {
+      const missed = refusedVoice ? REFUSED : "I didn't catch anything";
+      console.log(heard ? `You: ${heard}` : `(${missed})`);
+      if (!heard && refusedVoice) showRefused();
+      else orb?.send({ type: "caption", role: heard ? "you" : "status", text: heard || missed });
     }
     return heard;
   };
@@ -579,9 +737,20 @@ async function main(): Promise<void> {
   const remember = (kind: WindowKind, title: string, reopen: () => void | Promise<void>, key = `${kind}:${title}`) =>
     windows.record({ key, kind, title, at: Date.now(), request: requestCount, reopen });
 
-  /** Shows a detail panel or map and remembers it. Reopened on request, it's yours: she won't close it on you. */
-  const showPanel = (msg: Extract<ToOrb, { type: "detail" | "graph" }>) => {
-    orb?.send(msg);
+  /**
+   * Shows a detail panel or map and remembers it. Reopened on request, it's yours: she won't close it on you.
+   * It opens in its place in what she's saying (after the words queued before it), not the moment its tool ran, so
+   * she's talking about what's on screen. With `say`, those words are spoken and the panel opens as they start.
+   */
+  const showPanel = (msg: Extract<ToOrb, { type: "detail" | "graph" }>, sayAlong?: string) => {
+    const open = () => orb?.send(msg);
+    if (sayAlong?.trim() && !muted && !settings.typeOnly && speechEnabled) {
+      console.log(`\nAstra: ${sayAlong}\n`);
+      void speaker.speak(sayAlong, { onStart: open });
+    } else {
+      if (sayAlong?.trim()) orb?.send({ type: "caption", role: "jarvis", text: sayAlong });
+      speaker.cue(open);
+    }
     remember(msg.type, msg.title, () => orb?.send({ ...msg, owner: "user" }));
   };
 
@@ -597,10 +766,19 @@ async function main(): Promise<void> {
       for (const n of notes) console.log(`  ${n.folder}/ ${n.title}`);
       return `Listed ${notes.length} notes in the terminal.`;
     }
+    const seen = panelShown("brain");
     orb.send({ type: "brain", notes, ...(owner ? { owner } : {}) });
     remember("brain", "Brain browser", () => void openBrain("user"));
-    return `Opened the brain browser with ${notes.length} notes.`;
+    return shownReport("brain", `Opened the brain browser with ${notes.length} notes.`, await seen);
   };
+
+  // A note saved or changed (a new teardown, say) refreshes the brain browser if it's open; it never opens it.
+  const stopWatchingBrain = watchBrain(cfg.brainDir, () => {
+    if (!orb?.alive) return;
+    void brainIndex(cfg.brainDir)
+      .then((notes) => orb?.send({ type: "brain", notes, refresh: true }))
+      .catch((err) => console.log(`  (couldn't refresh the brain browser: ${(err as Error).message})`));
+  });
 
   /** The brain browser's requests: the list, one note (rendered), or a note's saved map. */
   const onBrain = async (msg: { type: "brain-request" } | { type: "brain-open" | "brain-map"; path: string }) => {
@@ -609,19 +787,20 @@ async function main(): Promise<void> {
       if (msg.type === "brain-open") {
         const note = await readNote(cfg.brainDir, msg.path);
         const hasMap = /```astra-graph/.test(note.text);
-        const body = note.text
-          .replace(/^---[\s\S]*?---\n/, "")
+        const body = noteBody(note.text)
           .replace(/```astra-graph[\s\S]*?```/g, "*A 3D map is saved with this note: use Show map.*");
         orb?.send({ type: "brain-note", path: msg.path, title: note.title, html: renderDetail(body), hasMap });
         return;
       }
       const raw = await noteMap(cfg.brainDir, msg.path);
       if (!raw) return;
-      const graph = checkGraph(z.object(graphShape).parse(raw));
+      const graph = readGraph(raw);
       // Opened from the brain browser, so it's yours.
       showPanel({ type: "graph", title: msg.path.split("/").at(-1)!.replace(/\.md$/, ""), graph, owner: "user" });
     } catch (err) {
       console.log(`  (brain browser: ${(err as Error).message})`);
+      // Said where Dan is looking, so a click that can't open anything never just does nothing.
+      orb?.send({ type: "caption", role: "status", text: `That note's map couldn't be opened. ${(err as Error).message}` });
     }
   };
 
@@ -633,6 +812,35 @@ async function main(): Promise<void> {
     orb?.send({ type: "volume-level", level: settings.volume });
     return `Volume ${Math.round(settings.volume * 100)}%.`;
   };
+
+  // Whether the panels she shows really reach the screen: the orb checks the window order and reports back.
+  const shownWaiters = new Map<string, ((v: PanelVisibility | null) => void)[]>();
+  let frontWaiters: ((v: PanelVisibility[] | null) => void)[] = [];
+  /** Resolves with what the orb saw of this panel once it's shown, or null if no word comes within `ms`. */
+  const panelShown = (kind: string, ms = 6_000): Promise<PanelVisibility | null> =>
+    new Promise((resolve) => {
+      const done = (v: PanelVisibility | null) => {
+        clearTimeout(timer);
+        resolve(v);
+      };
+      const timer = setTimeout(() => {
+        shownWaiters.set(kind, (shownWaiters.get(kind) ?? []).filter((f) => f !== done));
+        resolve(null);
+      }, ms);
+      shownWaiters.set(kind, [...(shownWaiters.get(kind) ?? []), done]);
+    });
+  const panelsFront = (ms = 4_000): Promise<PanelVisibility[] | null> =>
+    new Promise((resolve) => {
+      const done = (v: PanelVisibility[] | null) => {
+        clearTimeout(timer);
+        resolve(v);
+      };
+      const timer = setTimeout(() => {
+        frontWaiters = frontWaiters.filter((f) => f !== done);
+        resolve(null);
+      }, ms);
+      frontWaiters.push(done);
+    });
 
   /** Astra working her own interface, by voice or via ui_control. */
   const runUi = async (command: UiCommand | UiAction): Promise<string> => {
@@ -661,6 +869,20 @@ async function main(): Promise<void> {
     if (action === "show_brain") return openBrain();
     if (action === "reopen_windows") return windowTools.show("all");
     if (action === "restart") return requestRestart();
+    if (action === "panels_front") {
+      if (!orb?.alive) return "No orb is open.";
+      const seen = panelsFront();
+      orb.send({ type: "ui", action });
+      return frontReport(await seen);
+    }
+    if (action === "demo") {
+      if (busy) {
+        pendingDemo = true;
+        return "The demo starts as soon as this reply ends: keep this reply to a few words.";
+      }
+      lines.inject("/demo");
+      return "Starting the demo.";
+    }
     if (action === "continue_session") {
       if (busy) {
         pendingContinue = true;
@@ -688,6 +910,14 @@ async function main(): Promise<void> {
       return "Recording starts as soon as this reply ends.";
     }
     if (action === "show_tallyline") return showTallyline();
+    if (action === "show_plate") {
+      const open = loops.open();
+      if (orb?.alive) showPanel({ type: "detail", title: "On your plate", html: renderDetail(plateMarkdown(open)) });
+      const spoken = plateHeadline(open);
+      if (busy) return `On your plate is on screen. Tell the user: ${spoken}`;
+      await say(spoken);
+      return "Plate shown.";
+    }
     if (action === "show_sessions") {
       if (!orb?.alive) return "No orb is open.";
       await refreshSessions("user");
@@ -695,7 +925,7 @@ async function main(): Promise<void> {
     }
     if (!orb?.alive) return "No orb is open.";
     orb.send({ type: "ui", action });
-    const done: Record<Exclude<UiAction, "show_tallyline" | "show_sessions" | "continue_session" | "reopen_windows" | "stop" | "show_brain" | "start_transcript" | "restart" | "type_only" | "voice_mode" | "sitrep" | "god_mode_on" | "god_mode_off" | "volume_up" | "volume_down" | "set_volume" | "move" | "show_terminal" | "show_git">, string> = {
+    const done: Record<Exclude<UiAction, "show_tallyline" | "show_plate" | "show_sessions" | "continue_session" | "demo" | "reopen_windows" | "stop" | "show_brain" | "start_transcript" | "restart" | "type_only" | "voice_mode" | "sitrep" | "god_mode_on" | "god_mode_off" | "volume_up" | "volume_down" | "set_volume" | "move" | "show_terminal" | "show_git">, string> = {
       minimise: "Minimised to the menu bar.",
       show: "The orb is back.",
       close_panels: "Closed the panels.",
@@ -818,6 +1048,8 @@ async function main(): Promise<void> {
 
   // "Continue last session", asked for mid-request: it resumes once the request ends.
   let pendingContinue = false;
+  /** "Show me your demo": the tour starts once her reply has ended (it speaks, so it can't run inside it). */
+  let pendingDemo = false;
 
   /**
    * Picks up her previous conversation (the same Claude Code session, resumed with its full context) and says briefly
@@ -845,8 +1077,9 @@ async function main(): Promise<void> {
           "what you were last doing and what was next. Don't start any work until they say.",
       );
       if (!result.ok) throw new Error(result.summary);
+      await speaker.whenIdle();
       rememberSession();
-      console.log(`  (continued session ${pick.id} · $${result.costUsd.toFixed(3)})`);
+      console.log(`  (continued session ${pick.id}${costNote(result.costUsd)})`);
     } catch (err) {
       jarvis.resumeFrom(fresh);
       await say(`I couldn't pick up our last conversation (${(err as Error).message}). I'm staying in this fresh one.`);
@@ -895,7 +1128,8 @@ async function main(): Promise<void> {
     return waitingMessage(state);
   };
   const restartIfDue = () => {
-    if (!pendingRestart || quitting) return;
+    // A run's report she hasn't passed on yet goes first: the brief that delivers it checks again after.
+    if (!pendingRestart || quitting || briefing.due) return;
     const state = restartState();
     if (!restartBlocker(state)) {
       cancelPendingRestart();
@@ -953,7 +1187,7 @@ async function main(): Promise<void> {
     const answer = await openDialog<Answer>((signal) => {
       const viaCard = orb?.alive ? orb.ask(spoken, detail, signal) : askDialog(detail, signal);
       if (speaker.busy) console.log(`  (on screen: ${spoken})`);
-      else void say(spoken);
+      else void say(spoken, signal);
       const where = orb?.alive ? "the orb" : "the pop-up";
       const viaTyped = lines
         .next(voiceMode ? `[say yes, always or no, click ${where}, or type y / a / n] ` : `[click ${where}, or type y / a / n] `, signal)
@@ -1023,6 +1257,11 @@ async function main(): Promise<void> {
   };
 
   const onToolEvent = (source: string, cwd: string, e: ToolEvent) => {
+    // Thoth rises while she herself researches (not her background runs, which have their own transcripts).
+    if (source === "Astra") {
+      if (e.kind === "use" && isResearch(e.name, e.input, cfg.brainDir)) scribe.start(e.id);
+      else if (e.kind === "result") scribe.end(e.id);
+    }
     const dir = e.kind === "use" ? transferKind(e.name, e.input) : null;
     if (dir) transfers.set(e.id, { dir, at: Date.now(), source });
     if (dir || (e.kind === "result" && transfers.delete(e.id))) syncTransfer();
@@ -1051,12 +1290,15 @@ async function main(): Promise<void> {
   const transcriptTimers = new Map<string, NodeJS.Timeout>();
   /** What each run is doing right now, for the glyph row at the top of its transcript. */
   const runPhases = new Map<string, RunPhase>();
+  /** Each run's latest step in words, for the God mode slate's "last action". */
+  const runActions = new Map<string, string>();
   /** Shows a run's transcript (now, or within 250 ms so a burst of steps is one update). */
   const showTranscript = (job: Job, owner?: "user") => {
     const send = () => {
       transcriptTimers.delete(job.id);
       const lines = transcripts.get(job.id) ?? [];
       sessionsChanged();
+      godChanged();
       const state: RunPhase = job.status === "running" ? (runPhases.get(job.id) ?? { phase: "thinking" }) : { phase: job.status };
       orb?.send({ type: "transcript", job: { id: job.id, label: job.label, status: job.status }, lines, state, ...(owner ? { owner } : {}) });
     };
@@ -1072,6 +1314,7 @@ async function main(): Promise<void> {
   };
   /** A background run began: its transcript opens straight away and is remembered for show_window. */
   const startTranscript = (job: Job) => {
+    runLoops.set(job.id, loops.add("run", job.prompt.replace(/\s+/g, " ").slice(0, 120), job.label).id);
     transcripts.set(job.id, [{ kind: "prompt", text: job.prompt }]);
     showTranscript(job);
     remember("transcript", `Transcript: ${job.label} (${job.id})`, () => showTranscript(job, "user"), `transcript:${job.id}`);
@@ -1080,12 +1323,14 @@ async function main(): Promise<void> {
   /** A question card (ask_user, or a background run's AskUserQuestion), answerable by voice, click or typing. */
   async function askQuestion(spec: QuestionSpec): Promise<QuestionAnswer | null> {
     console.log(`\n  Question: ${spec.question}`);
+    const loop = loops.add("decision", spec.question);
+    godChanged();
     spec.options.forEach((o, i) => console.log(`    ${i + 1}. ${o.label}${o.description ? ` (${o.description})` : ""}`));
     const answer = await openDialog<QuestionAnswer>((signal) => {
       const viaCard = orb?.alive ? orb.question(spec, signal) : Promise.resolve(null);
       const spokenQ = speakQuestion(spec.question, spec.options);
       if (speaker.busy) console.log(`  (on screen: ${spokenQ})`);
-      else void say(spokenQ);
+      else void say(spokenQ, signal);
       const viaTyped = lines
         .next(spec.options.length ? "[say it, click, or type a number (1,3 for several) or an answer] " : "[say or type your answer] ", signal)
         .then((line) => (line === null ? null : parseTypedChoice(line, spec)));
@@ -1093,6 +1338,9 @@ async function main(): Promise<void> {
       return firstAnswer<QuestionAnswer>([viaCard, viaTyped, viaVoice]);
     });
     console.log(`  → ${answer === null ? "(no answer)" : Array.isArray(answer) ? answer.join(", ") : answer}`);
+    // Unanswered, it stays open: still waiting on Dan.
+    if (answer !== null) loops.close(loop.id, Array.isArray(answer) ? answer.join(", ") : answer);
+    godChanged();
     return answer;
   }
 
@@ -1102,6 +1350,7 @@ async function main(): Promise<void> {
       console.log(`  [${job.id} ${job.label}] → ${tool}`);
       orb?.send({ type: "activity", text: `${job.label}: ${describeActivity(tool, input)}`, glyph: activityGlyph(tool) });
       runPhases.set(job.id, { phase: "tool", glyph: activityGlyph(tool) });
+      runActions.set(job.id, describeActivity(tool, input));
       addLine(job, "tool", describeActivity(tool, input));
     },
     said: (job, text) => {
@@ -1114,7 +1363,9 @@ async function main(): Promise<void> {
       showTranscript(job);
       try {
         if (!orb?.alive && !voiceMode) return null;
-        return await askQuestion({ ...spec, question: `${job.label} (${job.id}) asks: ${spec.question}` });
+        const answer = await askQuestion({ ...spec, question: `${job.label} (${job.id}) asks: ${spec.question}` });
+        if (answer !== null) briefing.add(answeredNote(job.label, spec.question, Array.isArray(answer) ? answer.join(", ") : answer));
+        return answer;
       } finally {
         runPhases.set(job.id, { phase: "thinking" });
         showTranscript(job);
@@ -1124,7 +1375,9 @@ async function main(): Promise<void> {
       runPhases.set(job.id, { phase: "waiting" });
       showTranscript(job);
       try {
-        return await askApproval(approval);
+        const answer = await askApproval(approval);
+        briefing.add(`Dan answered "${answer}" to the ${job.label} session's request: ${approval.detail.slice(0, 200)}`);
+        return answer;
       } finally {
         runPhases.set(job.id, { phase: "thinking" });
         showTranscript(job);
@@ -1138,22 +1391,15 @@ async function main(): Promise<void> {
     },
     finished: (job) => {
       addLine(job, "end", job.status === "done" ? "Finished." : job.status === "stopped" ? "Stopped." : `Failed${job.lastText ? `: ${job.lastText.slice(0, 300)}` : "."}`);
-      const first = job.lastText.split(/(?<=[.!?])\s/)[0]?.slice(0, 220) ?? "";
-      const what =
-        job.status === "done"
-          ? `The ${job.label} session has finished`
-          : job.status === "stopped"
-            ? `I stopped the ${job.label} session`
-            : `The ${job.label} session ran into a problem`;
-      console.log(`\n  [${job.id} ${job.label}] ${job.status} · $${job.costUsd.toFixed(3)}\n${job.lastText}\n`);
-      // A question it couldn't put to Dan: say so, so it isn't lost in the report.
-      const asked = job.unanswered.length
-        ? ` It had ${job.unanswered.length === 1 ? "a question" : `${job.unanswered.length} questions`} for you that I couldn't put on screen: ${job.unanswered.join(" ")}`
-        : "";
-      if (asked) console.log(`  [${job.id} ${job.label}] unanswered: ${job.unanswered.join(" | ")}`);
-      void say(`${first ? `${what}. ${first}` : `${what}.`}${asked}`);
+      console.log(`\n  [${job.id} ${job.label}] ${job.status}${costNote(job.costUsd)}\n${job.lastText}\n`);
+      if (job.unanswered.length) console.log(`  [${job.id} ${job.label}] unanswered: ${job.unanswered.join(" | ")}`);
+      // She tells Dan in her own words (see Briefing): straight away if she's free, else as soon as she is.
+      briefing.add(runFinishedNote(job), true);
+      const loopId = runLoops.get(job.id);
+      if (loopId) loops.close(loopId, job.status);
+      runLoops.delete(job.id);
+      if (!busy && !asking && !listening && !transcribing) lines.inject("/brief");
       tidyWindows();
-      restartIfDue();
     },
   }, undefined, () => settings.backgroundPermissionMode);
 
@@ -1283,21 +1529,49 @@ async function main(): Promise<void> {
   };
 
   // God mode: she commands your sessions (see GOD_MODE) and every 30 s checks which have finished a turn.
-  const seen = new Map<string, SessionSummary["status"]>();
+  // Announces a session only once it has been left waiting a couple of minutes, so never the one Dan is in.
+  const finishes = new FinishWatcher();
   let godTimer: NodeJS.Timeout | null = null;
   const watchSessions = async () => {
+    // Not during the demo: a real session's news would be spoken over the tour. It's announced after.
+    if (demoAbort) return;
     const now = await liveSessions({ limit: 30, exclude: [cfg.workspaceDir] }).catch(() => [] as SessionSummary[]);
-    const first = seen.size === 0;
-    const finished = first ? [] : newlyWaiting(seen, now);
-    seen.clear();
-    for (const s of now) seen.set(s.id, s.status);
+    void refreshGod(now, true);
+    const finished = finishes.update(now);
     // Her own background runs are reported when they end anyway.
     const mine = new Set(sessionRunner.list().map((j) => j.sessionId));
     const titles = finished.filter((s) => !mine.has(s.id)).map((s) => s.title);
     if (!titles.length) return;
     const text = titles.length === 1 ? `${titles[0]} has finished and is waiting on you.` : `${titles.slice(0, -1).join(", ")} and ${titles.at(-1)} have finished and are waiting on you.`;
-    if (transcribing) console.log(`\n  (${text})`);
-    else void say(text);
+    // A session that finishes turn after turn would get the same sentence each time; once in a while is enough.
+    const fresh = dropRepeats(text, spoken);
+    if (transcribing || !fresh) console.log(`\n  (${text}${fresh ? "" : " · already said, not repeated"})`);
+    else void say(fresh);
+  };
+  // God mode's satellites and slate on the orb: sent on the 30 s watch and soon after a run, loop or session changes.
+  let lastGod = "";
+  let godSoon: NodeJS.Timeout | undefined;
+  /**
+   * Sends the orb what God mode is commanding, if it changed (or always, with `force`: the 30 s watch, so a list the
+   * orb missed while it was loading still arrives). `list` saves re-reading the sessions just read.
+   */
+  const refreshGod = async (list?: SessionSummary[], force = false) => {
+    if (!settings.godMode || !orb?.alive) return;
+    const now = Date.now();
+    const current = list ?? (await liveSessions({ limit: 30, exclude: [cfg.workspaceDir] }).catch(() => [] as SessionSummary[]));
+    const entries = godSlate(buildSessionsView(current, sessionRunner.list(), now, runPhases), loops.open(), now, runActions);
+    const json = JSON.stringify(entries);
+    if (!settings.godMode || (json === lastGod && !force)) return;
+    lastGod = json;
+    orb.send({ type: "god-sessions", sessions: entries });
+  };
+  /** Something God mode shows changed: refresh once things settle, at most once a second. */
+  const godChanged = () => {
+    if (!settings.godMode || godSoon) return;
+    godSoon = setTimeout(() => {
+      godSoon = undefined;
+      void refreshGod();
+    }, 1000);
   };
   /** God mode on or off: commanding your sessions, with finish announcements. Remembered between runs. */
   const setGodMode = (on: boolean): string => {
@@ -1305,7 +1579,9 @@ async function main(): Promise<void> {
     saveSettings(cfg.home, settings);
     if (godTimer) clearInterval(godTimer);
     godTimer = null;
-    seen.clear();
+    finishes.reset();
+    lastGod = "";
+    if (!on) orb?.send({ type: "god-sessions", sessions: [] });
     if (on) {
       void watchSessions();
       godTimer = setInterval(() => void watchSessions(), 30_000);
@@ -1350,9 +1626,11 @@ async function main(): Promise<void> {
         lastReply: s.lastReply.slice(0, 6000),
       };
     },
-    send: async (ref, prompt) => {
+    send: async (ref, prompt, evenIfLong) => {
       const s = live(await sessionRef(ref));
       if (s.status === "working") throw new Error(`"${s.title}" is working right now; I only send to a session when it's idle.`);
+      const refusal = sendRefusal(s);
+      if (refusal && !evenIfLong) throw new Error(refusal);
       const job = sessionRunner.send(s.id, s.folder || cfg.workspaceDir, prompt, s.project);
       console.log(`  [${job.id} ${job.label}] resumed ${s.id} with ${job.permissionMode} permissions`);
       startTranscript(job);
@@ -1403,24 +1681,28 @@ async function main(): Promise<void> {
   if (coffee.resume()) console.log(`  ☀︎ ${coffee.status()}`);
 
   const jarvis = new Jarvis(cfg, {
-    say,
+    // Her replies (and briefs) go through the headline and repeat guards; system lines use `say` directly.
+    say: sayReply,
     sessions,
     windows: windowTools,
     computer,
     coffee,
     toolEvent: (e) => onToolEvent("Astra", cfg.workspaceDir, e),
-    graph: (title, graph) => {
+    graph: (title, graph, sayAlong) => {
       if (orb?.alive) {
-        showPanel({ type: "graph", title, graph });
+        showPanel({ type: "graph", title, graph }, sayAlong);
         return "Shown as a 3D map. The user can orbit it and click nodes for detail.";
       }
       console.log(`\n${graphAsText(title, graph)}\n`);
       return "Printed as text in the terminal (no orb is open).";
     },
-    show: (title, markdown) => {
+    show: async (title, markdown, sayAlong) => {
       if (orb?.alive) {
-        showPanel({ type: "detail", title, html: renderDetail(markdown) });
-        return "Shown in the detail panel.";
+        more.setPanel(markdown);
+        const seen = panelShown("detail");
+        showPanel({ type: "detail", title, html: renderDetail(markdown) }, sayAlong);
+        // Only "Shown" if it really is on screen (it used to say so while the panel sat behind Chrome).
+        return shownReport("detail", "Shown in the detail panel.", await seen);
       }
       console.log(`\n── ${title} ──\n${markdown}\n`);
       return "Printed in the terminal (no orb is open).";
@@ -1456,15 +1738,148 @@ async function main(): Promise<void> {
     rl.close();
   });
 
+  /**
+   * "Learn my voice": Dan reads the enrolment sentences, one at a time, and they become his voiceprint. From then on
+   * she ignores other voices. Nothing is saved unless every sentence was heard.
+   */
+  const enrolVoice = async (): Promise<void> => {
+    if (!voiceMode) return void (await say("I need the microphone for that. Switch me to voice mode first."));
+    if (!orb?.alive) return void (await say("I need my orb on screen to show you the sentences, and it isn't open."));
+    const done = new Set<number>();
+    // The sentences go in a detail panel, the one to read large: the transmission card is too small for them. It's
+    // Dan's panel (never tidied away) and is brought to the front each time it changes.
+    const panel = (current: number | null, again = false) => {
+      orb?.send({ type: "detail", title: "Learn my voice", html: renderDetail(enrolPanel(current, done, again)), owner: "user" });
+      orb?.send({ type: "ui", action: "panels_front" });
+    };
+    panel(0);
+    await say("I'll learn your voice. Read each sentence in the panel when I say its number.");
+    /** Records one sentence (two tries); null if he stopped it, undefined if it couldn't be heard. */
+    const record = async (i: number, again: boolean): Promise<Float32Array | null | undefined> => {
+      for (let attempt = 0; attempt < 2; attempt++) {
+        panel(i, again || attempt > 0);
+        orb?.send({ type: "caption", role: "jarvis", text: ENROL_SENTENCES[i]! });
+        await say(attempt || again ? `Once more, number ${i + 1}.` : `Number ${i + 1}.`);
+        await speaker.whenIdle();
+        await echoTail();
+        let audio: Float32Array | null = null;
+        const heard = await listenOnce(10_000, undefined, undefined, (samples) => (audio = samples));
+        if (heard === null) return null;
+        // At least a second and a half of it: a cough or a half-read sentence would weaken the voiceprint.
+        const got = audio as Float32Array | null;
+        if (got && got.length >= 1.5 * 16_000) return got;
+      }
+      return undefined;
+    };
+    const clips: Float32Array[] = [];
+    for (const i of ENROL_SENTENCES.keys()) {
+      const clip = await record(i, false);
+      if (clip === null) return void (await say("Stopped. I haven't saved anything."));
+      if (!clip) return void (await say("I couldn't hear that one, so I haven't saved anything. Say \"learn my voice\" to try again."));
+      clips.push(clip);
+      done.add(i);
+    }
+    // A reading that doesn't match the others (a stumble, a noise, someone else talking) is read again, once.
+    const scores = await voice.readingScores(clips);
+    for (const [i, score] of scores.entries()) {
+      if (score >= WEAK_READING) continue;
+      console.log(`  (reading ${i + 1} matched the others only ${score.toFixed(3)}: asking for it again)`);
+      done.delete(i);
+      const clip = await record(i, true);
+      if (clip === null) return void (await say("Stopped. I haven't saved anything."));
+      if (clip) clips[i] = clip;
+      done.add(i);
+    }
+    panel(null);
+    const { selfScores, adjust } = await voice.enrol(clips);
+    const weakest = Math.min(...selfScores);
+    console.log(`  (voiceprint saved; each reading against the rest: ${selfScores.map((x) => x.toFixed(3)).join(", ")}; bar adjusted by ${adjust})`);
+    await say(
+      weakest < WEAK_READING
+        ? "Saved, though one reading still didn't match the others well. If I start ignoring you, say \"forget my voice\" or type slash voiceprint off."
+        : "Got it. I'll only listen to you now. If I ever ignore you, type slash voiceprint off.",
+    );
+  };
+
+  /** "Demo mode": her narrated tour of every state and ability, with made-up data and no Claude turns. */
+  const demo = async (): Promise<void> => {
+    if (!orb?.alive) return void (await say("The demo needs my orb on screen, and it isn't open."));
+    demoAbort = new AbortController();
+    busy = true;
+    syncOrb();
+    // Real updates (a run's card, a session refresh, a panel) wait until the tour ends; only the demo's own pass.
+    const screen = orb;
+    screen.hold(heldDuringDemo);
+    try {
+      await runDemo(
+        {
+          send: (msg) => screen.trusted(() => screen.send(msg)),
+          say: (text, signal) => screen.trusted(() => say(text, signal)),
+          render: renderDetail,
+          question: (spec, signal) => screen.trusted(() => screen.question(spec, signal)),
+          ask: (spoken, detail, signal) => screen.trusted(() => screen.ask(spoken, detail, signal)),
+          restore: () => {
+            sendMode();
+            // The tour showed made-up sessions: put the real ones back.
+            lastGod = "";
+            if (settings.godMode) void refreshGod();
+            else orb?.send({ type: "god-sessions", sessions: [] });
+            orb?.send({ type: "coffee", on: coffee.on, until: coffee.endsAt });
+          },
+        },
+        demoAbort.signal,
+      );
+    } finally {
+      screen.release();
+      demoAbort = null;
+      busy = false;
+      await speaker.whenIdle();
+      syncOrb();
+    }
+  };
+
+  /** Her turn for a background update nobody asked for (a run finished): she passes it on in her own words. */
+  const brief = async (): Promise<void> => {
+    busy = true;
+    syncOrb();
+    const notes = briefing.take();
+    try {
+      const result = await jarvis.handle(notes + BRIEF_REQUEST);
+      await speaker.whenIdle();
+      rememberSession();
+      console.log(`  (briefed${costNote(result.costUsd)})`);
+    } catch (err) {
+      console.log(`  (briefing failed: ${(err as Error).message})`);
+      await say("A background session has finished; its report is in its transcript.");
+    } finally {
+      busy = false;
+      syncOrb();
+      tidyWindows();
+    }
+    restartIfDue();
+  };
+
   void wakeLoop();
 
   const howToTalk = wakeOn ? 'Say "Astra", press Enter, or click the orb to talk.' : "Press Enter or click the orb to talk.";
   console.log(`Astra is ready. ${voiceMode ? `${howToTalk} Or type a request.` : "Type a request."}`);
   console.log(HELP);
 
+  // Back from a restart: carry on in the same conversation, quietly (no turn, nothing said), so a question she asked
+  // just before still has its context when Dan answers. Any other launch starts fresh.
+  if (takeRestartMark(cfg.home)) {
+    const pick = await pickLastSession({ home: cfg.home, workspaceDir: cfg.workspaceDir, current: jarvis.session });
+    if ("id" in pick) {
+      jarvis.resumeFrom(pick.id);
+      console.log(`  (back after the restart, still in our conversation ${pick.id})`);
+      orb?.send({ type: "caption", role: "status", text: "Back after the restart, still in our conversation" });
+    } else console.log(`  (after the restart: ${pick.problem} Starting fresh.)`);
+  }
+
   // After a spoken exchange Astra listens for your reply straight away, like a conversation.
   let followUp = false;
   for (;;) {
+    if (briefing.due && !quitting) await brief();
     const input = await getInput(voiceMode ? "\n[Enter to talk] > " : "\n> ", undefined, followUp);
     followUp = false;
     if (input === null) break;
@@ -1479,6 +1894,8 @@ async function main(): Promise<void> {
     }
     let request = input.trim();
     if (!request) continue;
+    // Woken to pass on a background update: the loop's top delivers it.
+    if (request === "/brief") continue;
     // Commands are recognised here, however they arrived and however they're phrased, before anything reaches Claude.
     const local = localCommand(request);
     if (local && "slash" in local) {
@@ -1505,6 +1922,24 @@ async function main(): Promise<void> {
       continue;
     }
     if (request === "/continue") { await continueLast(); continue; }
+    if (request === "/voiceprint") { await enrolVoice(); continue; }
+    if (request === "/demo") { await demo(); continue; }
+    if (request === "/voiceprint off") {
+      voice.forget();
+      await say("Forgotten. I'll listen to anyone again.");
+      continue;
+    }
+    // "Tell me more": the next part of what she held back, without a round trip. With nothing held, it's a request.
+    if (request === "/more") {
+      const next = more.next();
+      if (next) {
+        await say(next);
+        if (more.empty) orb?.send({ type: "caption", role: "status", text: "That's all of it" });
+        followUp = lastInputWasVoice && !muted;
+        continue;
+      }
+      request = input.trim();
+    }
     if (request === "/new") { jarvis.reset(); console.log("Fresh conversation. Your brain notes are kept."); continue; }
     if (request === "/mute") { muted = true; speaker.stop(); continue; }
     if (request === "/unmute") { muted = false; continue; }
@@ -1525,16 +1960,29 @@ async function main(): Promise<void> {
       // Just after a transcript, tell her where it is, so "summarise that" or "action items" find it.
       const context =
         (settings.godMode ? GOD_MODE : "") +
-        (lastTranscript ? `(I just recorded a transcript; it's in your brain at ${lastTranscript}.)\n\n` : "");
+        (lastTranscript ? `(I just recorded a transcript; it's in your brain at ${lastTranscript}.)\n\n` : "") +
+        briefing.take() +
+        loopsContext(loops.open());
       lastTranscript = null;
+      // A new request: what was held for "more" belonged to the last one.
+      more.clear();
+      const sentAt = performance.now();
+      firstSoundAt = null;
       const result = await jarvis.handle(context + request);
+      // Her words are queued as they arrive rather than spoken before the next step is read; the turn is over when
+      // she has finished saying them (and only then does she listen for a follow-up).
+      await speaker.whenIdle();
       rememberSession();
-      console.log(`  (${result.ok ? "done" : result.summary} · $${result.costUsd.toFixed(3)})`);
+      console.log(`  (${result.ok ? "done" : result.summary}${costNote(result.costUsd)})`);
+      // Where the time went, so "she's slow" can be traced to a step (see timingLine).
+      if (result.timings) console.log(`  (timing: ${timingLine(result.timings, firstSoundAt === null ? null : firstSoundAt - sentAt)})`);
       followUp = spoken && result.ok && !muted;
     } catch (err) {
       await say(`That failed: ${(err as Error).message}`);
     } finally {
       busy = false;
+      computer.done();
+      scribe.reset();
       syncOrb();
       // A stopped request never reports its last results: clear her own transfers so the orb doesn't keep beaming.
       for (const [id, t] of transfers) if (t.source === "Astra") transfers.delete(id);
@@ -1546,6 +1994,10 @@ async function main(): Promise<void> {
       pendingContinue = false;
       await continueLast();
     }
+    if (pendingDemo) {
+      pendingDemo = false;
+      await demo();
+    }
     if (pendingTranscript) {
       const { title } = pendingTranscript;
       pendingTranscript = null;
@@ -1556,8 +2008,12 @@ async function main(): Promise<void> {
   quitting = true;
   await wakeListener.cancel();
   speaker.stop();
+  stopWatchingBrain();
+  const restarting = existsSync(path.join(cfg.home, "restart"));
+  // A restart carries on in the same conversation (see takeRestartMark at start-up); quitting doesn't.
+  if (restarting) markRestart(cfg.home);
   // A restart (its flag file is there) keeps coffee mode for the next start; quitting ends it.
-  coffee.shutdown(existsSync(path.join(cfg.home, "restart")));
+  coffee.shutdown(restarting);
   // A Tallyline server she started herself goes with her (one Dan started is left running).
   tallyline.stop();
   orb?.close();

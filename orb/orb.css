@@ -27,12 +27,19 @@ main {
   align-items: center;
   justify-content: flex-end;
   min-height: 100%;
-  padding: 0 12px 12px;
+  /* Room above for her figures and transfer beams to rise into (see PAD in orb.js). */
+  padding: 56px 12px 12px;
   gap: 6px;
 }
 
 .orb-wrap { position: relative; width: 320px; height: 260px; flex: none; }
-#orb { width: 320px; height: 260px; display: block; cursor: grab; }
+/* The canvas spills past the orb's 320 × 260 frame (PAD in orb.js), so her glow and figures aren't cut off at its
+   edges; the frame itself, and everything positioned in it, stays where it was. */
+#orb { width: 400px; height: 386px; margin: -56px -40px -70px; display: block; cursor: grab; }
+/* God mode moves her lower wings out past the satellites' orbit (WINGS_OUT in orb.js), so her frame grows by as much
+   and the status pill below moves down with them. */
+body.god-mode .orb-wrap { height: 310px; }
+@media (prefers-reduced-motion: no-preference) { .orb-wrap { transition: height 0.8s ease; } }
 #orb.dragging { cursor: grabbing; }
 
 #talk {
@@ -60,30 +67,87 @@ main {
 .state { cursor: pointer; border-radius: 4px; padding: 2px 4px; }
 .state:focus-visible { outline: 2px solid var(--reactor); outline-offset: 2px; }
 
-/* The status indicator's dropdown: a small glass list just under it. */
+/* The status indicator's dropdown: a small god slate, the same glass, nub and shelf as the thinking window. */
 .panel-menu {
+  position: relative;
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  margin: 6px auto 0;
-  padding: 5px;
-  min-width: 210px;
-  border-radius: 8px;
-  background: linear-gradient(165deg, rgba(20, 44, 90, 0.92), rgba(4, 10, 28, 0.95));
-  box-shadow: inset 0 0 0 1px rgba(236, 188, 82, 0.55), 0 6px 18px rgba(0, 0, 0, 0.45);
+  gap: 3px;
+  margin: 8px auto 0;
+  padding: 0 8px 9px;
+  min-width: 232px;
+  border-radius: 6px;
+  overflow: hidden;
+  color: var(--ink);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0) 30%),
+    radial-gradient(130% 80% at 0% 0%, rgba(170, 235, 255, 0.22), transparent 60%),
+    radial-gradient(90% 60% at 100% 100%, rgba(236, 188, 82, 0.14), transparent 60%),
+    linear-gradient(165deg, rgba(20, 44, 90, 0.82), rgba(4, 10, 28, 0.9));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.6),
+    inset 1px 0 0 rgba(255, 255, 255, 0.2),
+    inset 0 -1px 0 rgba(70, 224, 214, 0.45),
+    inset 0 0 0 1px rgba(236, 188, 82, 0.35),
+    inset 0 0 30px rgba(170, 235, 255, 0.08),
+    0 0 18px rgba(70, 224, 214, 0.18),
+    0 12px 30px rgba(0, 0, 0, 0.4);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+.panel-menu::before {
+  content: "";
+  position: absolute;
+  inset: -60% -10% auto -10%;
+  height: 110%;
+  pointer-events: none;
+  background: linear-gradient(115deg, transparent 34%, rgba(255, 255, 255, 0.12) 44%, rgba(255, 255, 255, 0.03) 52%, transparent 62%);
 }
 .panel-menu[hidden] { display: none; }
+.panel-menu .nub { --nub-w: 150px; --nub-h: 18px; margin: 0 -8px; }
+.panel-menu .shelf { margin: 0 -8px 4px; }
 .panel-menu button {
-  padding: 7px 10px;
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 6px 10px 6px 8px;
   border: 0;
-  border-radius: 5px;
+  border-radius: 4px;
   text-align: left;
-  font: 500 12.5px/1.2 "Avenir Next", -apple-system, sans-serif;
-  color: #e8f6ff;
+  color: #e2f9ff;
   background: none;
   cursor: pointer;
 }
-.panel-menu button:hover, .panel-menu button:focus-visible { background: rgba(70, 224, 214, 0.18); outline: none; color: #fff; }
+/* A lozenge glyph per row: gold for the orb's own window, cyan for panels, dim for ones that are closed. */
+.panel-menu .mark {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  transform: rotate(45deg);
+  border: 1px solid var(--reactor);
+  box-shadow: 0 0 6px rgba(70, 224, 214, 0.7);
+}
+.panel-menu button:not([data-verb]) .mark { border-color: var(--gold); box-shadow: 0 0 6px rgba(236, 188, 82, 0.7); background: rgba(236, 188, 82, 0.35); }
+.panel-menu button[data-verb="reopen"] .mark { opacity: 0.55; box-shadow: none; }
+.panel-menu .text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.panel-menu .verb {
+  font: 600 8.5px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: rgba(236, 188, 82, 0.85);
+}
+.panel-menu .name {
+  font: 600 12.5px/1.2 "Avenir Next", -apple-system, sans-serif;
+  text-shadow: 0 0 10px rgba(70, 224, 214, 0.35), 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+.panel-menu button:hover, .panel-menu button:focus-visible {
+  outline: none;
+  color: #fff;
+  background: linear-gradient(90deg, rgba(70, 224, 214, 0.24), rgba(70, 224, 214, 0.04));
+  box-shadow: inset 2px 0 0 var(--reactor), 0 0 12px rgba(70, 224, 214, 0.18);
+}
+.panel-menu button:hover .mark, .panel-menu button:focus-visible .mark { background: var(--reactor); opacity: 1; }
+.panel-menu button:focus-visible { box-shadow: inset 2px 0 0 var(--reactor), inset 0 0 0 1px rgba(255, 255, 255, 0.7); }
 
 .visually-hidden {
   position: absolute;
@@ -93,6 +157,9 @@ main {
   clip-path: inset(50%);
   white-space: nowrap;
 }
+
+/* The window is wider than the cards now (room for the orb's glow); the cards keep their size. */
+.card { max-width: 326px; }
 
 /* Glass cards: tinted, rim-lit and sheened. (The orb window is see-through, so there's no native blur behind them.) */
 .card {
@@ -136,6 +203,8 @@ main {
 
 .caption {
   margin: 0;
+  /* Long paths and URLs break rather than run off the card. */
+  overflow-wrap: anywhere;
   max-height: 5.8em;
   overflow: auto;
   font: 500 13.5px/1.45 "Avenir Next", -apple-system, sans-serif;
@@ -151,6 +220,7 @@ body.type-only .card .caption { max-height: 18em; color: #e2f9ff; text-shadow: 0
 .caption .line.you::before { content: "You · "; opacity: 0.7; }
 .status {
   margin: 6px 0 0;
+  overflow-wrap: anywhere;
   font: 10.5px/1.3 ui-monospace, SFMono-Regular, Menlo, monospace;
   color: rgba(236, 188, 82, 0.85);
 }
@@ -221,8 +291,9 @@ body.type-only .card .caption { max-height: 18em; color: #e2f9ff; text-shadow: 0
 /* Record and type-only sit further out on the same wing arc (OUTER_ANGLE in orb.js): centred at (116, 209), (204, 209). */
 #record { left: 103px; top: 196px; }
 #type-only { left: 191px; top: 196px; }
-/* The sun (bring all panels forward) sits centred just under them, above the status label: centred at (160, 243). */
-#front { left: 147px; top: 230px; }
+/* The sun (bring all panels forward) sits further out on her right wing (SUN_ANGLE in orb.js), mirroring God mode's
+   Eye on her left: centred at (226, 190). */
+#front { left: 213px; top: 177px; }
 #stop:disabled { cursor: default; }
 #stop svg, #minimise svg, #record svg, #type-only svg, #front svg {
   width: 16px;
@@ -250,6 +321,42 @@ body.god-mode #orb { filter: drop-shadow(0 0 9px rgba(236, 188, 82, 0.55)); }
 body.type-only.god-mode #orb { filter: saturate(0.55) brightness(0.85) drop-shadow(0 0 9px rgba(236, 188, 82, 0.55)); }
 #stop:focus-visible, #minimise:focus-visible, #record:focus-visible, #type-only:focus-visible, #front:focus-visible { outline: 2px solid var(--reactor); outline-offset: 2px; }
 
+/* The wing buttons' help text (wing-tips.js): dark glass, light text, a gold rim and key, like the god slate's. Placed
+   in the window's own coordinates and kept inside it. Clicks go through it to whatever it covers, but while it shows
+   it counts as part of her for click-through (wing-tips.js covers). */
+.wing-tip {
+  position: fixed;
+  z-index: 20;
+  max-width: 220px;
+  margin: 0;
+  padding: 5px 9px 6px;
+  border: 1px solid rgba(236, 188, 82, 0.75);
+  border-radius: 8px;
+  background: #060a18;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 8px 22px rgba(0, 0, 0, 0.55);
+  color: #eef3ef;
+  font: 12px/1.4 -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
+  text-shadow: none;
+  white-space: normal;
+  pointer-events: none;
+  animation: wing-tip-rise 0.14s ease-out;
+}
+.wing-tip[hidden] { display: none; }
+.wing-tip kbd {
+  display: inline-block;
+  margin-left: 2px;
+  padding: 0 5px;
+  border: 1px solid rgba(236, 188, 82, 0.6);
+  border-radius: 4px;
+  background: rgba(236, 188, 82, 0.1);
+  color: var(--accent);
+  font: 600 10.5px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.wing-tip-note { display: block; color: #b9c7c1; font-size: 11px; }
+@keyframes wing-tip-rise { from { opacity: 0; transform: translateY(3px); } }
+@keyframes wing-tip-fade { from { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .wing-tip { animation-name: wing-tip-fade; } }
+
 .hint {
   margin: 10px 0 0;
   font: 9.5px/1.3 ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -261,8 +368,11 @@ body.type-only.god-mode #orb { filter: saturate(0.55) brightness(0.85) drop-shad
 /* Live activity: newest step glowing, earlier ones ticked off. */
 .activity { margin: 6px 0 0; padding: 0; list-style: none; font: 10.5px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; }
 .activity:empty { display: none; }
-.activity li { display: flex; align-items: center; gap: 6px; white-space: nowrap; overflow: hidden; }
-.activity li span { overflow: hidden; text-overflow: ellipsis; }
+/* Each step wraps onto as many lines as it needs (a long one was cut off at the card's edge); the glyph stays by
+   its first line. */
+.activity li { display: flex; align-items: flex-start; gap: 6px; }
+.activity li span { min-width: 0; overflow-wrap: anywhere; }
+.activity .glyph { margin-top: 1px; }
 .activity .glyph { flex: none; width: 14px; height: 14px; }
 .activity li.done .glyph { opacity: 0.45; }
 .activity li.current .glyph { filter: drop-shadow(0 0 3px rgba(236, 188, 82, 0.9)); animation: activity-pulse 1.2s ease-in-out infinite; }
@@ -317,6 +427,9 @@ body.type-only.god-mode #orb { filter: saturate(0.55) brightness(0.85) drop-shad
 .card, .question { order: -1; }
 body.top main { justify-content: flex-start; }
 body.top .card, body.top .question { order: 1; }
+/* Split: not enough room below for both, so the approval or question opens above the orb and the transmission window
+   stays below where it was. */
+body.top.split #ask, body.top.split #question { order: -1; }
 
 /* Collapsing the thinking window: only the tab and the current step remain. */
 .card-toggle {

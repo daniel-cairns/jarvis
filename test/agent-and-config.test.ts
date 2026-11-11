@@ -72,7 +72,8 @@ describe("Jarvis", () => {
     await jarvis.init();
 
     const first = await jarvis.handle("tear down igloo.inc");
-    expect(first).toEqual({ ok: true, costUsd: 0.12, summary: "Done." });
+    expect(first).toMatchObject({ ok: true, costUsd: 0.12, summary: "Done." });
+    expect(first.timings).toMatchObject({ readyMs: expect.any(Number), firstWordsMs: expect.any(Number), totalMs: expect.any(Number) });
     expect(said).toEqual(["On it."]);
     expect(captured.options?.resume).toBeUndefined();
     expect(captured.options?.model).toBe("claude-opus-5-5");
@@ -193,5 +194,21 @@ describe("Jarvis cancel", () => {
     expect(said).toEqual(["First."]);
     expect(result.summary).toBe("Cancelled");
     await fs.rm(home, { recursive: true, force: true });
+  });
+});
+
+describe("timingLine", () => {
+  it("shows where a request's time went, in seconds", async () => {
+    const { timingLine } = await import("../src/agent.js");
+    expect(timingLine({ readyMs: 2140, firstOutputMs: 4300, firstWordsMs: 6010, totalMs: 9840, apiMs: 6200, steps: 3 }, 7250)).toBe(
+      "ready 2.1 s · first output 4.3 s · first words 6.0 s · heard 7.3 s · total 9.8 s · model 6.2 s · 3 steps",
+    );
+  });
+
+  it("marks steps it never reached", async () => {
+    const { timingLine } = await import("../src/agent.js");
+    expect(timingLine({ readyMs: 1500, firstOutputMs: null, firstWordsMs: null, totalMs: 1600 }, null)).toBe(
+      "ready 1.5 s · first output – · first words – · heard – · total 1.6 s",
+    );
   });
 });

@@ -19,14 +19,17 @@
         <p class="meta" aria-hidden="true">ASTRA-01 | CLASS: DETAIL | STATUS: ACTIVE</p>
       </div>
       <span class="vents" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></span>
+      <button id="fold" class="fold-btn" type="button" aria-expanded="true" aria-controls="content" data-panel="detail panel" aria-label="Fold the detail panel" title="Fold"></button>
       <button id="close" type="button" aria-label="Close panel (Esc)" title="Close (Esc)">×</button>
     </header>
     <div class="rail rail--bot" aria-hidden="true"></div>
     <div class="shelf" aria-hidden="true"></div>
     <article id="content" tabindex="0" aria-labelledby="title"></article>
+    <p id="copy-status" class="visually-hidden" role="status" aria-live="polite"></p>
     <footer class="nub nub--foot"><svg viewBox="0 0 170 22" preserveAspectRatio="none" aria-hidden="true"><polygon class="plate" points="0,22 170,22 170,10 156,0 0,0"/><polyline class="edge" points="0,0.8 156,0.8 169.5,10.5"/><polyline class="edge-inner" points="0,4 154,4 165,12"/></svg><p class="nub-label"><span id="stamp"></span></p></footer>
   </div>
   <script src="drag.js"></script>
+  <script src="fold.js"></script>
   <script src="panel.js"></script>
 </body>
 </html>

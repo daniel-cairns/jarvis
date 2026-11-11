@@ -31,6 +31,8 @@ export const UI_ACTIONS = [
   "continue_session",
   "show_sessions",
   "show_tallyline",
+  "show_plate",
+  "demo",
 ] as const;
 export type UiAction = (typeof UI_ACTIONS)[number];
 /** Where "move" can put the orb: a spot on screen, or a nudge in one direction. */
@@ -102,6 +104,7 @@ export function quickUiCommand(request: string): UiCommand | null {
   if (/^(go |switch to |turn on )?(type|typing|text) (only )?mode( on)?( please)?$|^type only( please)?$/.test(s)) return { action: "type_only" };
   if (isShowSessions(s)) return { action: "show_sessions" };
   if (/^(show|open|bring up|pull up)( me)?( the| my)? tallyline( panel)?$|^tallyline$/.test(s)) return { action: "show_tallyline" };
+  if (/^(what s|what is|what have i got|show me|show)( on)? my plate$|^what s (waiting|pending) (on|for) me$|^what (am i|are we) waiting on$|^on my plate$/.test(s)) return { action: "show_plate" };
   if (/^(give me |get me |what s the |what is the )?(a |the |your )?(sit ?rep|situation report|status report)( please)?$|^what (s|is) everyone (doing|up to)$/.test(s)) return { action: "sitrep" };
   if (/^(go into |enter |switch to |turn on |activate )?god mode( on)?( please)?$/.test(s)) return { action: "god_mode_on" };
   if (/^(leave |exit |turn off |deactivate |end )god mode|^god mode off$/.test(s)) return { action: "god_mode_off" };
@@ -143,6 +146,11 @@ const SLASH: [RegExp, string][] = [
   [/^(?:quit|exit|shut down|shut yourself down|turn yourself off|close yourself completely)$/, "/quit"],
   [/^(?:turn off|stop|disable) (?:the )?wake word$/, "/wake off"],
   [/^(?:help|what can you do|what are your commands|list (?:your )?commands)$/, "/help"],
+  [/^(?:(?:start |run |go into |begin )?(?:the |your |a )?demo(?: mode)?|show off|show (?:me )?(?:what you can do|your tricks|everything you can do)|give (?:me )?(?:a|the) (?:demo|tour))$/, "/demo"],
+  [/^(?:learn|enrol|enroll|train on|register|memori[sz]e|remember) (?:my|your) voice(?:print)?$|^only listen to (?:me|my voice)$/, "/voiceprint"],
+  [/^(?:forget|delete|remove|clear) my voice(?:print)?$|^listen to (?:everyone|anyone)(?: again)?$/, "/voiceprint off"],
+  // Only unmistakable asks: "go on" or "carry on" can mean "yes, do it".
+  [/^(?:more|tell me more|say more|more detail|more details|what else|tell me the rest|the rest|and the rest)$/, "/more"],
 ];
 
 export type LocalCommand = { ui: UiCommand } | { slash: string };
@@ -153,6 +161,24 @@ export type LocalCommand = { ui: UiCommand } | { slash: string };
  */
 export function localCommand(request: string): LocalCommand | null {
   if (request.trim().startsWith("/")) return null;
+  const whole = wholeCommand(request);
+  if (whole) return whole;
+  // "That's really great. Demo mode.": a command said after a few words of something else. Only harmless ones:
+  // a stray "...quit" or "...restart" at the end of a sentence about something else mustn't act.
+  const said = request.trim().split(/(?<=[.!?])\s+/);
+  if (said.length < 2 || said.slice(0, -1).join(" ").split(/\s+/).length > 8) return null;
+  const last = wholeCommand(said.at(-1)!);
+  if (!last) return null;
+  const risky = "slash" in last ? RISKY_SLASH.has(last.slash) : RISKY_UI.has(last.ui.action);
+  return risky ? null : last;
+}
+
+/** Commands that act too big to take from the tail of a longer sentence. */
+const RISKY_SLASH = new Set(["/quit", "/new", "/mute", "/wake off", "/voiceprint", "/voiceprint off"]);
+const RISKY_UI = new Set<UiAction>(["restart", "minimise", "close_panels", "type_only", "god_mode_on", "god_mode_off", "continue_session"]);
+
+/** The request as a whole is one of her quick commands. */
+function wholeCommand(request: string): LocalCommand | null {
   const words = commandWords(request);
   if (!words) return null;
   const ui = quickUiCommand(request) ?? quickUiCommand(words);
@@ -170,4 +196,20 @@ export function localCommand(request: string): LocalCommand | null {
 export function isStopCommand(request: string): boolean {
   const s = request.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, " ").replace(/\s+/g, " ").trim();
   return /^(stop|cancel|never ?mind|be quiet|quiet|shush|shut up|hush)( (it|that|this|talking|speaking|now|please|everything|there|right there|all of it))*$/.test(s);
+}
+
+/**
+ * "Stop, check my email instead", "no, the Temper one", "never mind, what's on my plate": Dan redirecting her while
+ * she works. Returns the new request (without the stop words), or null when it isn't a redirect. Only these count:
+ * anything else said while she's busy waits its turn, so a passing question can't throw her work away.
+ */
+export function redirectRequest(request: string): string | null {
+  const m = request
+    .trim()
+    .match(/^(?:stop|cancel|no|wait|hold on|forget (?:it|that)|never ?mind|scrap that|change of plan)\b(?:\s+(?:it|that|this))?[\s,.!;:-]+(?:(?:and|then)\s+)?(?:instead[,\s]+)?(.+)$/i);
+  const rest = m?.[1]?.trim();
+  if (rest && rest.split(/\s+/).length >= 2) return rest;
+  // "Do X instead" said on its own is a redirect too.
+  const instead = request.trim().match(/^(.+?)[\s,]+instead[.!]?$/i)?.[1]?.trim();
+  return instead && instead.split(/\s+/).length >= 2 ? instead : null;
 }

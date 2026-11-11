@@ -23,7 +23,31 @@ export type SessionSummary = {
   costUsd?: number;
   /** Claude Code's permission mode at its latest prompt (auto, plan, acceptEdits, default…); absent when not recorded. */
   permissionMode?: string;
+  /** How much context its latest reply carried (input plus cache tokens): what resuming it would re-read. */
+  contextTokens?: number;
 };
+
+/** Past this much context, resuming a session for a quick job is slow and heavy compared with a fresh one with a brief. */
+export const LONG_CONTEXT_TOKENS = 150_000;
+/** A session in the Claude app touched this recently is one Dan is probably in. */
+export const IN_USE_MS = 30 * 60_000;
+
+/**
+ * Why Astra shouldn't send work into this session, or null if it's fine. Resuming runs a second copy of the session
+ * in the background: in one Dan is using, it works alongside him on the same files; in a long one, it re-reads the
+ * whole context (a small fix once resumed a 461k-token conversation).
+ */
+export function sendRefusal(s: Pick<SessionSummary, "title" | "project" | "source" | "lastActivity" | "contextTokens">, now = Date.now()): string | null {
+  const fresh = `Start a fresh session in ${s.project} instead (session_start) with a short, self-contained brief, and tell Dan you did.`;
+  const minutes = Math.round((now - Date.parse(s.lastActivity)) / 60_000);
+  if (s.source === "claude-desktop" && now - Date.parse(s.lastActivity) < IN_USE_MS) {
+    return `"${s.title}" is open in the Claude app and was used ${minutes < 1 ? "just now" : `${minutes} min ago`}: sending to it would run a second copy alongside Dan, on the same files. ${fresh}`;
+  }
+  if ((s.contextTokens ?? 0) > LONG_CONTEXT_TOKENS) {
+    return `"${s.title}" is long (${Math.round(s.contextTokens! / 1000)}k tokens of context): resuming it re-reads all of that, which is slow and uses far more of Dan's plan than the job needs. ${fresh}`;
+  }
+  return null;
+}
 
 /** The permission modes Claude Code records; anything else is ignored rather than shown. */
 const MODES = new Set(["auto", "plan", "acceptEdits", "default", "bypassPermissions", "dontAsk"]);
@@ -131,6 +155,10 @@ export function summarise(id: string, head: Entry[], tail: Entry[], mtime: Date,
   const midTurn = last?.type === "user" || (last?.type === "assistant" && stopReason !== "end_turn");
   const status: SessionStatus = recent && midTurn ? "working" : stopReason === "end_turn" && now - mtime.getTime() < 6 * 3600_000 ? "waiting" : "idle";
   const cost = lastOf("cost-state")?.totalCostUSD;
+  const usage = ([...tail].reverse().find((e) => e.type === "assistant" && (e.message as { usage?: unknown } | undefined)?.usage)?.message as
+    | { usage?: Record<string, number> }
+    | undefined)?.usage;
+  const contextTokens = usage ? (usage.input_tokens ?? 0) + (usage.cache_read_input_tokens ?? 0) + (usage.cache_creation_input_tokens ?? 0) : undefined;
   // Claude Code writes the mode on each prompt record (verified in the JSONL), so the newest one is the current mode.
   const hasMode = (e: Entry) => typeof e.permissionMode === "string" && MODES.has(e.permissionMode);
   const permissionMode = ([...tail].reverse().find(hasMode) ?? [...head].reverse().find(hasMode))?.permissionMode as string | undefined;
@@ -146,6 +174,7 @@ export function summarise(id: string, head: Entry[], tail: Entry[], mtime: Date,
     lastPrompt,
     ...(typeof cost === "number" ? { costUsd: Math.round(cost * 100) / 100 } : {}),
     ...(permissionMode ? { permissionMode } : {}),
+    ...(contextTokens ? { contextTokens } : {}),
   };
 }
 

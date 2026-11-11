@@ -10,6 +10,7 @@ import { allowKey, decide, describeCall, parseAnswer, spokenQuestion, bringsInWe
 import { loadSafeSites } from "./safeSites.js";
 import { createFetchGuard, type FetchGuard } from "./security/fetchGuard.js";
 import { jarvisInstructions } from "./prompt.js";
+import { idleConnectors } from "./idleConnectors.js";
 import { sessionEnv } from "./tools/runner.js";
 import type { ComputerControl } from "./control/computer.js";
 import type { CoffeeMode } from "./power/coffee.js";
@@ -18,6 +19,7 @@ import type { Position, UiAction } from "./ui/control.js";
 import { toolEvents, type ToolEvent } from "./ui/worklog.js";
 import type { TeardownGraph } from "./ui/graph.js";
 import type { QuestionAnswer, QuestionSpec } from "./voice/answers.js";
+import { isMetaReply } from "./voice/speechText.js";
 
 export type JarvisIO = {
   /** Called with each piece of top-level assistant text as it arrives. */
@@ -38,16 +40,42 @@ export type JarvisIO = {
   /** Asks the user a question (with options) and waits; null if they didn't answer. */
   question?(spec: QuestionSpec): Promise<QuestionAnswer | null>;
   /** Shows a teardown's 3D map (or a text version without the orb); returns where it went. */
-  graph?(title: string, graph: TeardownGraph): string;
+  graph?(title: string, graph: TeardownGraph, say?: string): string;
   /** Puts detail on screen (the orb's panel, or the terminal); returns where it went. */
-  show?(title: string, markdown: string): string;
+  show?(title: string, markdown: string, say?: string): string | Promise<string>;
   /** Asks the user a yes/always/no question (spoken briefly, detail shown) and returns their raw answer. */
   ask(question: Approval): Promise<string>;
 };
 
 export type Approval = { spoken: string; detail: string };
 
-export type TurnResult = { ok: boolean; costUsd: number; summary: string };
+export type TurnResult = { ok: boolean; costUsd: number; summary: string; timings?: TurnTimings };
+
+/** Where a request's time went, in ms from when it was sent (null if it never got that far). */
+export type TurnTimings = {
+  /** Claude Code started and connected its tools (the init message). */
+  readyMs: number | null;
+  /** The model's first output of any kind (thinking, a tool call or words). */
+  firstOutputMs: number | null;
+  /** Her first words to say. */
+  firstWordsMs: number | null;
+  totalMs: number;
+  /** Time spent waiting on the model, as Claude Code reports it. */
+  apiMs?: number;
+  steps?: number;
+};
+
+const sec = (ms: number | null | undefined) => (ms === null || ms === undefined ? "–" : `${(ms / 1000).toFixed(1)} s`);
+
+/** One log line of a request's timings; `heardMs` is when her voice first came out of the speakers. */
+export function timingLine(t: TurnTimings, heardMs?: number | null): string {
+  const parts = [`ready ${sec(t.readyMs)}`, `first output ${sec(t.firstOutputMs)}`, `first words ${sec(t.firstWordsMs)}`];
+  if (heardMs !== undefined) parts.push(`heard ${sec(heardMs)}`);
+  parts.push(`total ${sec(t.totalMs)}`);
+  if (t.apiMs !== undefined) parts.push(`model ${sec(t.apiMs)}`);
+  if (t.steps !== undefined) parts.push(`${t.steps} step${t.steps === 1 ? "" : "s"}`);
+  return parts.join(" · ");
+}
 
 type QueryFn = typeof query;
 
@@ -130,6 +158,8 @@ export class Jarvis {
           coffee: this.io.coffee,
         }),
         rea: { type: "stdio", command: reaCmd!, args: reaArgs },
+        // Connectors whose app is closed would make every request wait 30 s (see idleConnectors).
+        ...idleConnectors(),
       },
       permissionMode: "default",
       // Every page fetch is checked before it runs (even for sites your Claude Code settings allow) and after.
@@ -169,6 +199,8 @@ export class Jarvis {
     const abort = new AbortController();
     this.abort = abort;
     let result: TurnResult = { ok: false, costUsd: 0, summary: "No result" };
+    const started = performance.now();
+    this.turn = { started, readyMs: null, firstOutputMs: null, firstWordsMs: null };
 
     try {
       for await (const msg of this.runQuery({ prompt, options: this.buildOptions(abort) })) {
@@ -177,6 +209,8 @@ export class Jarvis {
         result = (await this.onMessage(msg)) ?? result;
       }
       if (abort.signal.aborted) return { ok: false, costUsd: result.costUsd, summary: "Cancelled" };
+      const { started: _started, ...marks } = this.turn;
+      result = { ...result, timings: { ...marks, totalMs: performance.now() - started, ...result.timings } };
     } catch (err) {
       if (abort.signal.aborted) return { ok: false, costUsd: 0, summary: "Cancelled" };
       throw err;
@@ -186,8 +220,17 @@ export class Jarvis {
     return result;
   }
 
+  /** The request in flight, for its timings. */
+  private turn = { started: 0, readyMs: null as number | null, firstOutputMs: null as number | null, firstWordsMs: null as number | null };
+
   private async onMessage(msg: SDKMessage): Promise<TurnResult | undefined> {
     for (const e of toolEvents(msg)) this.io.toolEvent?.(e);
+    const at = performance.now() - this.turn.started;
+    if (msg.type === "system" && msg.subtype === "init") this.turn.readyMs ??= at;
+    if (msg.type === "assistant" && msg.parent_tool_use_id === null) {
+      this.turn.firstOutputMs ??= at;
+      if (msg.message.content.some((b) => b.type === "text" && b.text.trim() && !isMetaReply(b.text))) this.turn.firstWordsMs ??= at;
+    }
     if (msg.type === "system" && msg.subtype === "init") {
       this.sessionId = msg.session_id;
       // Each server problem is reported once per run, not on every request.
@@ -209,7 +252,9 @@ export class Jarvis {
     // Subagent output (parent_tool_use_id set) stays silent; only Astra's own voice is spoken.
     if (msg.type === "assistant" && msg.parent_tool_use_id === null) {
       for (const block of msg.message.content) {
-        if (block.type === "text" && block.text.trim()) await this.io.say(block.text);
+        // Queued, not waited on: the stream keeps being read, so a panel her next step opens takes its place right
+        // after these words (see Speaker.cue) instead of popping up before them or long after.
+        if (block.type === "text" && block.text.trim() && !isMetaReply(block.text)) void this.io.say(block.text).catch(() => {});
         if (block.type === "tool_use") this.io.status(`→ ${block.name}`, block.input as Record<string, unknown>);
         if (block.type === "thinking") this.io.status("… thinking");
       }
@@ -219,7 +264,7 @@ export class Jarvis {
     if (msg.type === "result") {
       this.sessionId = msg.session_id;
       if (msg.subtype === "success") {
-        return { ok: !msg.is_error, costUsd: msg.total_cost_usd, summary: msg.result };
+        return { ok: !msg.is_error, costUsd: msg.total_cost_usd, summary: msg.result, timings: { apiMs: msg.duration_api_ms, steps: msg.num_turns } as TurnTimings };
       }
       const why: Record<typeof msg.subtype, string> = {
         error_max_turns: "I hit my step limit for one request.",
